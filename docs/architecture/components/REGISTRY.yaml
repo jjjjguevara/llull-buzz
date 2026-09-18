@@ -1,0 +1,24 @@
+schema_version: 1
+status: design-inventory-not-release-manifest
+source_pin: 01b6174a1cbad249e93f31df97d4b2ed1d0e8638
+selection_rule: Each exact release, license, owner, rationale, alternative, dependency footprint and artifact digest is required before admission.
+components:
+  - {id: upstream.buzz-acp, kind: harness, status: owner-directed-foundation, version: unselected-release, disposition: adopt-and-configure, owner: runtime, adr: ADR-002, rationale: Reuse supplied conversation/session orchestration; avoid a replacement harness., license: Apache-2.0 project baseline; verify selected closure}
+  - {id: upstream.buzz-agent, kind: runtime, status: owner-directed-foundation, version: unselected-release, disposition: adopt-and-configure, owner: runtime, adr: ADR-002, rationale: Reuse model/tool loop behind admitted tools and protocol isolation., license: Apache-2.0 project baseline; verify selected closure}
+  - {id: upstream.buzz-sdk, kind: library, status: candidate, version: unselected, disposition: evaluate, owner: transport, adr: ADR-001, rationale: Typed protocol construction may avoid duplicate transport code; language choice remains open., license: Verify selected artifact}
+  - {id: upstream.buzz-auth, kind: library, status: candidate, version: unselected, disposition: evaluate, owner: identity, adr: ADR-002, rationale: Reuse assertion/key verification primitives; enrollment remains integration-owned., license: Verify selected artifact}
+  - {id: owned.contract-ports, kind: logical-component, status: proposed, version: design-only, disposition: adapt, owner: contracts, adr: ADR-001, rationale: Stable consumer-neutral commands and results avoid coupling to provider payloads., license: Pending project license}
+  - {id: owned.launch-protocol, kind: logical-component, status: proposed, version: design-only, disposition: supported-adapter, owner: runtime, adr: ADR-002, rationale: Control process inheritance and ACP-carried credentials without a client fork., license: Pending project license}
+  - {id: owned.identity-binding, kind: logical-component, status: proposed, version: design-only, disposition: supported-adapter, owner: identity, adr: ADR-002, rationale: Verify local key/enrollment and revocation while reusing an identity provider., license: Pending project license}
+  - {id: owned.tool-gateway, kind: logical-component, status: proposed, version: design-only, disposition: supported-adapter, owner: authority, adr: ADR-002, rationale: Bind typed tools to consumer grants and result recovery rather than shell authority., license: Pending project license}
+  - {id: owned.publisher, kind: logical-component, status: proposed, version: design-only, disposition: supported-adapter, owner: publication, adr: ADR-002, rationale: Enforce audience release on actual publication rather than advisory hooks., license: Pending project license}
+  - {id: owned.delivery-ledger, kind: logical-component, status: proposed, version: design-only, disposition: adopt-persistence-and-adapt, owner: recovery, adr: ADR-003, rationale: Retain attempts and observations without a duplicate business ledger., license: Pending selected implementation}
+  - {id: owned.task-supervisor, kind: logical-component, status: proposed, version: design-only, disposition: adapt-existing-supervision, owner: recovery, adr: ADR-003, rationale: Preserve absolute grants and budgets through restarts and canceled turns., license: Pending selected implementation}
+  - {id: slot.model-provider, kind: external-service-or-model, status: unselected, version: unselected, disposition: qualify, owner: runtime, adr: ADR-002, rationale: Actual tool/evidence capability and data handling must fit each admitted profile., license: Provider/model terms pending}
+  - {id: slot.persistence, kind: persistence, status: unselected, version: unselected, disposition: reuse-before-build, owner: recovery, adr: ADR-003, rationale: Existing durable transactional storage should supply inbox/outbox and fencing., license: Pending}
+  - {id: slot.runtime-image, kind: deployment, status: unselected, version: unselected, disposition: qualify, owner: operations, adr: ADR-003, rationale: Persistent workers and credential boundaries need a concrete reproducible profile., license: Image/dependency closure pending}
+  - {id: slot.tool-sdk, kind: library, status: unselected, version: unselected, disposition: reuse-before-build, owner: tools, adr: ADR-001, rationale: Select a supported SDK only after language and wire requirements are bound., license: Pending}
+
+# A registry row is not a package, service, installed dependency or approval of a release.
+# Every selected direct/transitive and runtime-installed dependency belongs in the
+# observed manifest. Mined code records file/commit/notices and local modifications.
