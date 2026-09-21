@@ -969,11 +969,15 @@ async fn postgres_foundation_contracts() {
         m.expires_at = Utc::now() + CD::seconds(600);
         candidates.push(m);
     }
-    let futures = candidates.iter().map(|m| async {
-        let c = rig.command("start-task", rig.resource("record-a", 1), m);
-        let claims = rig.claims(&c, "module-b", Some(&m.root_task_id), Some(&other));
-        let (body, h) = rig.prepare("/integration/v1/tasks", &c, &claims);
-        rig.p.start_task(&body, h.headers()).await
+    let futures = candidates.iter().map(|m| {
+        let rig = &rig;
+        let other = &other;
+        async move {
+            let c = rig.command("start-task", rig.resource("record-a", 1), m);
+            let claims = rig.claims(&c, "module-b", Some(&m.root_task_id), Some(other));
+            let (body, h) = rig.prepare("/integration/v1/tasks", &c, &claims);
+            rig.p.start_task(&body, h.headers()).await
+        }
     });
     let admitted = futures_util::future::join_all(futures).await;
     assert_eq!(admitted.iter().filter(|r| r.is_ok()).count(), 4);
