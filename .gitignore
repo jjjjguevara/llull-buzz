@@ -1,0 +1,12 @@
+# Local secrets, execution output and scratch outside the committed map
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+node_modules/
+target/
+.venv/
+__pycache__/
+artifacts/
+.DS_Store

@@ -1,0 +1,131 @@
+schema_version: 2
+status: proposed-engineering-selections-not-installed-manifest
+profile: bz-restricted-2026-09/v1
+source_pin: 01b6174a1cbad249e93f31df97d4b2ed1d0e8638
+selection_rule: Deliberate mechanisms are fixed here; ordinary dependency resolution and built digests are later evidence.
+project_license: Apache-2.0
+project_license_decision: docs/bootstrap/LICENSING.md
+components:
+  - id: upstream.buzz-acp
+    kind: harness
+    status: selected-source-not-runtime-certified
+    version: 0.1.0 at 01b6174a1cbad249e93f31df97d4b2ed1d0e8638
+    source: https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-acp/src/lib.rs
+    license: Apache-2.0
+    owner: runtime
+    adr: ADR-002
+    rationale: Reuse conversation/session orchestration through the executable and agent-command seam.
+    alternative: A new model harness duplicates upstream orchestration and is rejected.
+    footprint: ACP process and native protocol; provider gateway mediates all content-bearing events.
+    adaptation: Owned wrapper and gateways; no embedding of private orchestration modules or core fork.
+  - id: upstream.buzz-agent
+    kind: runtime
+    status: selected-source-not-runtime-certified
+    version: 0.1.0 at 01b6174a1cbad249e93f31df97d4b2ed1d0e8638
+    source: https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-agent/src/config.rs
+    license: Apache-2.0
+    owner: runtime
+    adr: ADR-002
+    rationale: Reuse the model/tool loop behind ACP v2 and a controlled model base URL.
+    alternative: Unrestricted developer runtime violates task and credential boundaries.
+    footprint: Disposable restricted process; model/tool requests require durable gateway reservations.
+    adaptation: Closed session declarations and one admitted MCP bridge; advisory hooks are not gates.
+  - id: upstream.buzz-sdk
+    kind: library
+    status: selected
+    version: 0.1.0 at 01b6174a1cbad249e93f31df97d4b2ed1d0e8638
+    source: https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/Cargo.toml
+    license: Apache-2.0
+    owner: transport
+    adr: ADR-001
+    rationale: Native typed protocol operations fit the selected Rust adapter.
+    alternative: Hand-written duplicate native protocol client increases compatibility risk.
+    footprint: Relay HTTP/WebSocket traffic only through admitted provider routes.
+    adaptation: Consumer-neutral domain envelopes stay outside upstream message structures.
+  - id: upstream.buzz-auth
+    kind: library
+    status: selected
+    version: 0.1.0 at 01b6174a1cbad249e93f31df97d4b2ed1d0e8638
+    source: https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-auth/src/lib.rs
+    license: Apache-2.0
+    owner: identity
+    adr: ADR-002
+    rationale: Reuse NIP-42/NIP-98 verification and replay-guard seams, not custom signatures.
+    alternative: Requiring draft NIP-FI credentials from native clients is not selected.
+    footprint: Native key verification plus provider-owned durable replay/enrollment state.
+    adaptation: Registration and artifact-specific release are additional checks; native key possession is insufficient.
+  - {id: owned.contract-ports, kind: logical-component, status: proposed, version: integration-v0.2, license: Apache-2.0, owner: contracts, adr: ADR-001, rationale: Stable neutral typed envelopes and capability descriptions., alternative: Consumer-specific schemas would couple releases., footprint: Axum HTTP and Serde definitions with JCS intent digests., adaptation: New adapter APIs defined in WIRE-PROFILE; no consumer ORM imports.}
+  - {id: owned.launch-protocol, kind: logical-component, status: proposed, version: bz-restricted-2026-09/v1, license: Apache-2.0, owner: runtime, adr: ADR-002, rationale: Enforce both process inheritance and ACP-carried declarations., alternative: env_clear or advisory hooks alone are insufficient., footprint: Fixed child binary and task-specific scratch; no unrestricted host execution., adaptation: Rewrite the closed MCP declaration and fixed model proxy endpoint before unmodified agent launch.}
+  - {id: owned.identity-binding, kind: logical-component, status: proposed, version: bz-restricted-2026-09/v1, license: Apache-2.0, owner: identity, adr: ADR-002, rationale: Bind authenticated principal to the intended native key and independent enrollment., alternative: Invitation or first challenge reply alone does not prove the intended key., footprint: PostgreSQL key history/challenges/epochs; no human passwords., adaptation: Five-minute one-use native signed proof and fresh replacement/revocation process.}
+  - {id: owned.tool-gateway, kind: logical-component, status: proposed, version: bz-restricted-2026-09/v1, license: Apache-2.0, owner: authority, adr: ADR-002, rationale: Authorize useful exact typed effects and retain independent result references., alternative: Read-only blanket tasks lose required completion; shell authority bypasses policy., footprint: Registered consumer HTTPS APIs and durable attempts; isolated service credentials., adaptation: Fresh ES256 evidence plus independent provider and consumer resource authority.}
+  - {id: owned.publisher, kind: logical-component, status: proposed, version: bz-restricted-2026-09/v1, license: Apache-2.0, owner: publication, adr: ADR-002, rationale: All-path audience release cannot be implemented by prompting the model., alternative: Native unrestricted send or configurable native push is not the selected control., footprint: Publication/release ledger and authenticated native gateway including Blossom bytes., adaptation: Sign and dispatch only frozen approved events; private relay/media origins prevent bypass.}
+  - {id: owned.delivery-ledger, kind: logical-component, status: proposed, version: bz-restricted-2026-09/v1, license: Apache-2.0, owner: recovery, adr: ADR-003, rationale: Durable inbox/outbox and ordered observations avoid duplicated effects., alternative: Ephemeral process memory or cache cannot own accepted work., footprint: Provider PostgreSQL rows and native event/content references only., adaptation: Unique intent fingerprints; per-consumer locked sequence; scoped authenticated cursor and contiguous ACK.}
+  - {id: owned.task-supervisor, kind: logical-component, status: proposed, version: bz-restricted-2026-09/v1, license: Apache-2.0, owner: recovery, adr: ADR-003, rationale: Parent budgets and expiry survive process/child/retry boundaries., alternative: Upstream per-process limits alone can reset after interruption., footprint: Fenced PostgreSQL generations and durable cost/tool reservations; systemd supervises containers., adaptation: Three restart attempts within ten-minute original expiry; unknown reservations never refunded automatically.}
+  - id: slot.model-provider
+    kind: external-service
+    status: selected-initial-profile
+    version: claude-sonnet-5; Messages API; reviewed 2026-09-20
+    source: https://platform.claude.com/docs/en/models/sonnet-5/whats-new-sonnet-5
+    license: Hosted commercial API terms; no model-weight distribution grant.
+    owner: runtime
+    adr: ADR-002
+    rationale: Supported tool use and adaptive thinking through the existing agent HTTP seam.
+    alternative: A different compatible model is a separately qualified profile, not automatic failover.
+    footprint: Authorized task context leaves for the admitted model endpoint; USD 1 root admission reservation.
+    adaptation: Model proxy enforces exact model/parameters, token and monetary reservations; no prompt caching initially.
+  - id: slot.persistence
+    kind: persistence
+    status: selected-initial-profile
+    version: PostgreSQL 16; initial managed Cloud SQL profile
+    source: https://www.postgresql.org/docs/16/index.html
+    license: PostgreSQL License; managed service commercial terms are separate.
+    owner: recovery
+    adr: ADR-003
+    rationale: Transactions, row locks and unique constraints provide durable task/publication fencing.
+    alternative: Redis/Valkey is retained only for expendable presence, not authoritative outcomes.
+    footprint: Provider database independent of relay tables and every consumer operational database.
+    adaptation: SQLx schemas for roots/reservations/attempts/releases/observations; explicit backup and recovery epoch.
+  - id: slot.runtime-image
+    kind: deployment
+    status: selected-initial-profile
+    version: Ubuntu 24.04 LTS; Docker Engine 29.8.1; Rust 1.98.1
+    source: https://docs.docker.com/engine/release-notes/29/
+    license: Distribution packages retain individual licenses; Engine Apache-2.0; Rust MIT OR Apache-2.0.
+    owner: operations
+    adr: ADR-003
+    rationale: Persistent supervised containers and isolated networks fit ACP/session and durable-worker needs.
+    alternative: Scale-to-zero request-only workers do not own long-lived ACP processes.
+    footprint: systemd/containers; Cloud SQL, private media and Secret Manager/KMS v1; no Kubernetes requirement.
+    adaptation: Non-root restricted runtime, closed egress and separate trusted identities; image digests follow the build.
+  - id: slot.tool-sdk
+    kind: library
+    status: selected-initial-profile
+    version: rmcp 1.1.0 at 53c86d5d9d2f323b5f8044cdf2e575404aff6a6b
+    source: https://github.com/modelcontextprotocol/rust-sdk/blob/53c86d5d9d2f323b5f8044cdf2e575404aff6a6b/Cargo.toml
+    license: Apache-2.0
+    owner: tools
+    adr: ADR-001
+    rationale: Official Rust MCP SDK matches the upstream workspace and selected typed stdio bridge.
+    alternative: A TypeScript sidecar adds another language/runtime without improving this initial boundary.
+    footprint: rmcp/macros and stdio protocol; no arbitrary additional MCP servers.
+    adaptation: Only admitted tool schemas and task-bound handles; initialization does not grant authority.
+  - id: lib.jsonwebtoken
+    kind: library
+    status: selected
+    version: 10.4.0 at 69a8fbf40a83c3d87301e75148e02b2090e4feed
+    source: https://github.com/Keats/jsonwebtoken/blob/69a8fbf40a83c3d87301e75148e02b2090e4feed/Cargo.toml
+    license: MIT
+    owner: identity
+    adr: ADR-002
+    rationale: The pinned upstream already declares this ES256-capable verifier.
+    alternative: A custom JWS verifier or a second identity directory is unnecessary.
+    footprint: aws_lc_rs cryptographic backend; registered public key material only in restricted verification paths.
+    adaptation: Strict typ/issuer/audience/algorithm and task/freshness checks are owned policy, not library defaults.
+  - {id: lib.serde-jcs, kind: library, status: selected, version: serde_jcs 0.2.0, source: https://docs.rs/crate/serde_jcs/0.2.0, license: Apache-2.0 OR MIT, owner: contracts, adr: ADR-001, rationale: Standard RFC 8785 canonical intent bytes across consumers., alternative: Language-specific JSON serialization can produce divergent hashes., footprint: Serde/serde_json and ryu-js; no network or persistence effects., adaptation: Closed schemas reject duplicate keys and non-finite or out-of-range numbers before JCS.}
+  - {id: lib.sqlx, kind: library, status: selected, version: SQLx 0.9.0, source: https://docs.rs/crate/sqlx/0.9.0, license: Apache-2.0 OR MIT, owner: recovery, adr: ADR-003, rationale: Reuse the upstream PostgreSQL/Tokio integration rather than add an ORM., alternative: Direct low-level SQL driver requires duplicate pool/transaction integration., footprint: postgres and Tokio/rustls features; ordinary dependency leaves resolved during build., adaptation: Provider-owned SQL tables and fenced transactions; no consumer DB connection.}
+  - {id: lib.axum, kind: library, status: selected, version: Axum 0.8.8 with upstream Tokio 1 and Serde 1 declarations, source: https://docs.rs/crate/axum/0.8.8, license: MIT for Axum/Tokio; MIT OR Apache-2.0 for Serde, owner: transport, adr: ADR-001, rationale: Match the upstream async HTTP/WebSocket stack., alternative: A second web framework adds an avoidable compatibility boundary., footprint: HTTP/WebSocket routing and typed request validation; runtime leaves inherit upstream source qualification., adaptation: Fixed provider routes and native transparent gateways; not general-purpose proxy access.}
+  - {id: service.media, kind: service, status: selected, version: SeaweedFS 4.47 release 388099073, source: https://github.com/seaweedfs/seaweedfs/releases/tag/4.47, license: Apache-2.0, owner: evidence, adr: ADR-003, rationale: Native S3-compatible private object storage without changing Buzz clients., alternative: Public object links bypass artifact-specific release and are rejected., footprint: Separate filer PostgreSQL and private volumes; encrypted backup manifest., adaptation: Native media verification plus provider digest/release ACL; no direct public bucket.}
+  - {id: service.presence, kind: cache, status: selected, version: Valkey 8.1.10, source: https://github.com/valkey-io/valkey/releases/tag/8.1.10, license: BSD-3-Clause, owner: operations, adr: ADR-003, rationale: Supply native expendable presence/cache semantics., alternative: Making cache the task ledger would lose durable ownership., footprint: Private ephemeral key-value service; no authoritative outcomes., adaptation: A lost cache forces fresh authority checks; it cannot restore revoked leases.}
+
+# Stable slot.* identities now name deliberate selections, not unexplained architecture slots.
+# No row claims installation, conformance, a build digest or permission to deploy.

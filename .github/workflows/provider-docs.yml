@@ -1,0 +1,38 @@
+name: Provider documentation checks
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  provider-docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install documentation parser only
+        run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Check documentation at exact subject
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          SUBJECT: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 docs/bootstrap/check_provider_docs.py --self-test
+          python3 docs/bootstrap/check_provider_docs.py --base "$BASE" --subject "$SUBJECT"
+      - name: Preserve checked source and evidence
+        if: always()
+        run: |
+          mkdir -p docs-check
+          git rev-parse HEAD > docs-check/subject.txt
+          git archive --format=tar.gz HEAD > docs-check/revision-source.tar.gz
+          sha256sum docs-check/* > docs-check/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: provider-docs-${{ github.event.pull_request.head.sha }}
+          path: docs-check/
+          retention-days: 30
