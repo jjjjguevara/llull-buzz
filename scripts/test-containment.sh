@@ -4,22 +4,31 @@ cd "$(dirname "$0")/.."
 command -v docker >/dev/null
 command -v timeout >/dev/null
 test -f Cargo.lock || { echo 'Resolve and commit Cargo.lock first' >&2; exit 2; }
+candidate=$(git rev-parse HEAD)
+git diff --quiet && git diff --cached --quiet || { echo 'Commit review changes before the probe' >&2; exit 2; }
+git cat-file -e "${candidate}:Cargo.lock"
 base="llull-buzz-probe-$(date +%s)-$$-${RANDOM}"
 image="${base}:local"
 containers=()
 image_created=false
+context=
 cleanup() {
   for name in "${containers[@]-}"; do
     [ -n "$name" ] || continue
     docker rm -f "$name" >/dev/null 2>&1 || true
   done
   if "$image_created"; then docker image rm "$image" >/dev/null || true; fi
+  if [ -n "$context" ]; then rm -rf "$context"; fi
 }
 trap cleanup EXIT INT TERM
 if docker image inspect "$image" >/dev/null 2>&1; then echo 'Image name collision; nothing deleted' >&2; exit 2; fi
-docker build --force-rm -f deploy/Dockerfile.probe -t "$image" .
+context=$(mktemp -d "${TMPDIR:-/tmp}/llull-buzz-probe-context.XXXXXX")
+# Build the recorded commit even if another checkout advances during compilation.
+git archive "$candidate" | tar -x -C "$context"
+printf 'candidate=%s\n' "$candidate"
+docker build --force-rm -f "$context/deploy/Dockerfile.probe" \
+  --label "org.opencontainers.image.revision=$candidate" -t "$image" "$context"
 image_created=true
-printf 'candidate=%s\n' "$(git rev-parse HEAD)"
 docker image inspect "$image" --format '{{.Id}}'
 run() {
   local name="$base-$1"; shift
