@@ -9,12 +9,15 @@ image="${base}:local"
 containers=()
 image_created=false
 cleanup() {
-  for name in "${containers[@]}"; do docker rm -f "$name" >/dev/null 2>&1 || true; done
+  for name in "${containers[@]-}"; do
+    [ -n "$name" ] || continue
+    docker rm -f "$name" >/dev/null 2>&1 || true
+  done
   if "$image_created"; then docker image rm "$image" >/dev/null || true; fi
 }
 trap cleanup EXIT INT TERM
 if docker image inspect "$image" >/dev/null 2>&1; then echo 'Image name collision; nothing deleted' >&2; exit 2; fi
-docker build -f deploy/Dockerfile.probe -t "$image" .
+docker build --force-rm -f deploy/Dockerfile.probe -t "$image" .
 image_created=true
 printf 'candidate=%s\n' "$(git rev-parse HEAD)"
 docker image inspect "$image" --format '{{.Id}}'

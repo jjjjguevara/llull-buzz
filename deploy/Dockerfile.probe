@@ -7,10 +7,10 @@ RUN git init && git remote add origin https://github.com/block/buzz && \
     git fetch --depth 1 origin 01b6174a1cbad249e93f31df97d4b2ed1d0e8638 && \
     git checkout --detach FETCH_HEAD && \
     test "$(git rev-parse HEAD)" = 01b6174a1cbad249e93f31df97d4b2ed1d0e8638 && \
-    cargo build --release --locked -p buzz-agent -p buzz-acp
+    cargo +1.98.1 build --release --locked -p buzz-agent -p buzz-acp
 WORKDIR /source
 COPY . .
-RUN test -f Cargo.lock && cargo build --workspace --release --locked
+RUN test -f Cargo.lock && cargo +1.98.1 build --workspace --release --locked
 RUN mkdir -p /image/opt/llull/upstream /image/opt/llull/bin /image/usr/share/doc/buzz-upstream && \
     cp /upstream/target/release/buzz-agent /upstream/target/release/buzz-acp /image/opt/llull/upstream/ && \
     cp target/release/llull-buzz-launch target/release/llull-buzz-mcp-probe /image/opt/llull/bin/ && \

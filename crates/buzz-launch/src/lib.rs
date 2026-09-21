@@ -1,7 +1,9 @@
 //! Credential-free launch/configuration boundary, not an agent harness or OS
 //! sandbox. Actual containment and native compatibility require the local probes.
 #![forbid(unsafe_code)]
-use llull_buzz_wire::{canonical, hash, parse, sha256, Fault, Result};
+use llull_buzz_wire::{canonical, parse, Fault, Result};
+#[cfg(target_os = "linux")]
+use llull_buzz_wire::{hash, sha256};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -89,24 +91,21 @@ impl ImageIdentity {
         immutable_file(path, false)?;
         parse(&std::fs::read(path).map_err(|_| Fault::Unavailable)?)
     }
+    #[cfg(not(target_os = "linux"))]
     pub fn verify(&self) -> Result<()> {
-        #[cfg(target_os = "linux")]
-        {
-            let status =
-                std::fs::read_to_string("/proc/self/status").map_err(|_| Fault::Unavailable)?;
-            let effective = status
-                .lines()
-                .find(|line| line.starts_with("Uid:"))
-                .and_then(|line| line.split_whitespace().nth(2));
-            if effective != Some("65532") {
-                return Err(Fault::Denied);
-            }
+        Err(Fault::Unavailable)
+    }
+    #[cfg(target_os = "linux")]
+    pub fn verify(&self) -> Result<()> {
+        let status =
+            std::fs::read_to_string("/proc/self/status").map_err(|_| Fault::Unavailable)?;
+        let effective = status
+            .lines()
+            .find(|line| line.starts_with("Uid:"))
+            .and_then(|line| line.split_whitespace().nth(2));
+        if effective != Some("65532") {
+            return Err(Fault::Denied);
         }
-        #[cfg(not(target_os = "linux"))]
-        {
-            return Err(Fault::Unavailable);
-        }
-
         if self.upstream_commit != llull_buzz_wire::UPSTREAM || self.executable_sha256.len() != 3 {
             return Err(Fault::Denied);
         }

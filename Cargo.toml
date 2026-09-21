@@ -21,7 +21,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "io-std", "signal", "process", "fs"] }
 sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "json", "chrono", "uuid", "migrate", "macros"] }
 axum = "=0.8.8"
-jsonwebtoken = { version = "=10.4.0", default-features = false, features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "=10.4.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 base64 = "0.22"
 nostr = { version = "0.44", features = ["nip98"] }
 buzz-auth = { git = "https://github.com/block/buzz", rev = "01b6174a1cbad249e93f31df97d4b2ed1d0e8638" }

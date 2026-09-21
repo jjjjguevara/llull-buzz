@@ -400,8 +400,10 @@ mod tests {
     #[test]
     fn revision_overflow_cannot_partially_change_worker_or_counters() {
         let t = task();
-        let mut s = TaskState::default();
-        s.revision = MAX_SAFE_INTEGER as u64;
+        let mut s = TaskState {
+            revision: MAX_SAFE_INTEGER as u64,
+            ..TaskState::default()
+        };
         let before = crate::canonical(&s).unwrap();
         assert!(s.acquire("w", &t, at(1000)).is_err());
         assert_eq!(crate::canonical(&s).unwrap(), before);
