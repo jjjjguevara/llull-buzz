@@ -15,11 +15,13 @@ docker run -d --name "$name" --label llull-buzz.test=disposable \
   -e POSTGRES_DB=bz_foundation_test -e POSTGRES_USER=buzz_test -e POSTGRES_PASSWORD="$password" \
   -p 127.0.0.1::5432 postgres:16 >/dev/null
 created=true
+# The image's temporary initialization server accepts Unix sockets only. Require
+# TCP so readiness cannot succeed just before that temporary server shuts down.
 for _ in {1..60}; do
-  if docker exec "$name" pg_isready -U buzz_test -d bz_foundation_test >/dev/null 2>&1; then break; fi
+  if docker exec "$name" pg_isready -h 127.0.0.1 -U buzz_test -d bz_foundation_test >/dev/null 2>&1; then break; fi
   sleep 1
 done
-docker exec "$name" pg_isready -U buzz_test -d bz_foundation_test
+docker exec "$name" pg_isready -h 127.0.0.1 -U buzz_test -d bz_foundation_test
 address=$(docker port "$name" 5432/tcp)
 case "$address" in 127.0.0.1:*) ;; *) echo 'Unexpected database port binding' >&2; exit 2;; esac
 export TEST_DATABASE_URL="postgresql://buzz_test:${password}@${address}/bz_foundation_test"
@@ -41,7 +43,7 @@ snapshot() {
 before=$(snapshot)
 docker restart "$name" >/dev/null
 for _ in {1..60}; do
-  if docker exec "$name" pg_isready -U buzz_test -d bz_foundation_test >/dev/null 2>&1; then break; fi
+  if docker exec "$name" pg_isready -h 127.0.0.1 -U buzz_test -d bz_foundation_test >/dev/null 2>&1; then break; fi
   sleep 1
 done
 after=$(snapshot)
