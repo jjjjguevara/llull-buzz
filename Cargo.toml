@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/buzz-wire"]
+members = ["crates/buzz-wire", "crates/buzz-provider"]
 resolver = "2"
 
 [workspace.package]

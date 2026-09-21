@@ -139,6 +139,10 @@ impl TaskState {
         }
         Ok(())
     }
+    pub fn recovery_pending(&mut self, unknown: bool) -> Result<()> {
+        self.bump_revision()?; self.stop_new_work=true; self.worker=None;
+        self.phase=if unknown {Execution::EffectUnknown}else{Execution::Pending};Ok(())
+    }
     pub fn complete(&mut self, has_completed: bool, unresolved: bool) -> Result<()> {
         if !has_completed || unresolved { return Err(Fault::Unknown); }
         self.bump_revision()?; self.stop_new_work = true; self.worker = None; self.phase = Execution::Completed; Ok(())
