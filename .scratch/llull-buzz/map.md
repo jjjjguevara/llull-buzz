@@ -5,28 +5,38 @@ Status: open
 
 ## Destination
 
-Ratify consumer-neutral contracts and an implementable adapter boundary for useful,
-scoped communication and agent work, with explicit recovery and technical/human evidence.
+A reusable provider profile with concrete mechanisms, reciprocal contracts, recoverable
+useful completion and separate technical/human evidence, submitted to the designated reviewer.
 
 ## Notes
 
-The owner requests a reusable configuration/ports/adapters product, not a client fork.
-The initial runtime direction is buzz-acp plus buzz-agent with restricted integration.
-[Contract review](issues/01-contract-ratification.md) is the first decision frontier.
-Use [tracker operations](TRACKER.md) and [methods](../../docs/discovery/METHODS.md).
+The existing [tracker procedure](TRACKER.md) and [methods](../../docs/discovery/METHODS.md)
+remain controlling. [Contract review](issues/01-contract-ratification.md) is historical review
+work; this execution does not resolve it. The owner authorized documentary realization before
+that review finishes. [The existing realization ticket](issues/02-realization-plan.md) is claimed.
+No implementation epic, competing tracker or additional ratification session is introduced.
 
 ## Decisions so far
 
-No detailed provider ADR is yet ratified. The owner-directed bootstrap constraints
-are recorded in [contract review](issues/01-contract-ratification.md).
+The initial `buzz-acp` plus `buzz-agent` foundation is preserved. The
+[initial profile](../../docs/bootstrap/INITIAL-PROFILE.md) now selects Rust, upstream source,
+SDKs, native clients, enrollment and intended-key proof, ES256 invocation evidence independent
+of resource authority, process and credential boundaries, PostgreSQL persistence, finite root
+budgets, model admission, publication control, recovery and persistent-container topology.
+The [register](../../docs/architecture/components/REGISTRY.yaml) records the choices and
+alternatives; [wire definitions](../../docs/architecture/contracts/WIRE-PROFILE.md) bind encodings.
+These selections and the revised ADRs are proposed, not reviewer-accepted or implemented.
 
-## Not yet specified
+## Unresolved owner decision
 
-Exact identity/key custody; adapter implementation language; selected tool SDK and
-contract schemas; model/data-processing profile; client builds; persistence, budgets,
-operating topology and dependency closure. These do not weaken public guarantees.
+Original llull-buzz distribution/license remains unanswered after inspection and an owner
+question. Apache-2.0 is recommended; proprietary commercial terms are the alternative.
+Do not infer an answer or call this distribution-ready. Other architecture is not delegated
+back to implementation while this decision is pending.
 
-## Out of scope
+## Remaining implementation evidence
 
-A consumer's business model, a fork of the communication app, a universal plugin host,
-production operations and implementation in this documentation-only pass.
+Implement the selected adapters and migrations; resolve ordinary dependency leaves; produce
+installed inventories and image/client digests; bind actual symbols, fault tests and human UAT.
+Those are implementation obligations, not unexplained language/storage/security/topology slots.
+No test, deployment, independent certification or merge is performed by this document.

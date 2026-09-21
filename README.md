@@ -2,41 +2,47 @@
 
 Reusable communication and agent-integration configuration, ports and adapters.
 
-The product connects communication applications and agent runtimes to consumer-owned
-business capabilities. It supplies identity bindings, conversation intake, bounded
-execution, governed publication and recoverable handoffs. It owns neither a consumer's
-business model nor the upstream Buzz application. It is not a chat-client fork.
+The provider supplies identity bindings, conversation intake, bounded delegated execution,
+audience-controlled publication and recoverable handoffs. Consumers retain business state,
+policy and their own frontend. Buzz remains a separate application; this is not a client fork.
 
 ## Review entry
 
 Read [AGENTS.md](AGENTS.md), the [bootstrap contract](docs/architecture/BOOTSTRAP-CONTRACT.md),
-[provided and required interfaces](docs/architecture/contracts/PROVIDED-REQUIRED.md),
+[provided/required interfaces](docs/architecture/contracts/PROVIDED-REQUIRED.md),
+[initial profile](docs/bootstrap/INITIAL-PROFILE.md),
+[wire definitions](docs/architecture/contracts/WIRE-PROFILE.md),
 [ADR proposals](docs/architecture/decisions/README.md),
-[component inventory](docs/architecture/components/REGISTRY.yaml),
-[security assurance](docs/architecture/security/ASSURANCE.md) and
+[component selections](docs/architecture/components/REGISTRY.yaml),
+[technical assurance](docs/architecture/security/ASSURANCE.md) and
 [human acceptance](docs/acceptance/UAT-CATALOG.md).
 
-The [Wayfinder map](.scratch/llull-buzz/map.md) indexes decisions; its
-[tracker procedure](.scratch/llull-buzz/TRACKER.md) controls claims and resolution.
-The [source register](docs/discovery/SOURCE-REGISTER.md) separates owner requirements,
-upstream source findings and proposed realization. No implementation is included.
+The [Wayfinder map](.scratch/llull-buzz/map.md) and existing
+[local tracker](.scratch/llull-buzz/TRACKER.md) retain planning history. The
+[source register](docs/discovery/SOURCE-REGISTER.md) distinguishes inspected source,
+engineering selections and actual validation. No downstream implementation graph is created.
 
-## Boundary
+## Initial realization
 
-Consumers provide domain commands/queries, scoped authority, task definitions,
-publication policy, evidence access and durable result acceptance through neutral
-ports. The initial runtime direction reuses buzz-acp and buzz-agent with restricted
-adapters. Exact releases, model, language, storage, deployment and tool SDK are
-planning choices, not implied dependencies. A logical component need not be a service.
+`bz-restricted-2026-09/v1` selects Rust adapters around pinned `buzz-acp` and `buzz-agent`,
+a governed stdio MCP boundary, separate credential-bearing gateways, PostgreSQL task/delivery
+persistence and persistent Linux containers. Native clients retain their supported key and
+protocol flows. The profile fixes finite cumulative budgets, authority freshness, audience
+release, observation and unknown-effect recovery. It permits useful authorized completion.
 
-Consumers can use their own frontend alongside Buzz. No universal application shell,
-shared database, compulsory domain root, additional password system or synchronized
-consumer release is required. API-only integrations need not register every end user
-as a direct provider customer. Enrollment and delegated attribution remain explicit.
+These are concrete engineering selections for this initial profile, not compulsory language,
+identity provider, model, hosting or release choices for every future consumer. There is no
+shared consumer database, universal role model, extra employee password directory or synchronized
+release requirement. Consumer-owned operational Web Push is not native Buzz push.
 
 ## Status and license
 
-Documentation-only bootstrap, under review. Proposed ADRs are not accepted by
-publication. No runtime, tests, deployment, security attestation or human UAT has run.
-License selection is pending; public source visibility is not a license grant.
-Third-party components retain their own licenses and admission requirements.
+Documentation/schema/example consolidation for PC-BZ-01; proposed ADRs remain proposed.
+Author document checks are not runtime tests, independent review, security certification,
+performance evidence or human UAT. The designated reviewer alone resolves the finding.
+
+The original project license/distribution choice remains unanswered: Apache-2.0 for original
+reusable work is recommended; proprietary commercial distribution is the alternative. No grant
+is inferred from public visibility or upstream's Apache license. This is an explicit remaining
+owner decision and prevents a claim of distribution-ready bootstrap completion. Third-party
+components retain their own licenses. No implementation, deployment or merge is authorized here.

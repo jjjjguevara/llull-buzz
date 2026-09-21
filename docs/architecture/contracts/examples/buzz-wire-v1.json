@@ -1,0 +1,44 @@
+{
+  "profile": "bz-restricted-2026-09/v1",
+  "evidence_class": "synthetic documentary scenarios; no signatures or effects executed",
+  "fixture_clock": "2026-01-01T00:00:00Z",
+  "schema": "../schemas/buzz-wire-v1.schema.json",
+  "cases": [
+    {
+      "id": "permitted-completion",
+      "request": {"contract": "llull-buzz integration v0.2", "profile": "bz-restricted-2026-09/v1", "consumer_id": "example-consumer-a", "intent_id": "cancel-request-17", "operation": "cancel-task", "resource": {"namespace": "example-consumer-a", "ref": "task-17", "revision": "7"}, "correlation_id": "conversation-17", "causation_id": "message-21", "payload": {"task_id": "task-17", "expected_generation": 7, "reason": "Authorized requester stops remaining work"}},
+      "schema_valid": true,
+      "authority_fixture": "Enrolled service key and fresh ES256 exact-intent grant for the same consumer, task and generation; any required human verdict is current.",
+      "expected": "Commit the permitted stop-new-work action once, retain any already committed business result, and publish only the separately authorized summary.",
+      "technical_profiles": ["BZ-PF01", "BZ-PF04", "BZ-PF05"],
+      "human_cases": ["BZ-UAT01", "BZ-UAT05"]
+    },
+    {
+      "id": "changed-intent",
+      "request": {"contract": "llull-buzz integration v0.2", "profile": "bz-restricted-2026-09/v1", "consumer_id": "example-consumer-a", "intent_id": "cancel-request-17", "operation": "cancel-task", "resource": {"namespace": "example-consumer-a", "ref": "task-17", "revision": "8"}, "correlation_id": "conversation-17", "causation_id": "message-21", "payload": {"task_id": "task-17", "expected_generation": 8, "reason": "Changed generation after prior approval"}},
+      "schema_valid": true,
+      "authority_fixture": "Prior approved body and generation 7 are retained under this intent; fresh transport authentication alone does not approve generation 8.",
+      "expected": "409 conflict for changed immutable intent, or authority denial before admission; no new effect. A genuinely new intent requires its own applicable authorization.",
+      "technical_profiles": ["BZ-PF01", "BZ-PF04"],
+      "human_cases": ["BZ-UAT01"]
+    },
+    {
+      "id": "unauthorized-scope",
+      "request": {"contract": "llull-buzz integration v0.2", "profile": "bz-restricted-2026-09/v1", "consumer_id": "example-consumer-b", "intent_id": "cancel-request-18", "operation": "cancel-task", "resource": {"namespace": "example-consumer-b", "ref": "task-22", "revision": "1"}, "correlation_id": "conversation-22", "causation_id": "message-22", "payload": {"task_id": "task-22", "expected_generation": 1, "reason": "Attempt outside the enrolled consumer"}},
+      "schema_valid": true,
+      "authority_fixture": "The actual service key and issuer grant enroll only example-consumer-a. Model-supplied consumer-b fields cannot confer its resource authority.",
+      "expected": "403 and no task, publication or protected observation in consumer-b; unrelated authorized consumer-a access remains intact.",
+      "technical_profiles": ["BZ-PF01", "BZ-PF03"],
+      "human_cases": ["BZ-UAT02", "BZ-UAT04"]
+    },
+    {
+      "id": "interruption-recovery",
+      "request": {"contract": "llull-buzz integration v0.2", "profile": "bz-restricted-2026-09/v1", "consumer_id": "example-consumer-a", "intent_id": "reconcile-request-17", "operation": "reconcile-task", "resource": {"namespace": "example-consumer-a", "ref": "task-17", "revision": "7"}, "correlation_id": "conversation-17", "causation_id": "message-23", "payload": {"task_id": "task-17", "expected_generation": 7, "reason": "Lost response after the original effect was committed"}},
+      "schema_valid": true,
+      "authority_fixture": "Fresh recovery/record-access authority; the task's original effect ID, budget reservations and result owner are durable. Its original new-effect grant may already have expired.",
+      "expected": "Fence the old worker; query the original effect ID; retain the committed result; do not replenish budgets or issue another business/fiscal/mail effect. Retry a permitted native publication using its original signed event ID.",
+      "technical_profiles": ["BZ-PF04", "BZ-PF05", "BZ-PF07"],
+      "human_cases": ["BZ-UAT03", "BZ-UAT05"]
+    }
+  ]
+}

@@ -5,7 +5,7 @@ subtype: adr
 name: ADR 002 - Restricted execution, identity and publication
 author: ChatGPT, owner-directed synthesis
 date: 2026-09-18
-refinement: 0.1
+refinement: 0.2
 origin: synthesis
 form: draft
 audience: public
@@ -19,51 +19,80 @@ quality_attributes: [security, integrity, interoperability, recoverability, modi
 accepted_ceilings: []
 deferred_capability: []
 source_basis: ["../../discovery/SOURCE-REGISTER.md#owner-mandate", "../../discovery/SOURCE-REGISTER.md#pinned-primary-source"]
-implementation_binding: ["../../../.scratch/llull-buzz/issues/02-realization-plan.md"]
+implementation_binding: ["../../../.scratch/llull-buzz/issues/02-realization-plan.md", "../../bootstrap/INITIAL-PROFILE.md", "../contracts/WIRE-PROFILE.md"]
 review_triggers: [contract-change, authority-change, dependency-version-change, new-surface, recovery-failure]
 supersedes: []
 superseded_by: []
 proposed_amendments: []
-component_refs: ["upstream.buzz-acp", "upstream.buzz-agent", "owned.launch-protocol", "owned.identity-binding", "owned.tool-gateway", "owned.publisher", "slot.model-provider"]
-mandatory_uat_refs: ["BZ-UAT01", "BZ-UAT02", "BZ-UAT04"]
+component_refs: [upstream.buzz-acp, upstream.buzz-agent, upstream.buzz-auth, owned.launch-protocol, owned.identity-binding, owned.tool-gateway, owned.publisher, slot.model-provider, lib.jsonwebtoken]
+mandatory_uat_refs: [BZ-UAT01, BZ-UAT02, BZ-UAT04]
 conformance_status: not-assessed-for-proposed-delta
 ecosystem_placement:
-  motivating_design_rationale: "Place enforcement at the actual credential, tool and publication boundaries rather than a model heuristic."
+  motivating_design_rationale: Place enforcement at actual credential, tool and publication boundaries rather than a model heuristic.
   bears_on_quality_attribute_scenarios: [authorized-completion, denied-effect-isolation, interruption-recovery]
-  implements_asrs: ["BZ-CMT05", "BZ-CMT06", "BZ-CMT07", "BZ-CMT08", "BZ-CMT09"]
+  implements_asrs: [BZ-CMT05, BZ-CMT06, BZ-CMT07, BZ-CMT08, BZ-CMT09]
   affects_architecture_views: [module, runtime, security, API, evidence]
-  related_adrs: ["depends-on ADR-001", "constrains ADR-003"]
+  related_adrs: [depends-on ADR-001, constrains ADR-003]
 ---
 
 # ADR 002 - Restricted execution, identity and publication
 
 ## Status
 
-Proposed. Publication is not acceptance, implementation or a passed UAT. Existing accepted decisions remain effective until an explicit amendment is accepted.
+Proposed revision 0.2. No runtime/security certification, reviewer approval or human verdict.
 
 ## Context
 
-The selected runtime direction has useful ACP/MCP primitives, but runtime permissions, advisory hooks and protocol-carried signing keys are not the complete consumer authority contract.
+The inspected ACP/agent code exposes executable, stdio MCP and model-base-URL seams. Private
+orchestration modules are not a public embedding API. Process inheritance includes signing/SSH
+values and wire-supplied environment, so advisory hooks or `env_clear` alone cannot enforce the
+required boundaries. Native key possession and relay membership do not establish consumer authority.
 
 ## Decision
 
-Reuse buzz-acp and buzz-agent through a profile that admits every executable, tool, skill, credential and egress path.
+Adopt the pinned unmodified `buzz-acp` and `buzz-agent` executables behind the owned ACP wrapper,
+tool gateway, model proxy and all-path native publication/media gateway described by the
+[initial profile](../../bootstrap/INITIAL-PROFILE.md). Select native NIP-42/NIP-98/Blossom client
+flows and `buzz-auth`; use `jsonwebtoken` 10.4.0 for the separately verified ES256 invocation JWS.
+No general shell, developer MCP, arbitrary server declaration or credential-bearing model context.
+
+Enroll a freshly authenticated consumer principal to a browser-fixed intended public key before
+issuing a five-minute one-use native signed challenge. Recovery proves a new key and revokes the
+old binding; historical signatures are retained. Independent modules have independent grants.
+The provider creates neither a password directory nor a universal consumer role model.
+
+Invocation evidence binds executing/represented principals, delegation, exact action/resource/revision,
+canonical payload, required verdicts and current authority epoch. It supplements enrolled provider
+resource authority rather than replacing it. Assertions last at most 60 seconds with at most
+30 seconds of clock tolerance; root expiry and authority leases are not extended by that tolerance.
+
+Refresh active authority within 30 seconds and enforce a maximum 60-second stale-admission lease.
+Fence task generations and retire affected model/observer history on access-domain or epoch change.
+The gateway denies stale native deliveries and media reads and cannot be bypassed through a public
+relay or object origin. Already delivered copies and committed effects cannot be recalled.
+
+Every ordinary reply, notification, preview, attachment and diagnostic uses a frozen publication
+intent and fresh audience/content release. Native push is not assumed configurable. A consumer's
+operational Web Push and durable notification inbox/outbox remain consumer-owned. Typed approved
+consumer commands and authorized publication remain useful completion paths, not proposal-only work.
 
 ## Decision Class
 
-Project-scoped: this decision governs this reusable product and its interfaces. It creates no new legal interpretation or organization-wide governance regime.
+Project-scoped provider security and integration, not an organization-wide identity decision.
 
 ## Options Considered
 
-| Option | Pros | Cons | Complexity | When valid |
-| --- | --- | --- | --- | --- |
-| Prompt-only guardrails | Little integration | Cannot enforce authority or data release | low | Never for required controls |
-| Restricted adapters around runtime | Keeps useful execution and native clients | Own security-sensitive integration code | moderate | Recommended |
-| Replacement harness | Full control | Duplicates substantial upstream work | high | Only a demonstrated incompatible capability |
+| Option | Benefit | Consequence / disposition |
+| --- | --- | --- |
+| Supported executables plus enforced trusted gateways | Reuses agent/native client behavior while isolating credentials | Selected; requires complete native surface tests |
+| Advisory hooks or broad agent credentials | Easy setup | Rejected; timeout or alternate publication/tool path can bypass authority |
+| Client/core fork | Can add controls directly | Rejected initially; native-compatible server adapters are the selected boundary |
+| Read/propose-only restriction | Avoids some effects | Rejected as a blanket policy; loses authorized task completion |
 
 ## Rationale
 
-Place enforcement at the actual credential, tool and publication boundaries rather than a model heuristic.
+Enforcement must sit before the actual effect, model-context release and native publication, not
+in a prompt. Standard verification primitives are reused; scoped registration/release remains owned.
 
 ## Atomic Commitments and Authority
 
@@ -77,69 +106,78 @@ Place enforcement at the actual credential, tool and publication boundaries rath
 
 ## Component Selection and Dependency Binding
 
-Bind `upstream.buzz-acp`, `upstream.buzz-agent`, `owned.launch-protocol`, `owned.identity-binding`, `owned.tool-gateway`, `owned.publisher`, `slot.model-provider` in the local component register. Each choice needs its own version/source, rationale, license, owner, extension surface and observed dependency closure. No additional library or topology is selected by this proposal.
+The [register](../components/REGISTRY.yaml) fixes source/SDK/model and the profile fixes process,
+network, mount, credential and native-client seams. Sonnet 5 uses adaptive thinking through the
+model proxy; unsupported manual budgets/sampling and undeclared tools are rejected. Native keys
+stay in client secure storage or the separate trusted service; vendor keys stay in the model proxy.
 
 ## Trade-offs Accepted
 
-No capability ceiling is accepted by this draft. Proposed engineering/operating cost: Curated profiles, process isolation and explicit key/session lifecycle require maintenance.
+Explicit gateways and access leases add operational work and tests. The initial governed record
+path uses relay-retained access-controlled channels, not encrypted private-message history as its
+only evidence archive. Loss of a personal decryption key is not disguised as recoverable history.
+This profile boundary does not remove neutral capabilities or impose its vendor on other consumers.
 
 ## Materially Relevant Benchmark Envelope
 
-Stimulus: forged or revoked task scope, changed audience or attempted secret access. Source: caller/content/runtime. Environment: active and restarted tasks. Artifact: admitted profile. Response: no prohibited effect/disclosure while valid work succeeds. Measure: independent canary/effect oracles in BZ-PF01/02/03/05. No performance run is claimed; numerical deployment budgets require an approved workload/profile.
+Exercise a permitted exact-intent command and publication, intended-key race, changed revision,
+offline revocation, retired context and restricted canaries across reply/preview/media/diagnostics.
+Measure actual denied effects and bounded stale access, not an authentication mock or model text.
+Limits are normative design defaults; no process, cryptographic or performance test ran here.
 
 ## Deferred Capability + Debt Register
 
-No product-capability deferral is proposed. Exact internal realization belongs to planning, not a waiver of these guarantees. A later deferral needs scope, owner, re-entry trigger and resolution criterion.
+No unselected material admission/publication mechanism remains. Implementation must prove complete
+gateway mediation, key/claim verification and supported native-client coverage before this profile
+is enabled. Original project distribution rights are still an explicit owner decision, not accepted.
 
 ## Consequences
 
-Capability gained: Place enforcement at the actual credential, tool and publication boundaries rather than a model heuristic.
-
-Capability forgone: none proposed. Cost: Curated profiles, process isolation and explicit key/session lifecycle require maintenance.
-
-Mitigation: narrow supported adapters, explicit component admission, local contract vectors, and the independent technical/human evidence below.
+Useful authorized work can complete without exposing consumer databases or broad credentials.
+A surface that cannot be mediated is explicitly unavailable, not silently granted access. Native
+compatibility, recovery and legitimate workflow usability remain mandatory proof/UAT obligations.
 
 ## Acceptance and Downstream UATs
 
-The [provided/required contract](../contracts/PROVIDED-REQUIRED.md) binds these commitments to technical obligations. The following human cases are mandatory where their surfaces apply; no API-only provider must invent a standalone UI.
-
-| Human case | Required consequence / role |
-| --- | --- |
-| [BZ-UAT01](../../acceptance/UAT-CATALOG.md#bz-uat01) | Real adopted-client/consumer task and recovery; named human verdict. |
-| [BZ-UAT02](../../acceptance/UAT-CATALOG.md#bz-uat02) | Real adopted-client/consumer task and recovery; named human verdict. |
-| [BZ-UAT04](../../acceptance/UAT-CATALOG.md#bz-uat04) | Real adopted-client/consumer task and recovery; named human verdict. |
-
-Code suites, fault schedules, signature verification and runtime attestation are technical evidence, not UAT verdicts. Change affected case versions when semantics, permissions, status or recovery changes.
+[BZ-PF01/02/03/05/06](../security/ASSURANCE.md) cover real verification, containment, freshness and
+all-path release. [BZ-UAT01](../../acceptance/UAT-CATALOG.md#bz-uat01),
+[BZ-UAT02](../../acceptance/UAT-CATALOG.md#bz-uat02) and
+[BZ-UAT04](../../acceptance/UAT-CATALOG.md#bz-uat04) separately judge useful completion,
+independent key recovery and understandable authorized publication. No synthetic fixture passes UAT.
 
 ## Source Basis
 
-| Source pointer | How it bears on the decision | Evidence class |
-| --- | --- | --- |
-| [Owner mandate](../../discovery/SOURCE-REGISTER.md#owner-mandate) | Reusable non-fork boundary and explicit reciprocal duties. | owner requirement |
-| [Pinned upstream](../../discovery/SOURCE-REGISTER.md#pinned-primary-source) | Existing harness/runtime and named integration constraints. | pinned source basis |
+The [source register](../../discovery/SOURCE-REGISTER.md) records ACP/private-module boundaries,
+agent configuration/MCP inheritance, native auth and actual media admission. Native membership
+checks are not represented as existing artifact-specific release enforcement.
 
 ## Review Triggers
 
-Contract/authority change, dependency or enabled-module change, new surface, recovery failure, security finding or invalidated UAT. An ordinary compatible update requires impact analysis, not automatic ratification or a duplicate ADR.
+Authority, key lifecycle, client/media protocol, model profile, egress or publication changes invalidate
+affected technical and human applicability. A compatible change does not require a new committee.
 
 ## Implementation Binding
 
-[Planning binding](../../../.scratch/llull-buzz/issues/02-realization-plan.md) names the actual follow-up artifact. It is not implemented code or evidence of completion. Actual code/test symbols and native work-item IDs must be bound when implementation is authorized.
+Use the existing [realization record](../../../.scratch/llull-buzz/issues/02-realization-plan.md),
+[profile](../../bootstrap/INITIAL-PROFILE.md) and [wire contract](../contracts/WIRE-PROFILE.md).
+Later code implements these selected seams; it does not rediscover the consumer's architecture.
 
 ## Conformance and Drift Controls
 
-Every affected run reconciles expected versus executed technical cases against exact artifact/configuration/profile digests. Missing, skipped, stale or mismatched evidence does not pass. Positive permitted completion is required alongside denial and fault cases. A consumer-specific import, undeclared dependency, unverified authority shortcut or effect-repeating recovery violates the boundary.
+A trusted manifest and real process/crypto/fault tests must establish that no alternate tool,
+credential, context, native event or media route bypasses admission. Reject unregistered issuer,
+audience, key URL, algorithm and schema. Static document checks are not this evidence.
 
 ## Ecosystem Placement
 
-Motivating rationale: Place enforcement at the actual credential, tool and publication boundaries rather than a model heuristic.
-
-Views: public interfaces, module dependencies, execution, security and evidence. Relations: depends-on ADR-001; constrains ADR-003. Existing owner decisions remain separately authoritative.
+ADR-001 owns neutral ports; this ADR owns authority and release; ADR-003 owns task/delivery
+persistence and bounded recovery. Business/fiscal/mail effects remain at their own providers.
 
 ## Self-Governance Trigger
 
-Not applicable. This product-scoped contract does not import an external governance overlay.
+Not applicable; no external organizational overlay is imported.
 
 ## Authoring Checks
 
-The proposal includes context, alternatives, attributable commitments, consequences, source basis, planning bindings and mandatory human scenarios. Acceptance date and approval reference intentionally remain empty. Technical conformance and human verdicts must be supplied by later real runs.
+Stable CMT/capability identities remain. Proposal approval/date remain null. The designated reviewer
+alone assesses the submitted correction; this author does not resolve findings or certify runtime.

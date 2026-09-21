@@ -5,7 +5,7 @@ subtype: adr
 name: ADR 001 - Consumer-neutral integration boundary
 author: ChatGPT, owner-directed synthesis
 date: 2026-09-18
-refinement: 0.1
+refinement: 0.2
 origin: synthesis
 form: draft
 audience: public
@@ -19,18 +19,18 @@ quality_attributes: [security, integrity, interoperability, recoverability, modi
 accepted_ceilings: []
 deferred_capability: []
 source_basis: ["../../discovery/SOURCE-REGISTER.md#owner-mandate", "../../discovery/SOURCE-REGISTER.md#pinned-primary-source"]
-implementation_binding: ["../../../.scratch/llull-buzz/issues/02-realization-plan.md"]
+implementation_binding: ["../../../.scratch/llull-buzz/issues/02-realization-plan.md", "../../bootstrap/INITIAL-PROFILE.md", "../contracts/WIRE-PROFILE.md"]
 review_triggers: [contract-change, authority-change, dependency-version-change, new-surface, recovery-failure]
 supersedes: []
 superseded_by: []
 proposed_amendments: []
-component_refs: ["owned.contract-ports", "upstream.buzz-sdk", "slot.tool-sdk"]
-mandatory_uat_refs: ["BZ-UAT01", "BZ-UAT02"]
+component_refs: [owned.contract-ports, upstream.buzz-sdk, slot.tool-sdk, lib.serde-jcs, lib.axum]
+mandatory_uat_refs: [BZ-UAT01, BZ-UAT02]
 conformance_status: not-assessed-for-proposed-delta
 ecosystem_placement:
-  motivating_design_rationale: "Preserve independently evolvable consumers while reusing upstream conversation and execution capabilities."
+  motivating_design_rationale: Preserve independently evolvable consumers while reusing upstream conversation and execution capabilities.
   bears_on_quality_attribute_scenarios: [authorized-completion, denied-effect-isolation, interruption-recovery]
-  implements_asrs: ["BZ-CMT01", "BZ-CMT02", "BZ-CMT03", "BZ-CMT04"]
+  implements_asrs: [BZ-CMT01, BZ-CMT02, BZ-CMT03, BZ-CMT04]
   affects_architecture_views: [module, runtime, security, API, evidence]
   related_adrs: []
 ---
@@ -39,31 +39,40 @@ ecosystem_placement:
 
 ## Status
 
-Proposed. Publication is not acceptance, implementation or a passed UAT. Existing accepted decisions remain effective until an explicit amendment is accepted.
+Proposed revision 0.2. PC-BZ-01 realization is specified, not accepted or implemented.
+No approval reference, independent review verdict or human acceptance is supplied by this author.
 
 ## Context
 
-Communication and agent integrations need stable capabilities without importing a particular consumer or cloning its application. A repository boundary must not create unowned handoffs or a second business authority.
+Independent consumers need communication intake, scoped delegated work, publication and recovery
+without sharing an operational schema, identity vendor, deployment or release cycle. The earlier
+proposal named these duties but left the initial language, SDK and wire realization unexplained.
 
 ## Decision
 
-Keep public communication/agent ports independent of consumer business models, client forks and deployment topology.
+Retain BZ-C01..08 and BZ-R01..06. Select the Rust/Axum/Serde adapter with upstream `buzz-sdk`,
+`rmcp` 1.1.0 stdio tools and RFC 8785 canonical JSON through `serde_jcs` 0.2.0. The
+[wire profile](../contracts/WIRE-PROFILE.md) defines neutral command envelopes, typed payloads,
+invocation evidence and result/observation meanings. The
+[initial profile](../../bootstrap/INITIAL-PROFILE.md) fixes processes and effect owners.
+This is one concrete compatible realization, not a universal implementation-language constraint.
 
 ## Decision Class
 
-Project-scoped: this decision governs this reusable product and its interfaces. It creates no new legal interpretation or organization-wide governance regime.
+Project-scoped. No organization-wide regime, new review committee or legal interpretation.
 
 ## Options Considered
 
-| Option | Pros | Cons | Complexity | When valid |
-| --- | --- | --- | --- | --- |
-| Client fork | Immediate UI control | Upstream coupling and duplicated product | high | Only an explicit future product decision |
-| Neutral adapters over upstream | Reuses product and isolates consumers | Requires explicit reciprocal contracts | bounded | Recommended boundary |
-| Consumer-specific integration | Fast first coupling | Prevents reuse and hides responsibility | low initially | Not this reusable product |
+| Option | Benefit | Consequence / disposition |
+| --- | --- | --- |
+| Rust adapters on the pinned native SDK and MCP seam | One native protocol stack and no replacement agent loop | Selected; integration-owned policy and durable adapters remain explicit |
+| TypeScript sidecars | Familiar HTTP tooling | Not selected initially; adds runtime and native-protocol translation without a demonstrated benefit here |
+| Consumer-specific fork/shared database | Quick direct access | Rejected; destroys independent ownership and client compatibility |
 
 ## Rationale
 
-Preserve independently evolvable consumers while reusing upstream conversation and execution capabilities.
+Reuse supported native extension surfaces and standard cryptographic/serialization libraries;
+implement only the consumer-neutral authority, durability and release boundaries absent upstream.
 
 ## Atomic Commitments and Authority
 
@@ -72,72 +81,81 @@ Preserve independently evolvable consumers while reusing upstream conversation a
 | BZ-CMT01 | Keep public communication/agent ports independent of consumer business models, client forks and deployment topology. | Contracts owner |
 | BZ-CMT02 | Publish provided and required capabilities with identity, inputs, outcomes, durability and recovery ownership. | Provider/consumer integration owners |
 | BZ-CMT03 | Treat module enrollment, human identity, service registration and delegated authority as distinct. | Identity owner |
-| BZ-CMT04 | Inventory each selected atomic component, exact version/license and observed dependency closure. | Architecture/build owner |
+| BZ-CMT04 | Inventory each selected atomic component and exact version/source/license; bind the observed dependency closure when built. | Architecture/build owner |
 
 ## Component Selection and Dependency Binding
 
-Bind `owned.contract-ports`, `upstream.buzz-sdk`, `slot.tool-sdk` in the local component register. Each choice needs its own version/source, rationale, license, owner, extension surface and observed dependency closure. No additional library or topology is selected by this proposal.
+The [register](../components/REGISTRY.yaml) binds each deliberate selection to purpose, owner,
+source/release, license, rationale, alternative, footprint and adaptation. Rust 1.98.1 satisfies
+these selected SDKs' declared language requirements. This is compatibility analysis, not a build.
+Ordinary resolved dependency leaves and installed/image digests remain build evidence; no material
+mechanism is left for a future language, storage or protocol decision.
 
 ## Trade-offs Accepted
 
-No capability ceiling is accepted by this draft. Proposed engineering/operating cost: Contract evolution and adapter compatibility must be maintained explicitly.
+The initial profile bears the cost of Rust adapters and native-protocol compatibility tests.
+No product capability ceiling or permission to omit useful authorized completion is accepted.
+Original project licensing is still an explicit unanswered owner decision, not an open-source grant.
 
 ## Materially Relevant Benchmark Envelope
 
-Stimulus: a new consumer or provider version. Source: integrator. Environment: same registered profile. Artifact: provided/required ports. Response: use compatible contracts or reject explicitly. Measure: no consumer-specific import and no silent capability downgrade. No performance run is claimed; numerical deployment budgets require an approved workload/profile.
+A synthetic consumer independently authenticates, enrolls an intended key, submits a permitted
+revision-bound task and observes the same result after interruption. The oracle is the consumer's
+single committed effect and the provider's durable correlation, not a completed model turn.
+Operating limits are fixed in the initial profile; actual latency/capacity measurements are not run.
 
 ## Deferred Capability + Debt Register
 
-No product-capability deferral is proposed. Exact internal realization belongs to planning, not a waiver of these guarantees. A later deferral needs scope, owner, re-entry trigger and resolution criterion.
+No capability deferral. The named adapters, migrations, installed inventories and actual code/test
+bindings are implementation work. The license decision prevents distribution-ready completion and
+is openly recorded in the existing map; it does not delegate the engineering profile to implementation.
 
 ## Consequences
 
-Capability gained: Preserve independently evolvable consumers while reusing upstream conversation and execution capabilities.
-
-Capability forgone: none proposed. Cost: Contract evolution and adapter compatibility must be maintained explicitly.
-
-Mitigation: narrow supported adapters, explicit component admission, local contract vectors, and the independent technical/human evidence below.
+Consumers can evolve independently through versioned contracts and source-bound adapters. The
+provider must maintain native-protocol conformance and route historical operations across upgrades.
+No consumer-private schemas, notes, credentials or internal references are published as provider law.
 
 ## Acceptance and Downstream UATs
 
-The [provided/required contract](../contracts/PROVIDED-REQUIRED.md) binds these commitments to technical obligations. The following human cases are mandatory where their surfaces apply; no API-only provider must invent a standalone UI.
-
-| Human case | Required consequence / role |
-| --- | --- |
-| [BZ-UAT01](../../acceptance/UAT-CATALOG.md#bz-uat01) | Real adopted-client/consumer task and recovery; named human verdict. |
-| [BZ-UAT02](../../acceptance/UAT-CATALOG.md#bz-uat02) | Real adopted-client/consumer task and recovery; named human verdict. |
-
-Code suites, fault schedules, signature verification and runtime attestation are technical evidence, not UAT verdicts. Change affected case versions when semantics, permissions, status or recovery changes.
+[Assurance](../security/ASSURANCE.md) binds BZ-PF01/02/04/07. Human
+[BZ-UAT01](../../acceptance/UAT-CATALOG.md#bz-uat01) judges useful cross-surface completion;
+[BZ-UAT02](../../acceptance/UAT-CATALOG.md#bz-uat02) judges independent enrollment/recovery.
+Consumers map these to their own interfaces. Static examples and author checks do not pass them.
 
 ## Source Basis
 
-| Source pointer | How it bears on the decision | Evidence class |
-| --- | --- | --- |
-| [Owner mandate](../../discovery/SOURCE-REGISTER.md#owner-mandate) | Reusable non-fork boundary and explicit reciprocal duties. | owner requirement |
-| [Pinned upstream](../../discovery/SOURCE-REGISTER.md#pinned-primary-source) | Existing harness/runtime and named integration constraints. | pinned source basis |
+The [source register](../../discovery/SOURCE-REGISTER.md) records the inspected upstream commit,
+SDK release/license evidence and source seams. The register and wire profile distinguish existing
+native operations from new owned adapter routes; no new endpoint is represented as already shipped.
 
 ## Review Triggers
 
-Contract/authority change, dependency or enabled-module change, new surface, recovery failure, security finding or invalidated UAT. An ordinary compatible update requires impact analysis, not automatic ratification or a duplicate ADR.
+Contract, authority, SDK/native-client surface, source version or recovery changes require scoped
+impact analysis. Routine compatible dependency resolution does not create another ratification session.
 
 ## Implementation Binding
 
-[Planning binding](../../../.scratch/llull-buzz/issues/02-realization-plan.md) names the actual follow-up artifact. It is not implemented code or evidence of completion. Actual code/test symbols and native work-item IDs must be bound when implementation is authorized.
+The existing [realization record](../../../.scratch/llull-buzz/issues/02-realization-plan.md) binds this
+execution. The profile and schemas are the implementation input; later work supplies their code,
+migrations, tests and build evidence without selecting the architecture again.
 
 ## Conformance and Drift Controls
 
-Every affected run reconciles expected versus executed technical cases against exact artifact/configuration/profile digests. Missing, skipped, stale or mismatched evidence does not pass. Positive permitted completion is required alongside denial and fault cases. A consumer-specific import, undeclared dependency, unverified authority shortcut or effect-repeating recovery violates the boundary.
+A provider and consumer must agree on profile/schema digests, issuer/audience registration and
+required ports. Missing, skipped or mismatched technical/human evidence remains visible. A source
+pin alone is not a certified native-client build. Wrong-scope denial must accompany useful success.
 
 ## Ecosystem Placement
 
-Motivating rationale: Preserve independently evolvable consumers while reusing upstream conversation and execution capabilities.
-
-Views: public interfaces, module dependencies, execution, security and evidence. Relations: this is the initial boundary proposal. Existing owner decisions remain separately authoritative.
+This ADR owns neutral integration boundaries; ADR-002 owns admission/publication and ADR-003 owns
+durable recovery. Normative definitions stay in this repository; consumer mappings live with consumers.
 
 ## Self-Governance Trigger
 
-Not applicable. This product-scoped contract does not import an external governance overlay.
+Not applicable; no external organizational overlay is imported.
 
 ## Authoring Checks
 
-The proposal includes context, alternatives, attributable commitments, consequences, source basis, planning bindings and mandatory human scenarios. Acceptance date and approval reference intentionally remain empty. Technical conformance and human verdicts must be supplied by later real runs.
+Stable ADR/CMT/capability identities are preserved; proposal status and null approval/date remain.
+Revision-bound document checks verify the submitted artifacts separately from reviewer assessment.
