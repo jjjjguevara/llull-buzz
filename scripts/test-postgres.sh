@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Creates and deletes only this invocation's disposable PostgreSQL container.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+command -v docker >/dev/null
+command -v cargo >/dev/null
+test -f Cargo.lock || { echo 'Resolve and commit Cargo.lock first; see docs/implementation/LOCAL-REVIEW.md' >&2; exit 2; }
+name="llull-buzz-pg-$(date +%s)-$$-${RANDOM}"
+password="synthetic-$(date +%s)-${RANDOM}-${RANDOM}"
+created=false
+cleanup() { if "$created"; then docker rm -f "$name" >/dev/null; fi; }
+trap cleanup EXIT INT TERM
+if docker container inspect "$name" >/dev/null 2>&1; then echo 'Name collision; nothing deleted' >&2; exit 2; fi
+docker run -d --name "$name" --label llull-buzz.test=disposable \
+  -e POSTGRES_DB=bz_foundation_test -e POSTGRES_USER=buzz_test -e POSTGRES_PASSWORD="$password" \
+  -p 127.0.0.1::5432 postgres:16 >/dev/null
+created=true
+for _ in {1..60}; do
+  if docker exec "$name" pg_isready -U buzz_test -d bz_foundation_test >/dev/null 2>&1; then break; fi
+  sleep 1
+done
+docker exec "$name" pg_isready -U buzz_test -d bz_foundation_test
+address=$(docker port "$name" 5432/tcp)
+case "$address" in 127.0.0.1:*) ;; *) echo 'Unexpected database port binding' >&2; exit 2;; esac
+export TEST_DATABASE_URL="postgresql://buzz_test:${password}@${address}/bz_foundation_test"
+printf 'candidate=%s\n' "$(git rev-parse HEAD)"
+docker image inspect postgres:16 --format '{{.Id}} {{json .RepoDigests}}'
+cargo test --locked -p llull-buzz-provider --test postgres -- --ignored --test-threads=1
+# A real server restart, not a mock repository re-instantiation. Compare durable
+# provider records without printing authentication evidence or synthetic keys.
+snapshot() {
+  docker exec "$name" psql -XAt -U buzz_test -d bz_foundation_test -c "
+    SELECT jsonb_build_object(
+      'roots',(SELECT jsonb_agg(to_jsonb(r) ORDER BY consumer_id,root_task_id) FROM task_roots r),
+      'attempts',(SELECT jsonb_agg(to_jsonb(a) ORDER BY attempt_id) FROM attempts a),
+      'publications',(SELECT jsonb_agg(to_jsonb(p) ORDER BY publication_id) FROM publications p),
+      'bindings',(SELECT jsonb_agg(to_jsonb(e) ORDER BY enrollment_id) FROM enrollments e),
+      'epoch',(SELECT recovery_epoch FROM provider_control WHERE singleton=1),
+      'evidence_count',(SELECT count(*) FROM admission_evidence));" | sha256sum | cut -d ' ' -f 1
+}
+before=$(snapshot)
+docker restart "$name" >/dev/null
+for _ in {1..60}; do
+  if docker exec "$name" pg_isready -U buzz_test -d bz_foundation_test >/dev/null 2>&1; then break; fi
+  sleep 1
+done
+after=$(snapshot)
+test "$before" = "$after" || { echo 'Durable records changed across PostgreSQL restart' >&2; exit 1; }
+printf 'PostgreSQL restart preserved roots, reservations/effects, bindings, publication and recovery epoch: %s\n' "$after"
