@@ -1,1 +1,229 @@
-{"profile":"bz-restricted-2026-09/v1","contract":"llull-buzz integration v0.2","components_path":"docs/architecture/components/REGISTRY.yaml","contract_path":"docs/architecture/contracts/PROVIDED-REQUIRED.md","assurance_path":"docs/architecture/security/ASSURANCE.md","uat_path":"docs/acceptance/UAT-CATALOG.md","expected_capabilities":["BZ-C01","BZ-C02","BZ-C03","BZ-C04","BZ-C05","BZ-C06","BZ-C07","BZ-C08"],"expected_commitments":["BZ-CMT01","BZ-CMT02","BZ-CMT03","BZ-CMT04","BZ-CMT05","BZ-CMT06","BZ-CMT07","BZ-CMT08","BZ-CMT09","BZ-CMT10","BZ-CMT11","BZ-CMT12","BZ-CMT13","BZ-CMT14"],"capabilities":[{"id":"BZ-C01","mechanism":"Typed profile API and published schema/source/limit revisions","component_ids":["owned.contract-ports","upstream.buzz-sdk","slot.tool-sdk","lib.serde-jcs","lib.axum"],"technical_profiles":["BZ-PF01","BZ-PF07"],"human_cases":["BZ-UAT02"]},{"id":"BZ-C02","mechanism":"Independent registration, fixed intended key proof and bounded epoch revocation","component_ids":["owned.identity-binding","upstream.buzz-auth","lib.jsonwebtoken","service.presence"],"technical_profiles":["BZ-PF01","BZ-PF05"],"human_cases":["BZ-UAT02"]},{"id":"BZ-C03","mechanism":"Verified native event intake and durable source/consumer receipt separation","component_ids":["owned.delivery-ledger","owned.publisher","slot.persistence","lib.sqlx"],"technical_profiles":["BZ-PF01","BZ-PF04","BZ-PF06"],"human_cases":["BZ-UAT03"]},{"id":"BZ-C04","mechanism":"Trusted ACP wrapper, restricted agent, closed typed tool/model gateways and root reservations","component_ids":["upstream.buzz-acp","upstream.buzz-agent","owned.launch-protocol","owned.tool-gateway","owned.task-supervisor","slot.model-provider","slot.runtime-image"],"technical_profiles":["BZ-PF01","BZ-PF02","BZ-PF04","BZ-PF05"],"human_cases":["BZ-UAT01","BZ-UAT05"]},{"id":"BZ-C05","mechanism":"Generation-fenced stop/reconciliation without replenishing root grant or unknown attempts","component_ids":["owned.task-supervisor","owned.delivery-ledger"],"technical_profiles":["BZ-PF04","BZ-PF05"],"human_cases":["BZ-UAT05"]},{"id":"BZ-C06","mechanism":"Immutable audience release and exact native event-ID dispatch on every output path","component_ids":["owned.publisher","owned.delivery-ledger"],"technical_profiles":["BZ-PF01","BZ-PF03","BZ-PF04"],"human_cases":["BZ-UAT01","BZ-UAT04"]},{"id":"BZ-C07","mechanism":"Private-origin native media gateway and digest-specific current release","component_ids":["owned.publisher","service.media"],"technical_profiles":["BZ-PF01","BZ-PF06"],"human_cases":["BZ-UAT03","BZ-UAT04"]},{"id":"BZ-C08","mechanism":"Transaction-serialized scoped observations, authenticated cursor, contiguous durable ACK and explicit gaps","component_ids":["owned.delivery-ledger","slot.persistence","lib.sqlx"],"technical_profiles":["BZ-PF01","BZ-PF04","BZ-PF07"],"human_cases":["BZ-UAT05"]}],"required_files":["docs/bootstrap/INITIAL-PROFILE.md","docs/architecture/contracts/WIRE-PROFILE.md","docs/architecture/contracts/schemas/buzz-wire-v1.schema.json","docs/architecture/contracts/examples/buzz-wire-v1.json","docs/bootstrap/VALIDATION.md"],"schema_examples":[{"schema":"docs/architecture/contracts/schemas/buzz-wire-v1.schema.json","examples":"docs/architecture/contracts/examples/buzz-wire-v1.json","instance_field":"request"}],"source_bindings":[{"repository":"block/buzz","commit":"01b6174a1cbad249e93f31df97d4b2ed1d0e8638"},{"repository":"modelcontextprotocol/rust-sdk","commit":"53c86d5d9d2f323b5f8044cdf2e575404aff6a6b"},{"repository":"Keats/jsonwebtoken","commit":"69a8fbf40a83c3d87301e75148e02b2090e4feed"}],"owner_decisions_pending":[{"decision":"Original llull-buzz license/distribution","impact":"Distribution-ready bootstrap cannot be declared; no original-work license is inferred","recommendation":"Apache-2.0","alternative":"Proprietary commercial terms","status":"Asked; no attributable owner answer"}],"runtime_tests":"not-run","human_uat":"not-run","reviewer_verdict":"not-supplied-by-execution","contract_file":"docs/architecture/contracts/PROVIDED-REQUIRED.md","assurance_file":"docs/architecture/security/ASSURANCE.md","uat_file":"docs/acceptance/UAT-CATALOG.md","adr_files":["docs/architecture/decisions/adr_buzz-001_reusable-provider-boundary.md","docs/architecture/decisions/adr_buzz-002_restricted-execution-and-publication.md","docs/architecture/decisions/adr_buzz-003_recovery-and-assurance.md"]}
+{
+  "profile": "bz-restricted-2026-09/v1",
+  "contract": "llull-buzz integration v0.2",
+  "components_path": "docs/architecture/components/REGISTRY.yaml",
+  "contract_path": "docs/architecture/contracts/PROVIDED-REQUIRED.md",
+  "assurance_path": "docs/architecture/security/ASSURANCE.md",
+  "uat_path": "docs/acceptance/UAT-CATALOG.md",
+  "expected_capabilities": [
+    "BZ-C01",
+    "BZ-C02",
+    "BZ-C03",
+    "BZ-C04",
+    "BZ-C05",
+    "BZ-C06",
+    "BZ-C07",
+    "BZ-C08"
+  ],
+  "expected_commitments": [
+    "BZ-CMT01",
+    "BZ-CMT02",
+    "BZ-CMT03",
+    "BZ-CMT04",
+    "BZ-CMT05",
+    "BZ-CMT06",
+    "BZ-CMT07",
+    "BZ-CMT08",
+    "BZ-CMT09",
+    "BZ-CMT10",
+    "BZ-CMT11",
+    "BZ-CMT12",
+    "BZ-CMT13",
+    "BZ-CMT14"
+  ],
+  "capabilities": [
+    {
+      "id": "BZ-C01",
+      "mechanism": "Typed profile API and published schema/source/limit revisions",
+      "component_ids": [
+        "owned.contract-ports",
+        "upstream.buzz-sdk",
+        "slot.tool-sdk",
+        "lib.serde-jcs",
+        "lib.axum"
+      ],
+      "technical_profiles": [
+        "BZ-PF01",
+        "BZ-PF07"
+      ],
+      "human_cases": [
+        "BZ-UAT02"
+      ]
+    },
+    {
+      "id": "BZ-C02",
+      "mechanism": "Independent registration, fixed intended key proof and bounded epoch revocation",
+      "component_ids": [
+        "owned.identity-binding",
+        "upstream.buzz-auth",
+        "lib.jsonwebtoken",
+        "service.presence"
+      ],
+      "technical_profiles": [
+        "BZ-PF01",
+        "BZ-PF05"
+      ],
+      "human_cases": [
+        "BZ-UAT02"
+      ]
+    },
+    {
+      "id": "BZ-C03",
+      "mechanism": "Verified native event intake and durable source/consumer receipt separation",
+      "component_ids": [
+        "owned.delivery-ledger",
+        "owned.publisher",
+        "slot.persistence",
+        "lib.sqlx"
+      ],
+      "technical_profiles": [
+        "BZ-PF01",
+        "BZ-PF04",
+        "BZ-PF06"
+      ],
+      "human_cases": [
+        "BZ-UAT03"
+      ]
+    },
+    {
+      "id": "BZ-C04",
+      "mechanism": "Trusted ACP wrapper, restricted agent, closed typed tool/model gateways and root reservations",
+      "component_ids": [
+        "upstream.buzz-acp",
+        "upstream.buzz-agent",
+        "owned.launch-protocol",
+        "owned.tool-gateway",
+        "owned.task-supervisor",
+        "slot.model-provider",
+        "slot.runtime-image"
+      ],
+      "technical_profiles": [
+        "BZ-PF01",
+        "BZ-PF02",
+        "BZ-PF04",
+        "BZ-PF05"
+      ],
+      "human_cases": [
+        "BZ-UAT01",
+        "BZ-UAT05"
+      ]
+    },
+    {
+      "id": "BZ-C05",
+      "mechanism": "Generation-fenced stop/reconciliation without replenishing root grant or unknown attempts",
+      "component_ids": [
+        "owned.task-supervisor",
+        "owned.delivery-ledger"
+      ],
+      "technical_profiles": [
+        "BZ-PF04",
+        "BZ-PF05"
+      ],
+      "human_cases": [
+        "BZ-UAT05"
+      ]
+    },
+    {
+      "id": "BZ-C06",
+      "mechanism": "Immutable audience release and exact native event-ID dispatch on every output path",
+      "component_ids": [
+        "owned.publisher",
+        "owned.delivery-ledger"
+      ],
+      "technical_profiles": [
+        "BZ-PF01",
+        "BZ-PF03",
+        "BZ-PF04"
+      ],
+      "human_cases": [
+        "BZ-UAT01",
+        "BZ-UAT04"
+      ]
+    },
+    {
+      "id": "BZ-C07",
+      "mechanism": "Private-origin native media gateway and digest-specific current release",
+      "component_ids": [
+        "owned.publisher",
+        "service.media"
+      ],
+      "technical_profiles": [
+        "BZ-PF01",
+        "BZ-PF06"
+      ],
+      "human_cases": [
+        "BZ-UAT03",
+        "BZ-UAT04"
+      ]
+    },
+    {
+      "id": "BZ-C08",
+      "mechanism": "Transaction-serialized scoped observations, authenticated cursor, contiguous durable ACK and explicit gaps",
+      "component_ids": [
+        "owned.delivery-ledger",
+        "slot.persistence",
+        "lib.sqlx"
+      ],
+      "technical_profiles": [
+        "BZ-PF01",
+        "BZ-PF04",
+        "BZ-PF07"
+      ],
+      "human_cases": [
+        "BZ-UAT05"
+      ]
+    }
+  ],
+  "required_files": [
+    "docs/bootstrap/INITIAL-PROFILE.md",
+    "docs/architecture/contracts/WIRE-PROFILE.md",
+    "docs/architecture/contracts/schemas/buzz-wire-v1.schema.json",
+    "docs/architecture/contracts/examples/buzz-wire-v1.json",
+    "docs/bootstrap/VALIDATION.md",
+    "LICENSE",
+    "docs/bootstrap/LICENSING.md"
+  ],
+  "schema_examples": [
+    {
+      "schema": "docs/architecture/contracts/schemas/buzz-wire-v1.schema.json",
+      "examples": "docs/architecture/contracts/examples/buzz-wire-v1.json",
+      "instance_field": "request"
+    }
+  ],
+  "source_bindings": [
+    {
+      "repository": "block/buzz",
+      "commit": "01b6174a1cbad249e93f31df97d4b2ed1d0e8638"
+    },
+    {
+      "repository": "modelcontextprotocol/rust-sdk",
+      "commit": "53c86d5d9d2f323b5f8044cdf2e575404aff6a6b"
+    },
+    {
+      "repository": "Keats/jsonwebtoken",
+      "commit": "69a8fbf40a83c3d87301e75148e02b2090e4feed"
+    }
+  ],
+  "owner_decisions_pending": [],
+  "runtime_tests": "not-run",
+  "human_uat": "not-run",
+  "reviewer_verdict": "not-supplied-by-execution",
+  "contract_file": "docs/architecture/contracts/PROVIDED-REQUIRED.md",
+  "assurance_file": "docs/architecture/security/ASSURANCE.md",
+  "uat_file": "docs/acceptance/UAT-CATALOG.md",
+  "adr_files": [
+    "docs/architecture/decisions/adr_buzz-001_reusable-provider-boundary.md",
+    "docs/architecture/decisions/adr_buzz-002_restricted-execution-and-publication.md",
+    "docs/architecture/decisions/adr_buzz-003_recovery-and-assurance.md"
+  ],
+  "owner_decisions": [
+    {
+      "decision": "Original llull-buzz license/distribution",
+      "selection": "Apache-2.0",
+      "owner": "Josue Guevara",
+      "date": "2026-09-21",
+      "scope": "original code and documentation",
+      "source": "https://github.com/jjjjguevara/llull-buzz/pull/1#issuecomment-5756846038"
+    }
+  ]
+}

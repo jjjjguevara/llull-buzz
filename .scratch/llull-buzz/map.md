@@ -25,14 +25,17 @@ of resource authority, process and credential boundaries, PostgreSQL persistence
 budgets, model admission, publication control, recovery and persistent-container topology.
 The [register](../../docs/architecture/components/REGISTRY.yaml) records the choices and
 alternatives; [wire definitions](../../docs/architecture/contracts/WIRE-PROFILE.md) bind encodings.
-These selections and the revised ADRs are proposed, not reviewer-accepted or implemented.
+PCR1 accepted the technical scope at `d45c1793b859815127bf9986e084500e2ad9b115`.
+The ADR lifecycle remains proposed; no runtime or human conformance is implied.
 
-## Unresolved owner decision
+## Original-work license answered
 
-Original llull-buzz distribution/license remains unanswered after inspection and an owner
-question. Apache-2.0 is recommended; proprietary commercial terms are the alternative.
-Do not infer an answer or call this distribution-ready. Other architecture is not delegated
-back to implementation while this decision is pending.
+The owner selected Apache-2.0 for original code/documentation on 2026-09-21.
+[The existing realization ticket](issues/02-realization-plan.md) records the answer;
+[LICENSING](../../docs/bootstrap/LICENSING.md) and [LICENSE](../../LICENSE) apply it.
+No owner license question remains. Execution is submitted for the focused delta review,
+not reopened for Wayfinder or delegated back to implementation. Reviewer findings and
+PR merge status remain under the designated reviewer's authority.
 
 ## Remaining implementation evidence
 

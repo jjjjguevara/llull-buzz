@@ -53,7 +53,8 @@ Later implementation supplies the selected adapters, schemas, migrations, builds
 This session permits only documents, definitions/examples, source inspection and proportional
 document checks; no product dependencies, runtime execution, operational effects or deployments.
 
-The original project license/distribution decision remains explicitly open. Its absence prevents
-claiming complete distribution-ready bootstrap. The designated reviewer alone decides whether
+The original project license/distribution decision is answered by the owner's 2026-09-21
+[Apache-2.0 selection](../bootstrap/LICENSING.md). Its previous absence prevented
+claiming complete distribution-ready bootstrap; the current license delta is submitted for focused review. The designated reviewer alone decides whether
 PC-BZ-01 is corrected and whether this draft PR is ready; the execution author does not approve,
 resolve findings, certify runtime behavior or merge.

@@ -95,7 +95,7 @@ mechanism is left for a future language, storage or protocol decision.
 
 The initial profile bears the cost of Rust adapters and native-protocol compatibility tests.
 No product capability ceiling or permission to omit useful authorized completion is accepted.
-Original project licensing is still an explicit unanswered owner decision, not an open-source grant.
+Original project licensing is Apache-2.0 by the [explicit owner answer](../../bootstrap/LICENSING.md); third-party terms remain separate.
 
 ## Materially Relevant Benchmark Envelope
 
@@ -107,7 +107,7 @@ Operating limits are fixed in the initial profile; actual latency/capacity measu
 ## Deferred Capability + Debt Register
 
 No capability deferral. The named adapters, migrations, installed inventories and actual code/test
-bindings are implementation work. The license decision prevents distribution-ready completion and
+bindings are implementation work. The recorded Apache-2.0 decision answers the original distribution question and
 is openly recorded in the existing map; it does not delegate the engineering profile to implementation.
 
 ## Consequences

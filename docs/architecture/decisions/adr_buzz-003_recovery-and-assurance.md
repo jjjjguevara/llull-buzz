@@ -128,8 +128,8 @@ are admission estimates with explicit excess handling, not a promise about a ven
 ## Deferred Capability + Debt Register
 
 No material durability or recovery choice is unselected. Implementation must supply the tables,
-workers, migrations, backup/restore and real fault/usage accounting tests. Original project license
-remains an explicit owner decision and is not concealed by a document-check result.
+workers, migrations, backup/restore and real fault/usage accounting tests. Original licensing is
+[Apache-2.0 by owner decision](../../bootstrap/LICENSING.md), not inferred from a document-check result.
 
 ## Consequences
 

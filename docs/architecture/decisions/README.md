@@ -15,5 +15,5 @@ making the selected vendor, language, model or hosting arrangement universal. St
 BZ-CMT, BZ capability, proof and UAT identities remain intact. Source pins are not tested builds.
 
 Publication does not accept an ADR, lower a capability, authorize implementation or create a
-new reviewer. The original project license remains an unanswered owner decision. Acceptance
+new reviewer. The original license choice is [owner-approved Apache-2.0](../../bootstrap/LICENSING.md). Acceptance
 references/dates remain null until the designated review and owner authority actually supply them.

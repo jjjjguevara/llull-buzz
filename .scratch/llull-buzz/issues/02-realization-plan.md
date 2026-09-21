@@ -46,3 +46,17 @@ The selected realization, wire/schema examples, component/ADR bindings and techn
 applicability are now prepared for the originating review. Revision-bound author evidence is
 published in the PR submission. The license/distribution owner answer is still absent; this
 ticket remains claimed, not resolved, and no reviewer finding is closed by the execution agent.
+
+## 2026-09-21 owner answer and execution disposition
+
+Owner: Josué Guevara. Answer: use Apache-2.0 for original llull-buzz code and documentation
+for this stage; it fits the reusable provider model. [Attributable PR record](https://github.com/jjjjguevara/llull-buzz/pull/1#issuecomment-5756846038).
+The unanswered statements above describe earlier entries, not current status.
+
+[LICENSE](../../../LICENSE), [scope/notice](../../../docs/bootstrap/LICENSING.md), first-party
+component defaults and current status references now implement that answer. PCR1's technical
+acceptance of `d45c1793b859815127bf9986e084500e2ad9b115` is retained; no technical reopening.
+Execution disposition: license choice answered and documentary delta prepared for revision-bound
+validation/publication. This ticket stays claimed until the focused submission is read back;
+that workflow state is not a pending owner decision. No reviewer finding, ADR lifecycle or merge
+is resolved by this execution entry.

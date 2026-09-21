@@ -3,8 +3,8 @@
 Profile: `bz-restricted-2026-09/v1`. Contract realization: `llull-buzz integration v0.2`.
 Status: proposed engineering selection; no runtime, security, performance or human acceptance is claimed.
 This profile realizes the existing BZ capabilities. It is not a mandatory language, identity vendor,
-model or hosting arrangement for every consumer. Original project distribution rights remain an
-explicit owner decision; upstream's license does not license this project's original work.
+model or hosting arrangement for every consumer. Original code and documentation use Apache-2.0
+under the [explicit owner decision](LICENSING.md); upstream licenses remain independent.
 
 ## Selected composition and supported seams
 
@@ -300,11 +300,11 @@ and monthly/release restore exercises are later technical evidence, not complete
 The initial single provider topology has a finite failure domain; these targets are not an HA/SLA
 certification or permission to incur cloud/model cost now.
 
-The original llull-buzz license/distribution decision remains **unanswered** after record review and
-an explicit owner question. Apache-2.0 is recommended for original reusable code/documents;
-proprietary commercial distribution is the alternative. Do not publish a fabricated license or
-infer an open-source grant from repository visibility. This blocks declaring distribution-ready
-bootstrap completion, not authoring the neutral contracts or inspecting Apache-licensed upstream.
+The owner selected **Apache-2.0 for original code and documentation** on 2026-09-21.
+[LICENSING](LICENSING.md) records the attributable answer and [LICENSE](../../LICENSE)
+contains its terms. The prior proprietary alternative and unanswered state remain historical;
+no technical selection changes. Third-party and hosted-service rights remain separate. This
+answers the distribution choice without claiming runtime conformance or an author review verdict.
 
 ## Acceptance and implementation boundary
 

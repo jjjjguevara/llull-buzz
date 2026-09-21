@@ -129,7 +129,7 @@ Limits are normative design defaults; no process, cryptographic or performance t
 
 No unselected material admission/publication mechanism remains. Implementation must prove complete
 gateway mediation, key/claim verification and supported native-client coverage before this profile
-is enabled. Original project distribution rights are still an explicit owner decision, not accepted.
+is enabled. Original project rights use the [owner-approved Apache-2.0 scope](../../bootstrap/LICENSING.md); this does not certify the runtime.
 
 ## Consequences
 

@@ -12,7 +12,8 @@ The initial `buzz-acp` plus `buzz-agent` foundation is preserved. Rust, SDKs, mo
 identity/release/budget mechanisms and topology are now proposed engineering selections recorded
 in the [initial profile](../bootstrap/INITIAL-PROFILE.md) and
 [register](../architecture/components/REGISTRY.yaml). They are not universal consumer requirements.
-The original project license remains an unanswered owner decision; no rights are inferred.
+The original-project choice is now Apache-2.0 by the owner's 2026-09-21 instruction;
+[LICENSING](../bootstrap/LICENSING.md) records that answer. No third-party rights are inferred.
 
 ## Pinned primary source
 
@@ -63,4 +64,4 @@ context, alternatives, commitments, consequences, sources, applicability and imp
 
 No private consumer source, operational data, credentials or internal-only references are published.
 No upstream runtime code is copied by these documents. Access to a repository is not permission to
-disclose it, and public visibility is not the missing original-project license decision.
+disclose it. The explicit original-project license decision does not confer third-party or consumer-data rights.

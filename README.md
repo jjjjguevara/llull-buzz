@@ -41,8 +41,9 @@ Documentation/schema/example consolidation for PC-BZ-01; proposed ADRs remain pr
 Author document checks are not runtime tests, independent review, security certification,
 performance evidence or human UAT. The designated reviewer alone resolves the finding.
 
-The original project license/distribution choice remains unanswered: Apache-2.0 for original
-reusable work is recommended; proprietary commercial distribution is the alternative. No grant
-is inferred from public visibility or upstream's Apache license. This is an explicit remaining
-owner decision and prevents a claim of distribution-ready bootstrap completion. Third-party
-components retain their own licenses. No implementation, deployment or merge is authorized here.
+Original code and documentation are licensed under [Apache-2.0](LICENSE), explicitly
+selected by the owner on 2026-09-21. [The licensing record](docs/bootstrap/LICENSING.md)
+links the attributable answer and defines scope. Third-party components retain their own
+licenses; hosted services and consumer data are not relicensed. The former license question
+is answered. Technical PCR1 acceptance is separate from the focused license-delta check;
+no runtime certification, implementation, deployment or merge is authorized here.
