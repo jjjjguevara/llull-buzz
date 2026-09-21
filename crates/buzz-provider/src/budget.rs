@@ -73,9 +73,11 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 "/integration/foundation/v1/model-reservations",
-                body,
                 Some(&root.manifest.root_task_id),
                 auth::INVOCATION,
             )

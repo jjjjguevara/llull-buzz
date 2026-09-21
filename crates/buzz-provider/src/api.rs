@@ -215,8 +215,10 @@ where
                 .admit_tool::<C>(&worker, &body, credentials(&headers)?)
                 .await?;
             let result = match admission {
-                ToolAdmission::Dispatch(permit) => provider.dispatch(permit, port.as_ref()).await?,
-                ToolAdmission::Existing(record) => record,
+                ToolAdmission::Dispatch(permit) => {
+                    provider.dispatch(*permit, port.as_ref()).await?
+                }
+                ToolAdmission::Existing(record) => *record,
             };
             Ok::<_, ProviderError>(Json(result))
         }

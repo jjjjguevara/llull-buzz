@@ -1,4 +1,4 @@
-use crate::auth::{self, Claims, Headers, Registration, Target};
+use crate::auth::{self, Claims, Registration, SignedRequest, Target};
 use buzz_auth::Nip98ReplayGuard;
 use chrono::{DateTime, Utc};
 use llull_buzz_wire::{digest, Admission, Command, Execution, Fault, Receipt, CONTRACT, PROFILE};
@@ -155,13 +155,13 @@ impl Provider {
     pub(crate) async fn authorize(
         &self,
         tx: &mut Tx,
-        headers: &Headers<'_>,
+        request: &SignedRequest<'_>,
         purpose: &str,
         path: &str,
         method: &str,
-        body: &[u8],
         target: &Target<'_>,
     ) -> Result<(Registration, Claims)> {
+        let headers = request.headers;
         if !path.starts_with('/') || path.contains('?') || path.contains('#') {
             return Err(Fault::Invalid.into());
         }
@@ -181,11 +181,10 @@ impl Provider {
         let now = Self::now(tx).await?;
         let verified = auth::verify(
             &registration,
-            headers,
+            request,
             purpose,
             &format!("{}{path}", self.public_origin),
             method,
-            body,
             target,
             now.timestamp(),
         )?;
@@ -223,9 +222,8 @@ impl Provider {
         &self,
         tx: &mut Tx,
         c: &Command,
-        headers: &Headers<'_>,
+        request: &SignedRequest<'_>,
         path: &str,
-        body: &[u8],
         root: Option<&str>,
         purpose: &str,
     ) -> Result<(Registration, Claims)> {
@@ -233,11 +231,10 @@ impl Provider {
         let fingerprint = c.fingerprint()?;
         self.authorize(
             tx,
-            headers,
+            request,
             purpose,
             path,
             "POST",
-            body,
             &Target {
                 consumer: &c.consumer_id,
                 intent: &c.intent_id,

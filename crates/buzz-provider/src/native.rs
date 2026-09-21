@@ -66,8 +66,7 @@ pub(crate) fn verify_enrollment_proof(
     bot: &str,
     channel: &str,
     expected_content: &str,
-    issued_at: i64,
-    expires_at: i64,
+    validity: std::ops::Range<i64>,
     now: i64,
 ) -> std::result::Result<(), Fault> {
     if proof.pubkey.to_hex() != intended
@@ -75,10 +74,10 @@ pub(crate) fn verify_enrollment_proof(
         || tag(proof, "p")? != bot
         || tag(proof, "h")? != channel
         || proof.content != expected_content
-        || now >= expires_at
-        || (proof.created_at.as_secs() as i64) < issued_at
+        || now >= validity.end
+        || (proof.created_at.as_secs() as i64) < validity.start
         || (proof.created_at.as_secs() as i64) > now + 30
-        || (proof.created_at.as_secs() as i64) >= expires_at
+        || (proof.created_at.as_secs() as i64) >= validity.end
     {
         return Err(Fault::Denied);
     }

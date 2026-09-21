@@ -232,6 +232,11 @@ pub struct Headers<'a> {
     pub authorization: &'a str,
     pub invocation: &'a str,
 }
+/// Keep the authentication evidence paired with the exact received body bytes.
+pub(crate) struct SignedRequest<'a> {
+    pub headers: &'a Headers<'a>,
+    pub body: &'a [u8],
+}
 pub(crate) struct Target<'a> {
     pub consumer: &'a str,
     pub intent: &'a str,
@@ -243,14 +248,14 @@ pub(crate) struct Target<'a> {
 
 pub(crate) fn verify(
     registration: &Registration,
-    headers: &Headers<'_>,
+    request: &SignedRequest<'_>,
     purpose: &str,
     public_url: &str,
     method: &str,
-    body: &[u8],
     target: &Target<'_>,
     now: i64,
 ) -> std::result::Result<Verified, Fault> {
+    let (headers, body) = (request.headers, request.body);
     if headers.authorization.len() > 64_000 || headers.invocation.len() > 64_000 {
         return Err(Fault::TooLarge);
     }

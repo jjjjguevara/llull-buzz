@@ -125,9 +125,11 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 "/integration/v1/tasks",
-                body,
                 Some(&manifest.root_task_id),
                 auth::INVOCATION,
             )
@@ -271,9 +273,11 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 &path,
-                body,
                 Some(&record.manifest.root_task_id),
                 auth::INVOCATION,
             )
@@ -372,11 +376,13 @@ impl Provider {
         let (registration, claims) = self
             .authorize(
                 &mut tx,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body: b"",
+                },
                 auth::INVOCATION,
                 &format!("/integration/v1/tasks/{}", crate::native::segment(task_id)?),
                 "GET",
-                b"",
                 &Target {
                     consumer,
                     intent: task_id,
@@ -430,9 +436,11 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 &path,
-                body,
                 Some(&record.manifest.root_task_id),
                 auth::INVOCATION,
             )
@@ -491,12 +499,14 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 &format!(
                     "/integration/foundation/v1/tasks/{}/complete",
                     crate::native::segment(task_id)?
                 ),
-                body,
                 Some(&record.manifest.root_task_id),
                 auth::INVOCATION,
             )

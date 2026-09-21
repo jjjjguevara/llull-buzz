@@ -37,8 +37,8 @@ pub struct DispatchPermit<C: ConsumerCommand> {
     worker_id: String,
 }
 pub enum ToolAdmission<C: ConsumerCommand> {
-    Dispatch(DispatchPermit<C>),
-    Existing(AttemptView),
+    Dispatch(Box<DispatchPermit<C>>),
+    Existing(Box<AttemptView>),
 }
 impl<C: ConsumerCommand> ToolAdmission<C> {
     pub fn reference(&self) -> &AttemptView {
@@ -99,14 +99,16 @@ impl Provider {
         let (registration, claims) = self
             .authorize(
                 &mut tx,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 auth::INVOCATION,
                 &format!(
                     "/integration/foundation/v1/tool-admissions/{}",
                     C::SCHEMA_ID
                 ),
                 "POST",
-                body,
                 &Target {
                     consumer: &call.consumer_id,
                     intent: &call.intent_id,
@@ -160,7 +162,7 @@ impl Provider {
                 return Err(Fault::Conflict.into());
             }
             tx.commit().await?;
-            return Ok(ToolAdmission::Existing(existing));
+            return Ok(ToolAdmission::Existing(Box::new(existing)));
         }
         // An effect slot excludes caller-selected retry IDs AND resource revisions.
         // While uncertain, new content, a fresh root, or a new revision cannot
@@ -205,14 +207,14 @@ impl Provider {
         claims.fresh(final_now.timestamp())?;
         state.worker(worker_id, call.generation, &root.manifest, final_now)?;
         tx.commit().await?;
-        Ok(ToolAdmission::Dispatch(DispatchPermit {
+        Ok(ToolAdmission::Dispatch(Box::new(DispatchPermit {
             attempt,
             command: call,
             body: canonical_body,
             claims,
             invocation: headers.invocation.into(),
             worker_id: worker_id.into(),
-        }))
+        })))
     }
     pub async fn dispatch<C: ConsumerCommand, P: ConsumerPort<C>>(
         &self,
@@ -387,12 +389,14 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 &format!(
                     "/integration/foundation/v1/effects/{attempt_id}/reconcile/{}",
                     C::SCHEMA_ID
                 ),
-                body,
                 Some(&attempt.root_task_id),
                 auth::INVOCATION,
             )
@@ -458,9 +462,11 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 "/integration/v1/publications",
-                body,
                 None,
                 auth::PUBLICATION,
             )

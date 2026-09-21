@@ -578,7 +578,7 @@ impl ConsumerPort<SetLabel> for Consumer {
 }
 fn permit(admission: ToolAdmission<SetLabel>) -> DispatchPermit<SetLabel> {
     match admission {
-        ToolAdmission::Dispatch(p) => p,
+        ToolAdmission::Dispatch(p) => *p,
         _ => panic!("expected one new durable reservation"),
     }
 }

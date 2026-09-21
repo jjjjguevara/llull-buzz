@@ -54,9 +54,11 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 "/integration/v1/enrollments",
-                body,
                 None,
                 auth::INVOCATION,
             )
@@ -138,12 +140,14 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 &format!(
                     "/integration/v1/enrollments/{}/proof",
                     crate::native::segment(enrollment_id)?
                 ),
-                body,
                 None,
                 auth::INVOCATION,
             )
@@ -197,8 +201,8 @@ impl Provider {
                 enrollment_id,
                 &challenge,
             ),
-            row.try_get::<DateTime<Utc>, _>("issued_at")?.timestamp(),
-            row.try_get::<DateTime<Utc>, _>("expires_at")?.timestamp(),
+            row.try_get::<DateTime<Utc>, _>("issued_at")?.timestamp()
+                ..row.try_get::<DateTime<Utc>, _>("expires_at")?.timestamp(),
             now.timestamp(),
         )?;
         let previous: Vec<Binding> = sqlx::query_as("SELECT * FROM enrollments WHERE consumer_id=$1 AND module_id=$2 AND (issuer=$3 AND subject=$4 OR native_key=$5) FOR UPDATE")
@@ -268,9 +272,11 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 "/integration/v1/access-changes",
-                body,
                 None,
                 auth::INVOCATION,
             )
@@ -332,9 +338,11 @@ impl Provider {
             .authorize_command(
                 &mut tx,
                 &c,
-                &headers,
+                &auth::SignedRequest {
+                    headers: &headers,
+                    body,
+                },
                 "/integration/foundation/v1/key-retirements",
-                body,
                 None,
                 auth::INVOCATION,
             )
