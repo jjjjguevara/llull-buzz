@@ -51,3 +51,17 @@ Controlling records: [tracker](../TRACKER.md), [map](../map.md),
 [contracts](../../../docs/architecture/contracts/PROVIDED-REQUIRED.md),
 [assurance](../../../docs/architecture/security/ASSURANCE.md),
 [acceptance](../../../docs/acceptance/UAT-CATALOG.md).
+
+2026-09-21 — Remote implementation driver: source for items 03.1–03.4 and the
+03.5 local-review setup is published in [draft PR #2](https://github.com/jjjjguevara/llull-buzz/pull/2)
+through `d409c11446746e2aa7993cb84d118b63a61050bb`. The final handoff candidate is
+recorded in that PR. Read [scope](../../../docs/implementation/SLICE-1.md),
+[local execution](../../../docs/implementation/LOCAL-REVIEW.md), and
+[actual evidence](../../../docs/implementation/EVIDENCE.md).
+
+Shell/TOML/JSON/Python syntax, six historical schema fixtures and both unchanged
+checker self-tests passed. Rust compilation, red/green TDD, PostgreSQL concurrency/
+restart, native executable compatibility and process/network probes remain unexecuted.
+Cargo.lock resolution and image/dependency inventories are outstanding. No suitable
+worker was established or provisioned. Items remain claimed for local review; no whole
+AC/proof profile, human UAT, publication delivery or restricted activation is accepted.
