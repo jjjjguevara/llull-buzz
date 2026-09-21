@@ -8,13 +8,18 @@ use std::collections::BTreeSet;
 #[serde(deny_unknown_fields)]
 pub struct Resource {
     pub namespace: String,
-    #[serde(rename = "ref")] pub reference: String,
+    #[serde(rename = "ref")]
+    pub reference: String,
     pub revision: String,
 }
 impl Resource {
     pub fn validate(&self, consumer: &str) -> Result<()> {
-        id(&self.namespace)?; id(&self.reference)?; id(&self.revision)?;
-        if self.namespace != consumer { return Err(Fault::Denied); }
+        id(&self.namespace)?;
+        id(&self.reference)?;
+        id(&self.revision)?;
+        if self.namespace != consumer {
+            return Err(Fault::Denied);
+        }
         Ok(())
     }
 }
@@ -34,16 +39,30 @@ pub struct Command {
 }
 impl Command {
     pub fn validate(&self) -> Result<()> {
-        if self.contract != CONTRACT || self.profile != PROFILE { return Err(Fault::Unavailable); }
-        for s in [&self.consumer_id, &self.intent_id, &self.operation, &self.correlation_id, &self.causation_id] { id(s)?; }
+        if self.contract != CONTRACT || self.profile != PROFILE {
+            return Err(Fault::Unavailable);
+        }
+        for s in [
+            &self.consumer_id,
+            &self.intent_id,
+            &self.operation,
+            &self.correlation_id,
+            &self.causation_id,
+        ] {
+            id(s)?;
+        }
         self.resource.validate(&self.consumer_id)?;
-        if !self.payload.is_object() { return Err(Fault::Invalid); }
+        if !self.payload.is_object() {
+            return Err(Fault::Invalid);
+        }
         Ok(())
     }
     pub fn payload<T: DeserializeOwned>(&self) -> Result<T> {
         serde_json::from_value(self.payload.clone()).map_err(|_| Fault::Invalid)
     }
-    pub fn fingerprint(&self) -> Result<String> { digest(self) }
+    pub fn fingerprint(&self) -> Result<String> {
+        digest(self)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -58,19 +77,37 @@ pub struct Enroll {
 }
 impl Enroll {
     pub fn validate(&self) -> Result<()> {
-        for s in [&self.issuer, &self.subject, &self.community_id, &self.module_id, &self.browser_transaction_id] { id(s)?; }
+        for s in [
+            &self.issuer,
+            &self.subject,
+            &self.community_id,
+            &self.module_id,
+            &self.browser_transaction_id,
+        ] {
+            id(s)?;
+        }
         hash(&self.intended_public_key)
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ProveKey { pub enrollment_id: String, pub native_event: Value }
+pub struct ProveKey {
+    pub enrollment_id: String,
+    pub native_event: Value,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ChangeAccess { pub enrollment_id: String, pub expected_revision: String, pub change: AccessChange }
+pub struct ChangeAccess {
+    pub enrollment_id: String,
+    pub expected_revision: String,
+    pub change: AccessChange,
+}
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub enum AccessChange { Revoke, Restore }
+pub enum AccessChange {
+    Revoke,
+    Restore,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -82,9 +119,15 @@ pub struct Tool {
 }
 impl Tool {
     pub fn validate(&self, consumer: &str) -> Result<()> {
-        id(&self.schema_id)?; id(&self.action)?; hash(&self.schema_sha256)?;
-        if self.resources.is_empty() || self.resources.len() > 32 { return Err(Fault::Invalid); }
-        for r in &self.resources { r.validate(consumer)?; }
+        id(&self.schema_id)?;
+        id(&self.action)?;
+        hash(&self.schema_sha256)?;
+        if self.resources.is_empty() || self.resources.len() > 32 {
+            return Err(Fault::Invalid);
+        }
+        for r in &self.resources {
+            r.validate(consumer)?;
+        }
         Ok(())
     }
 }
@@ -103,37 +146,74 @@ pub struct TaskManifest {
 }
 impl TaskManifest {
     pub fn validate(&self, consumer: &str, now: DateTime<Utc>) -> Result<()> {
-        for s in [&self.task_id, &self.root_task_id, &self.task_schema_id, &self.context_domain] { id(s)?; }
-        if self.model_profile != "sonnet-5-adaptive-bounded-v1" { return Err(Fault::Unavailable); }
+        for s in [
+            &self.task_id,
+            &self.root_task_id,
+            &self.task_schema_id,
+            &self.context_domain,
+        ] {
+            id(s)?;
+        }
+        if self.model_profile != "sonnet-5-adaptive-bounded-v1" {
+            return Err(Fault::Unavailable);
+        }
         let remaining = self.expires_at.signed_duration_since(now);
-        if remaining <= chrono::Duration::zero() || remaining > chrono::Duration::seconds(600) { return Err(Fault::Exhausted); }
-        if self.tools.is_empty() || self.tools.len() > 32 || self.verdict_refs.len() > 32 { return Err(Fault::Invalid); }
+        if remaining <= chrono::Duration::zero() || remaining > chrono::Duration::seconds(600) {
+            return Err(Fault::Exhausted);
+        }
+        if self.tools.is_empty() || self.tools.len() > 32 || self.verdict_refs.len() > 32 {
+            return Err(Fault::Invalid);
+        }
         let mut names = BTreeSet::new();
         for tool in &self.tools {
             tool.validate(consumer)?;
-            if !names.insert((&tool.schema_id, &tool.action)) { return Err(Fault::Invalid); }
+            if !names.insert((&tool.schema_id, &tool.action)) {
+                return Err(Fault::Invalid);
+            }
         }
         let mut verdicts = BTreeSet::new();
-        for v in &self.verdict_refs { id(v)?; if !verdicts.insert(v) { return Err(Fault::Invalid); } }
+        for v in &self.verdict_refs {
+            id(v)?;
+            if !verdicts.insert(v) {
+                return Err(Fault::Invalid);
+            }
+        }
         self.budgets.validate()
     }
     pub fn check_child(&self, root: &Self) -> Result<()> {
-        if self.task_id == root.task_id || self.root_task_id != root.root_task_id
-            || self.expires_at != root.expires_at || self.context_domain != root.context_domain
-            || self.model_profile != root.model_profile || self.budgets != root.budgets {
+        if self.task_id == root.task_id
+            || self.root_task_id != root.root_task_id
+            || self.expires_at != root.expires_at
+            || self.context_domain != root.context_domain
+            || self.model_profile != root.model_profile
+            || self.budgets != root.budgets
+        {
             return Err(Fault::Conflict);
         }
         for tool in &self.tools {
-            let parent = root.tools.iter().find(|t| t.schema_id == tool.schema_id && t.action == tool.action
-                && t.schema_sha256 == tool.schema_sha256).ok_or(Fault::Denied)?;
-            if tool.resources.iter().any(|r| !parent.resources.contains(r)) { return Err(Fault::Denied); }
+            let parent = root
+                .tools
+                .iter()
+                .find(|t| {
+                    t.schema_id == tool.schema_id
+                        && t.action == tool.action
+                        && t.schema_sha256 == tool.schema_sha256
+                })
+                .ok_or(Fault::Denied)?;
+            if tool.resources.iter().any(|r| !parent.resources.contains(r)) {
+                return Err(Fault::Denied);
+            }
         }
         Ok(())
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct TaskControl { pub task_id: String, pub expected_generation: u64, pub reason: String }
+pub struct TaskControl {
+    pub task_id: String,
+    pub expected_generation: u64,
+    pub reason: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -146,7 +226,10 @@ pub struct Evidence {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub enum CopyMode { SummaryLink, ExplicitCopy }
+pub enum CopyMode {
+    SummaryLink,
+    ExplicitCopy,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Publication {
@@ -162,14 +245,31 @@ pub struct Publication {
 }
 impl Publication {
     pub fn validate(&self) -> Result<()> {
-        for s in [&self.community_id, &self.channel_id, &self.audience_policy, &self.audience_revision, &self.release_ref] { id(s)?; }
+        for s in [
+            &self.community_id,
+            &self.channel_id,
+            &self.audience_policy,
+            &self.audience_revision,
+            &self.release_ref,
+        ] {
+            id(s)?;
+        }
         hash(&self.text_sha256)?;
-        if self.text.chars().count() > 16_384 || self.attachments.len() > 32 { return Err(Fault::TooLarge); }
-        if crate::sha256(self.text.as_bytes()) != self.text_sha256 { return Err(Fault::Conflict); }
+        if self.text.chars().count() > 16_384 || self.attachments.len() > 32 {
+            return Err(Fault::TooLarge);
+        }
+        if crate::sha256(self.text.as_bytes()) != self.text_sha256 {
+            return Err(Fault::Conflict);
+        }
         let mut sources = BTreeSet::new();
         for a in &self.attachments {
-            id(&a.source_id)?; id(&a.media_type)?; id(&a.release_ref)?; hash(&a.sha256)?;
-            if a.size_bytes > 26_214_400 || !sources.insert(&a.source_id) { return Err(Fault::Invalid); }
+            id(&a.source_id)?;
+            id(&a.media_type)?;
+            id(&a.release_ref)?;
+            hash(&a.sha256)?;
+            if a.size_bytes > 26_214_400 || !sources.insert(&a.source_id) {
+                return Err(Fault::Invalid);
+            }
         }
         Ok(())
     }
@@ -192,13 +292,31 @@ pub struct Receipt {
 }
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub enum Admission { Accepted, Denied, Conflict, Unsupported }
+pub enum Admission {
+    Accepted,
+    Denied,
+    Conflict,
+    Unsupported,
+}
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
-pub enum Execution { Pending, Running, AwaitingHuman, Completed, FailedBeforeEffect, EffectUnknown, CanceledBeforeEffect }
+pub enum Execution {
+    Pending,
+    Running,
+    AwaitingHuman,
+    Completed,
+    FailedBeforeEffect,
+    EffectUnknown,
+    CanceledBeforeEffect,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct EffectRef { pub owner: String, pub intent_id: String, pub outcome: Execution, pub result_ref: Option<String> }
+pub struct EffectRef {
+    pub owner: String,
+    pub intent_id: String,
+    pub outcome: Execution,
+    pub result_ref: Option<String>,
+}
 
 /// Closed, versioned internal tool-admission frame; not a new generic `execute` tool.
 /// C must be a locally compiled consumer command. It contains no trusted principal.

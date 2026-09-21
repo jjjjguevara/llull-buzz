@@ -17,7 +17,7 @@ pub trait ConsumerCommand: Serialize + DeserializeOwned + Send + Sync + 'static 
     fn validate(&self) -> llull_buzz_wire::Result<()>;
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all="kebab-case")]
+#[serde(rename_all = "kebab-case")]
 pub enum ConsumerStatus {
     Completed,
     /// Authoritative terminal denial: the owner has fenced this intent against
@@ -41,13 +41,24 @@ pub struct PortError;
 #[async_trait]
 pub trait ConsumerPort<C: ConsumerCommand>: Send + Sync {
     fn owner(&self) -> &str;
-    async fn execute(&self, command: &ToolCall<C>, canonical_body: &[u8], invocation: &str, timeout: Duration) -> std::result::Result<ConsumerResult,PortError>;
+    async fn execute(
+        &self,
+        command: &ToolCall<C>,
+        canonical_body: &[u8],
+        invocation: &str,
+        timeout: Duration,
+    ) -> std::result::Result<ConsumerResult, PortError>;
     /// Lookup must not execute the original command. The canonical, independently
     /// signed recovery command includes the recorded owner/intent/request digest.
     /// Not-found is Unknown, never DeniedBeforeEffect: the original network
     /// request can still be in flight. Only an owner-fenced terminal decision
     /// can discharge uncertainty without a completed result.
-    async fn lookup(&self, canonical_recovery: &[u8], invocation: &str, timeout: Duration) -> std::result::Result<ConsumerResult,PortError>;
+    async fn lookup(
+        &self,
+        canonical_recovery: &[u8],
+        invocation: &str,
+        timeout: Duration,
+    ) -> std::result::Result<ConsumerResult, PortError>;
 }
 
 /// Credential-bearing production adapter. Instantiate only in the trusted gateway.
@@ -61,48 +72,121 @@ pub struct HttpConsumer<C: ConsumerCommand> {
     marker: PhantomData<C>,
 }
 impl<C: ConsumerCommand> HttpConsumer<C> {
-    pub fn new(owner: String, command_url: &str, lookup_url: &str, key: nostr::Keys) -> std::result::Result<Self,PortError> {
-        llull_buzz_wire::id(&owner).map_err(|_|PortError)?;
-        let command_url=endpoint(command_url)?;let lookup_url=endpoint(lookup_url)?;
-        if command_url.origin()!=lookup_url.origin() || command_url==lookup_url {return Err(PortError);}
-        let client=reqwest::Client::builder().redirect(reqwest::redirect::Policy::none())
-            .no_proxy().connect_timeout(Duration::from_secs(5)).timeout(Duration::from_secs(30))
-            .build().map_err(|_|PortError)?;
-        Ok(Self{owner,command_url,lookup_url,key,client,marker:PhantomData})
+    pub fn new(
+        owner: String,
+        command_url: &str,
+        lookup_url: &str,
+        key: nostr::Keys,
+    ) -> std::result::Result<Self, PortError> {
+        llull_buzz_wire::id(&owner).map_err(|_| PortError)?;
+        let command_url = endpoint(command_url)?;
+        let lookup_url = endpoint(lookup_url)?;
+        if command_url.origin() != lookup_url.origin() || command_url == lookup_url {
+            return Err(PortError);
+        }
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|_| PortError)?;
+        Ok(Self {
+            owner,
+            command_url,
+            lookup_url,
+            key,
+            client,
+            marker: PhantomData,
+        })
     }
-    async fn post(&self,url:&url::Url,body:&[u8],invocation:&str,timeout:Duration)->std::result::Result<ConsumerResult,PortError> {
-        let payload=sha256(body);
-        let tags=vec![nostr::Tag::parse(["u",url.as_str()]).map_err(|_|PortError)?,nostr::Tag::parse(["method","POST"]).map_err(|_|PortError)?,nostr::Tag::parse(["payload",payload.as_str()]).map_err(|_|PortError)?,nostr::Tag::parse(["nonce",uuid::Uuid::new_v4().to_string().as_str()]).map_err(|_|PortError)?];
-        let event=nostr::EventBuilder::new(nostr::Kind::HttpAuth,"").tags(tags).sign_with_keys(&self.key).map_err(|_|PortError)?;
-        let authorization=format!("Nostr {}",STANDARD.encode(serde_json::to_vec(&event).map_err(|_|PortError)?));
-        let response=self.client.post(url.clone()).header("Authorization",authorization)
-            .header("X-Llull-Invocation",invocation).header("Content-Type","application/json")
-            .body(body.to_vec()).timeout(timeout.min(Duration::from_secs(30))).send().await.map_err(|_|PortError)?;
+    async fn post(
+        &self,
+        url: &url::Url,
+        body: &[u8],
+        invocation: &str,
+        timeout: Duration,
+    ) -> std::result::Result<ConsumerResult, PortError> {
+        let payload = sha256(body);
+        let tags = vec![
+            nostr::Tag::parse(["u", url.as_str()]).map_err(|_| PortError)?,
+            nostr::Tag::parse(["method", "POST"]).map_err(|_| PortError)?,
+            nostr::Tag::parse(["payload", payload.as_str()]).map_err(|_| PortError)?,
+            nostr::Tag::parse(["nonce", uuid::Uuid::new_v4().to_string().as_str()])
+                .map_err(|_| PortError)?,
+        ];
+        let event = nostr::EventBuilder::new(nostr::Kind::HttpAuth, "")
+            .tags(tags)
+            .sign_with_keys(&self.key)
+            .map_err(|_| PortError)?;
+        let authorization = format!(
+            "Nostr {}",
+            STANDARD.encode(serde_json::to_vec(&event).map_err(|_| PortError)?)
+        );
+        let response = self
+            .client
+            .post(url.clone())
+            .header("Authorization", authorization)
+            .header("X-Llull-Invocation", invocation)
+            .header("Content-Type", "application/json")
+            .body(body.to_vec())
+            .timeout(timeout.min(Duration::from_secs(30)))
+            .send()
+            .await
+            .map_err(|_| PortError)?;
         // A transport status alone never proves that an effect failed before commit.
-        if !response.status().is_success() {return Err(PortError);}
-        if response.content_length().is_some_and(|n|n>65_536) {return Err(PortError);}
-        let mut bytes=Vec::new();let mut stream=response.bytes_stream();
-        while let Some(chunk)=stream.next().await {
-            let chunk=chunk.map_err(|_|PortError)?;
-            if bytes.len()+chunk.len()>65_536 {return Err(PortError);}
+        if !response.status().is_success() {
+            return Err(PortError);
+        }
+        if response.content_length().is_some_and(|n| n > 65_536) {
+            return Err(PortError);
+        }
+        let mut bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| PortError)?;
+            if bytes.len() + chunk.len() > 65_536 {
+                return Err(PortError);
+            }
             bytes.extend_from_slice(&chunk);
         }
-        llull_buzz_wire::parse(&bytes).map_err(|_|PortError)
+        llull_buzz_wire::parse(&bytes).map_err(|_| PortError)
     }
 }
-fn endpoint(s:&str)->std::result::Result<url::Url,PortError> {
-    let url=url::Url::parse(s).map_err(|_|PortError)?;
-    if url.scheme()!="https" || url.host_str().is_none() || url.query().is_some() || url.fragment().is_some()
-        || !url.username().is_empty() || url.password().is_some() {return Err(PortError);}
+fn endpoint(s: &str) -> std::result::Result<url::Url, PortError> {
+    let url = url::Url::parse(s).map_err(|_| PortError)?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(PortError);
+    }
     Ok(url)
 }
 #[async_trait]
 impl<C: ConsumerCommand> ConsumerPort<C> for HttpConsumer<C> {
-    fn owner(&self)->&str {&self.owner}
-    async fn execute(&self,_command:&ToolCall<C>,canonical_body:&[u8],invocation:&str,timeout:Duration)->std::result::Result<ConsumerResult,PortError> {
-        self.post(&self.command_url,canonical_body,invocation,timeout).await
+    fn owner(&self) -> &str {
+        &self.owner
     }
-    async fn lookup(&self,body:&[u8],invocation:&str,timeout:Duration)->std::result::Result<ConsumerResult,PortError> {
-        self.post(&self.lookup_url,body,invocation,timeout).await
+    async fn execute(
+        &self,
+        _command: &ToolCall<C>,
+        canonical_body: &[u8],
+        invocation: &str,
+        timeout: Duration,
+    ) -> std::result::Result<ConsumerResult, PortError> {
+        self.post(&self.command_url, canonical_body, invocation, timeout)
+            .await
+    }
+    async fn lookup(
+        &self,
+        body: &[u8],
+        invocation: &str,
+        timeout: Duration,
+    ) -> std::result::Result<ConsumerResult, PortError> {
+        self.post(&self.lookup_url, body, invocation, timeout).await
     }
 }
