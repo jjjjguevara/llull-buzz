@@ -48,6 +48,8 @@ pub fn environment() -> BTreeMap<&'static str, &'static str> {
         ("HOME", HOME),
         ("TMPDIR", TMP),
         ("LANG", "C.UTF-8"),
+        ("BUZZ_AGENT_PROVIDER", "anthropic"),
+        ("BUZZ_AGENT_MODEL", "foundation-probe-no-model"),
         ("ANTHROPIC_API_KEY", "foundation-probe-not-a-provider-key"),
         ("ANTHROPIC_BASE_URL", "http://127.0.0.1:9"),
         ("BUZZ_AGENT_MAX_SESSIONS", "1"),
