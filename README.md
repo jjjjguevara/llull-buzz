@@ -41,8 +41,10 @@ Draft [PR #2](https://github.com/jjjjguevara/llull-buzz/pull/2) contains the Rus
 PostgreSQL control-plane and credential-free launch foundation. Read
 [implemented and unavailable surfaces](docs/implementation/SLICE-1.md),
 [clean-checkout/local execution](docs/implementation/LOCAL-REVIEW.md), and
-[actual evidence](docs/implementation/EVIDENCE.md). The root lockfile is not yet resolved;
-Rust builds and real-boundary tests are unexecuted. Native/media coverage, live model
+[actual evidence](docs/implementation/EVIDENCE.md). The committed lockfile, clean Rust
+checks and real PostgreSQL execution are recorded in
+[local validation](docs/implementation/LOCAL-VALIDATION.md), with exact revisions and limits.
+Native/media coverage, live model
 usage, business MCP bridging and publication delivery are unavailable. This is not an
 active restricted profile or a certified deployment.
 

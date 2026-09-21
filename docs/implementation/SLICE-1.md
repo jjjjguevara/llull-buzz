@@ -1,12 +1,13 @@
 # Restricted task and identity foundation — slice 1
 
-Status: implemented source for local review; build and real-boundary execution pending.
+Status: implemented source with [revision-bound local validation](LOCAL-VALIDATION.md);
+reviewer acceptance and human UAT remain outstanding.
 Draft PR: https://github.com/jjjjguevara/llull-buzz/pull/2
 
 Starting main: `f3fe82e94e878eba7173aaf326085b77b9c9bc51`.
-Implementation source snapshot: `d409c11446746e2aa7993cb84d118b63a61050bb`.
-The final candidate SHA is recorded in the PR. Subsequent handoff-only changes do not
-turn this source snapshot into executed runtime evidence.
+Original implementation source snapshot: `d409c11446746e2aa7993cb84d118b63a61050bb`.
+The PR records its published head; local validation names the later tested revisions
+and corrections individually. The original snapshot itself was not runtime-validated.
 
 Read [local execution](LOCAL-REVIEW.md), [actual evidence](EVIDENCE.md), and
 [native task 03](../../.scratch/llull-buzz/issues/03-restricted-task-foundation.md).
@@ -117,7 +118,8 @@ No upstream files were copied into the provider or modified.
 
 Cargo binds selected public Buzz crates by full revision; build scripts check out that
 same revision for `buzz-agent` and `buzz-acp`. Original work is Apache-2.0. Build recipes
-preserve upstream LICENSE/NOTICE files; transitive license inventory remains unexecuted.
+preserve upstream LICENSE/NOTICE files. The local Cargo inventory records declared
+dependency licenses; complete installed OS/upstream distribution license closure remains open.
 
 ## Explicitly unavailable and remaining
 
@@ -130,5 +132,6 @@ The launch binary accepts only `probe`; ACP prompt/steer/model-change/tool-execu
 are rejected. Health responses state `restricted_profile_active: false`.
 
 The launch guard is not an OS sandbox. Unit tests cannot prove process/network isolation,
-upstream compatibility or PostgreSQL concurrency. Real-boundary probes are authored for
-local execution. No certification or human UAT result is implied by this candidate.
+upstream compatibility or PostgreSQL concurrency. Read the local validation record for
+the executed real-boundary probes and remaining gaps. No certification or human UAT
+result is implied by this candidate.

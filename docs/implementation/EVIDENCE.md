@@ -1,5 +1,10 @@
 # Author evidence — source publication, not runtime acceptance
 
+**Historical remote-author record.** The sections below describe the original source-only
+handoff. The later [local validation](LOCAL-VALIDATION.md) records dependency resolution,
+reproduced failures, fixes and revision-bound runtime results. Its results supersede the
+execution-pending statements below for their named subjects; they do not rewrite this history.
+
 Source subject: `d409c11446746e2aa7993cb84d118b63a61050bb`.
 Starting main: `f3fe82e94e878eba7173aaf326085b77b9c9bc51`.
 Draft implementation PR: https://github.com/jjjjguevara/llull-buzz/pull/2

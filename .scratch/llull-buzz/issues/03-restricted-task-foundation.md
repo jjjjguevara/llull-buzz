@@ -71,3 +71,19 @@ restart, native executable compatibility and process/network probes remain unexe
 Cargo.lock resolution and image/dependency inventories are outstanding. No suitable
 worker was established or provisioned. Items remain claimed for local review; no whole
 AC/proof profile, human UAT, publication delivery or restricted activation is accepted.
+
+2026-09-21 — Codex local validation continuation: resolved and committed Cargo.lock,
+reproduced and corrected compilation, strict-lint, PostgreSQL-readiness and container
+startup failures. Clean Rustfmt/build/12 unit tests/Clippy passed at
+`f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d`. The real PostgreSQL scenario and restart
+snapshot comparison passed at `4dce675ada8a38ebd1017f35412308f69e3c3ef5`; its provider,
+wire, dependency and migration inputs are unchanged afterward. The full authored Linux
+ACP/MCP/environment and filesystem/network probes passed at `f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d`.
+
+[Local validation](../../../docs/implementation/LOCAL-VALIDATION.md) and its machine
+record identify actual commands, failures, fixes, sources, lockfile and images. The
+local Docker server was 29.5.2, not the selected production Engine 29.8.1. Real HTTPS
+owner-commit/recovery, full native/media/model/delivery/integration coverage and human
+UAT remain unexecuted. The existing hosted bootstrap-only documentation check remains
+failed. Items 03.1–03.5 remain claimed for reviewer acceptance; no approval, merge,
+profile activation or whole proof/UAT acceptance is inferred from these local passes.

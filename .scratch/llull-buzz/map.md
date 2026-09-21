@@ -55,6 +55,7 @@ The bootstrap paragraphs above are historical; merged PR #1 is not reopened.
 [Implemented surfaces](../../docs/implementation/SLICE-1.md),
 [local execution and review](../../docs/implementation/LOCAL-REVIEW.md), and
 [actual evidence](../../docs/implementation/EVIDENCE.md) are the current handoff.
-Source is published; dependency closure, Rust tests, PostgreSQL and process/network
-execution remain pending local review. No human case, whole proof profile or
+The [local continuation](../../docs/implementation/LOCAL-VALIDATION.md) records the
+lockfile, clean Rust checks, real PostgreSQL execution, remediations and exact probe limits.
+Task 03 remains claimed for reviewer acceptance. No human case, whole proof profile or
 restricted-profile activation is marked passed.

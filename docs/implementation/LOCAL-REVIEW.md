@@ -2,16 +2,17 @@
 
 Review the draft [PR #2](https://github.com/jjjjguevara/llull-buzz/pull/2), not a chat
 archive. [Scope](SLICE-1.md) and [actual evidence](EVIDENCE.md) distinguish implemented
-source from executed checks. Keep the PR draft; return findings to the same PR with the
-full candidate SHA. No Actions dispatch, rerun, minutes purchase or check weakening is
+source from executed checks. The [2026-09-21 local validation](LOCAL-VALIDATION.md)
+records the executed continuation and remediation. Keep the PR draft; return findings
+to the same PR with the full candidate SHA. No Actions dispatch, rerun, minutes purchase or check weakening is
 part of this procedure.
 
 ## 1. Clean checkout and dependency closure
 
 Use a disposable Linux development environment with Git, Rustup, C/C++ build tools,
 CMake, Clang, pkg-config, CA certificates, Python 3.11+, Docker and GNU coreutils/timeout.
-The Docker probe recipe lists its build packages. Neither the selected toolchain image
-nor the native dependency closure has been built remotely for this candidate.
+The Docker probe recipe lists its build packages. The local validation record identifies
+the actual toolchains, image digests and tested revisions; it is not a remote CI result.
 
 ```sh
 git clone https://github.com/jjjjguevara/llull-buzz.git
@@ -25,25 +26,22 @@ rustc +1.98.1 -vV
 cargo +1.98.1 -V
 ```
 
-**Cargo.lock is absent.** Dependency resolution was unavailable remotely. Exact top-level
-selections and source revisions are not a resolved, reproducible transitive closure.
-The smallest remaining build prerequisite is ordinary local resolution, review and
-publication of its lockfile on this branch:
+**Cargo.lock is committed.** The initial remote handoff could not resolve dependencies;
+the local continuation resolved and inventoried them. Reuse the reviewed lockfile:
 
 ```sh
-cargo +1.98.1 generate-lockfile
 cargo +1.98.1 metadata --locked --format-version 1 > /tmp/llull-buzz-metadata.json
 cargo +1.98.1 tree --locked > /tmp/llull-buzz-dependencies.txt
 cargo +1.98.1 fmt --all -- --check
 ```
 
 If formatting differs, run `cargo +1.98.1 fmt --all`, review the change and publish it
-along with the reviewed Cargo.lock in a normal non-forced commit. Do not change the
+in a normal non-forced commit. Do not regenerate Cargo.lock during validation, change
 selected source pins or loosen tests to obtain a green build. Report unavailable package
-versions or API incompatibilities as revision-bound implementation findings. Once the
-lockfile is committed, a fresh checkout must pass the locked sequence below without
-rewriting it. Record the full lockfile SHA-256, compiler target, dependency versions,
-upstream source SHA and actual image digests in local evidence.
+versions or API incompatibilities as revision-bound implementation findings. After an
+authorized dependency correction changes the lockfile, a fresh checkout must pass the
+locked sequence below without rewriting it. Record the full lockfile SHA-256, compiler
+target, dependency versions, upstream source SHA and actual image digests in local evidence.
 
 ```sh
 cargo +1.98.1 test --locked --workspace --lib
@@ -74,8 +72,10 @@ the SDK-native MCP probe, cancels it, and checks the pinned `buzz-acp --help` ex
 It does not run a prompt, business tool, native relay or model call. Kernel probes attempt
 forbidden filesystem writes and public/metadata network connections.
 
-The script records the candidate and image ID and removes only its uniquely named image
-and containers. Do not mount home directories, host sockets, provider keys, a credential
+The script requires a clean tracked checkout and committed lockfile, archives its starting
+Git revision, and builds that immutable context. It records the candidate and image ID and
+removes only its temporary context, uniquely named image and containers. Do not mount
+home directories, host sockets, provider keys, a credential
 store or the control-plane database into the agent container. Resolve base-image tags to
 immutable digests and retain those identities in the review evidence. Run failures against
 the exact image: a shell syntax check is not a substitute for execution. `buzz-acp --help`
@@ -167,9 +167,9 @@ Attach failed commands and minimal repros to this PR; remediation returns throug
 same branch with regression tests and revision-bound replies. Do not approve, merge or
 resolve the reviewer's findings as the implementation agent.
 
-Still unexecuted: Rust compilation and tests, dependency closure/license inventory,
-actual PostgreSQL transactions/concurrency/restart, OCI process/network isolation,
-pinned ACP/MCP compatibility, HTTPS consumer/commit fencing and all human UAT. BZ-UAT01,
-02,04,05 bindings identify affected cases, not completed human acceptance. Full native
-protocol/media/client coverage, publication delivery and cross-product integration remain
+Use [local validation](LOCAL-VALIDATION.md) for command results and exact tested revisions.
+HTTPS consumer/commit fencing, complete installed-distribution license closure and all
+human UAT remain unexecuted. BZ-UAT01,02,04,05 bindings identify affected cases, not
+completed human acceptance. Full native protocol/media/client coverage, publication
+delivery and cross-product integration remain
 later slices. No full restricted-profile activation or certification is claimed.
