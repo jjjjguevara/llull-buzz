@@ -86,6 +86,17 @@ body_handler!(start, start_task);
 body_handler!(publication, admit_publication);
 body_handler!(model_reservation, reserve_model_budget);
 body_handler!(observation_ack, ack_observations);
+body_handler!(intake_registration, register_intake);
+async fn evidence(
+    State(p): State<Provider>,
+    Path(id): Path<String>,
+    h: HeaderMap,
+) -> crate::Result<Json<crate::RetainedEvidence>> {
+    Ok(Json(
+        p.evidence(value(&h, "x-llull-consumer")?, &id, credentials(&h)?)
+            .await?,
+    ))
+}
 async fn observations(
     State(p): State<Provider>,
     Query(query): Query<crate::ObservationQuery>,
@@ -184,6 +195,11 @@ pub fn router(provider: Provider) -> Router {
         .route("/integration/v1/tasks/{id}/cancel", post(cancel))
         .route("/integration/v1/tasks/{id}/reconcile", post(reconcile))
         .route("/integration/v1/publications", post(publication))
+        .route("/integration/v1/evidence/{id}", get(evidence))
+        .route(
+            "/integration/v1/intake-registrations",
+            post(intake_registration),
+        )
         .route("/integration/foundation/v1/key-retirements", post(retire))
         .route("/integration/foundation/v1/tasks/{id}/claim", post(claim))
         .route("/integration/foundation/v1/tasks/{id}/renew", post(renew))
@@ -198,6 +214,27 @@ pub fn router(provider: Provider) -> Router {
         .fallback(unavailable)
         .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
         .with_state(provider)
+}
+
+/// Mount a fixed, trusted native origin. Payloads cannot choose its route or key.
+pub fn native_routes<S: crate::NativeEventSource + 'static>(
+    provider: Provider,
+    source: Arc<S>,
+) -> Router {
+    let intake = move |headers: HeaderMap, body: Bytes| {
+        let provider = provider.clone();
+        let source = source.clone();
+        async move {
+            Ok::<_, ProviderError>(Json(
+                provider
+                    .intake(&body, credentials(&headers)?, source.as_ref())
+                    .await?,
+            ))
+        }
+    };
+    Router::new()
+        .route("/integration/v1/conversation-intakes", post(intake))
+        .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
 }
 
 /// Compile and mount one particular consumer command, not a generic execute tool.

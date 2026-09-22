@@ -1,6 +1,14 @@
 //! Operator CLI and credential-bearing control daemon. Never run in the agent sandbox.
-use llull_buzz_provider::{api, auth::Registration, Provider};
+use llull_buzz_provider::{api, auth::Registration, HttpNativeOrigin, Provider};
 use std::{env, error::Error};
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NativeConfiguration {
+    community_id: String,
+    private_origin: String,
+    public_origin: String,
+    service_key_file: std::path::PathBuf,
+}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -40,9 +48,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
             provider.advance_recovery_epoch(args[1].parse()?).await?
         ),
         Some("serve") if args.len() == 1 => {
+            let mut router = api::router(provider.clone());
+            if let Ok(path) = env::var("NATIVE_ORIGIN_CONFIG") {
+                let config: NativeConfiguration =
+                    llull_buzz_wire::parse(&tokio::fs::read(path).await?)?;
+                use std::os::unix::fs::PermissionsExt;
+                let metadata = tokio::fs::metadata(&config.service_key_file).await?;
+                if !metadata.is_file()
+                    || metadata.len() > 1024
+                    || metadata.permissions().mode() & 0o077 != 0
+                {
+                    return Err("native service key must be an owner-only regular file".into());
+                }
+                let secret = tokio::fs::read_to_string(config.service_key_file).await?;
+                let key =
+                    nostr::Keys::parse(secret.trim()).map_err(|_| "invalid native service key")?;
+                let source = HttpNativeOrigin::new(
+                    config.community_id,
+                    &config.private_origin,
+                    &config.public_origin,
+                    key,
+                )?;
+                router = router.merge(api::native_routes(
+                    provider.clone(),
+                    std::sync::Arc::new(source),
+                ));
+            }
             let address = env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
             let listener = tokio::net::TcpListener::bind(address).await?;
-            axum::serve(listener, api::router(provider))
+            axum::serve(listener, router)
                 .with_graceful_shutdown(async {
                     let _ = tokio::signal::ctrl_c().await;
                 })

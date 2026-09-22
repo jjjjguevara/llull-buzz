@@ -1,4 +1,5 @@
-//! Real PostgreSQL contract tests. Only the external consumer is doubled. No
+//! Real PostgreSQL contract tests. The historical consumer double and the separate
+//! real HTTPS synthetic owner are identified in their individual cases. No
 //! in-memory repository, signature-verifier bypass or logical-clock injection.
 //! Run via scripts/test-postgres.sh; never point at a non-disposable database.
 use async_trait::async_trait;
@@ -118,6 +119,9 @@ impl Rig {
             "discover-profile",
             "observe",
             "ack-observations",
+            "intake",
+            "read-evidence",
+            "register-intake",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -526,6 +530,8 @@ impl Rig {
 mod discovery;
 #[path = "cases/https_consumer.rs"]
 mod https_consumer;
+#[path = "cases/intake.rs"]
+mod intake;
 #[path = "cases/observations.rs"]
 mod observations;
 #[derive(Default)]

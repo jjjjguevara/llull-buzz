@@ -71,6 +71,38 @@ and asserts the owner commit before testing recovery. The corrected working-tree
 scenario passed on 2026-09-22. `HttpConsumer::with_roots` permits operator-selected
 private PKI with normal chain/hostname verification; no insecure TLS mode is added.
 
+`POST /integration/v1/conversation-intakes` implements the schema's closed `intake`
+payload. It authenticates the service before retrieving an exact native event from a
+fixed private relay. It verifies the native signature, event/channel/content identities,
+declared signed attachment metadata and the sender's active module enrollment. The
+original event, its byte digest and historical enrollment revision are immutable in
+PostgreSQL. Retries recover that retained original even when the relay is unavailable.
+The source receipt explicitly distinguishes message-byte durability, attachment-byte
+durability and consumer registration; native membership alone is not intake authority.
+
+`GET /integration/v1/evidence/{source_id}` requires fresh artifact-specific evidence
+purpose authentication for `read-evidence`, exact source resource/revision and current
+module/context scope. `POST /integration/v1/intake-registrations` is an owned wire
+addition: `register-intake` with closed `source_id` and `durable_receipt_id` payload.
+It records the consumer's durable receipt independently of source storage or observation
+ACK. The historical bootstrap schema remains unchanged; it does not describe this
+additional command. Complete runtime schema inventory is still being assembled.
+
+`HttpNativeOrigin` uses pinned upstream `/query` and `/events` protocol shapes, fixed
+operator origins and NIP-98 authentication. `NATIVE_ORIGIN_CONFIG` selects community,
+private/public origins and an owner-only service-key file. No caller supplies a URL or
+signing credential. Migration `0003_native_intake.sql` adds the immutable source and
+registration records. A new real PostgreSQL/signature ledger test passed after the
+missing-implementation red and a corrected fixture tuple destructure. Its source
+transport is an explicit fixture; actual relay/client qualification remains separate.
+
+The dedicated Ubuntu 24.04.4 arm64 test VM now runs Docker Engine 29.8.1,
+containerd 2.3.5 and runc 1.5.1. Only this task's daemon was upgraded. Package installation
+initially rejected Colima's held versions; explicitly installing the selected versions
+in the task-owned VM succeeded. This establishes environment identity, not a completed
+containment test. The unmodified pinned relay, native CLI, admin CLI, ACP and agent image
+build is in progress using immutable Rust/Debian base digests.
+
 ## Requested OAuth model amendment
 
 The owner directed Codex/ChatGPT Pro OAuth for this continuation. The installed
