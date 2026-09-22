@@ -174,6 +174,36 @@ under implementation; this snapshot result alone does not close BZ-C08.
 
 ## Requested OAuth model amendment
 
+## Isolated selected storage stack
+
+[`scripts/local-stack.py`](../../scripts/local-stack.py) owns a private Docker
+network and uniquely labeled PostgreSQL, Valkey and SeaweedFS resources in the
+task's Docker 29.8.1 VM. It requires an explicit `DOCKER_HOST`. Named volumes
+hold PostgreSQL data, SeaweedFS data and private config; no host path or socket
+is mounted into a service. PostgreSQL 16.15 gives the provider, native relay
+and Seaweed filer distinct database roles. SeaweedFS 4.47 uses its PostgreSQL
+filer rather than its image's default leveldb2 store. The static S3 identity
+is restricted to the synthetic `buzz-media` bucket, and Valkey 8.1.10 is
+password protected and explicitly disposable. The Seaweed and Valkey processes
+run as UID 65532 with a read-only root filesystem and no Linux capabilities.
+Synthetic credentials and exact resource ownership stay in ignored
+`artifacts/completion/stack` with private file modes.
+
+The selected Docker engine/version check, immutable image digests, private
+network, database-role denial, authenticated S3 PUT/GET/range, anonymous-read
+denial and cross-bucket denial passed in the task VM. The exact command was
+`python3 scripts/local-stack.py check-storage`, with `DOCKER_HOST` pointing at
+that VM and `DOCKER_CONTEXT` empty; exit 0 and log SHA-256
+`d46af8c75b116c9fd120833adab9efbd3a7cdc95305b864d86c0f6cd4f4abca6`.
+The object digest and image digests are retained in the private test evidence.
+The earlier failed attempts exposed a filer schema omission, filesystem UID
+copying, and a four-volume limit consumed by the empty collection; these were
+corrected in the task-only recipe. A raw `nc` request also returned empty
+GET bytes after half-closing its socket, so the passing test uses curl's real
+SigV4 and HTTP transport from an ephemeral, restricted client container.
+This qualifies the storage component; native client authorization, media
+disclosure, relay restart and backup/restore are separate gates.
+
 The owner directed Codex/ChatGPT Pro OAuth for this continuation. The installed
 `codex-cli 0.155.1` reports a ChatGPT login. Pinned Buzz supports the OpenAI Responses
 transport through `OPENAI_COMPAT_API=responses` and an owned base URL, so the Buzz

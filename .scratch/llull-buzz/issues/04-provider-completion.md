@@ -103,3 +103,12 @@ recovery with final-page durable acknowledgment, plus explicit duplicate-receipt
 conflicts. Its working-tree PostgreSQL scenario passed after a missing-implementation
 red and fixture correction. Current scope and precise remaining boundaries remain
 in [continuation details](../../../docs/implementation/COMPLETION.md).
+
+2026-09-22 — Item 04.6: the selected Docker 29.8.1 task VM built the unmodified
+upstream `buzz-agent`, `buzz-acp`, `buzz-relay`, `buzz` and `buzz-admin` at the
+pinned revision. The build log SHA-256 is
+`410b1dc2d0bf7e2202a8ba2628691f5a5e78c905a70a72867fb6d4736fba4282`.
+The isolated PostgreSQL 16.15, SeaweedFS 4.47/PostgreSQL filer and Valkey 8.1.10
+storage stack passed real authenticated S3 write/read/range and role/access
+denials, with evidence recorded in continuation details. These qualify the
+storage component, not yet the native relay/agent/client or media gateway.
