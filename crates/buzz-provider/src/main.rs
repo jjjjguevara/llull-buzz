@@ -1,5 +1,5 @@
 //! Operator CLI and credential-bearing control daemon. Never run in the agent sandbox.
-use llull_buzz_provider::{api, auth::Registration, HttpNativeOrigin, Provider};
+use llull_buzz_provider::{api, auth::Registration, HttpNativeOrigin, Provider, Publisher};
 use std::{env, error::Error};
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -8,6 +8,7 @@ struct NativeConfiguration {
     private_origin: String,
     public_origin: String,
     service_key_file: std::path::PathBuf,
+    relay_public_key: String,
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -48,7 +49,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             provider.advance_recovery_epoch(args[1].parse()?).await?
         ),
         Some("serve") if args.len() == 1 => {
-            let mut router = api::router(provider.clone());
+            let mut router = axum::Router::new();
+            let mut surfaces = api::ConfiguredSurfaces::default();
             if let Ok(path) = env::var("NATIVE_ORIGIN_CONFIG") {
                 let config: NativeConfiguration =
                     llull_buzz_wire::parse(&tokio::fs::read(path).await?)?;
@@ -67,13 +69,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     config.community_id,
                     &config.private_origin,
                     &config.public_origin,
-                    key,
+                    key.clone(),
+                    nostr::PublicKey::from_hex(&config.relay_public_key)
+                        .map_err(|_| "invalid native relay public key")?,
                 )?;
-                router = router.merge(api::native_routes(
-                    provider.clone(),
-                    std::sync::Arc::new(source),
-                ));
+                let source = std::sync::Arc::new(source);
+                let publisher = std::sync::Arc::new(Publisher::new(
+                    source.clone(),
+                    key,
+                    &env::var("PUBLIC_ORIGIN")?,
+                )?);
+                router = router
+                    .merge(api::native_routes(provider.clone(), source))
+                    .merge(api::publication_routes(provider.clone(), publisher));
+                surfaces.native_intake = true;
+                surfaces.publication_delivery = true;
             }
+            router = api::router_with_surfaces(provider.clone(), surfaces).merge(router);
             let address = env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
             let listener = tokio::net::TcpListener::bind(address).await?;
             axum::serve(listener, router)

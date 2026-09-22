@@ -103,6 +103,34 @@ in the task-owned VM succeeded. This establishes environment identity, not a com
 containment test. The unmodified pinned relay, native CLI, admin CLI, ACP and agent image
 build is in progress using immutable Rust/Debian base digests.
 
+`Provider::publish` now adds durable delivery to publication admission. It checks the
+current native audience, signs through the pinned `buzz-sdk` message builder, persists
+the exact signed event and original native owner, and commits uncertainty before
+dispatch. The subsequent dispatch rechecks current task/authority and audience under
+the admission lock. The deployment must mediate every native mutation and subscriber
+through that boundary; private-origin isolation and full native gateway tests are still
+being completed. An unmediated native writer would invalidate the audience-race proof.
+
+Migration `0004_publication_delivery.sql` retains original admission scope/root and
+immutable native bytes independently of monotonic delivery state. An admitted publication
+cannot drop its canceled root or adopt a different authority scope on retry. Historical
+preflight records predating this scope ledger remain retained; they cannot silently
+become new dispatch authority. `GET /integration/v1/publications/{id}` exposes scoped
+state and original event identity. The owned `reconcile-publication` command at
+`POST /integration/v1/publications/{id}/reconcile` performs only original-owner lookup;
+an outage or miss cannot establish denial before effect. Audience changes do not prevent
+learning that the original event already committed, and do not authorize another send.
+
+The real PostgreSQL/signature publication ledger test passed in the working tree on
+2026-09-22 after a missing-implementation red and correction of an SDK iterator use.
+It covers lost response, one native event/send, immutable bytes, changed-audience denial,
+and canceled-root/identity preservation. Its native transport is a declared fixture;
+actual relay and client execution must qualify the production `HttpNativeOrigin` path.
+That adapter verifies pinned relay signatures on native metadata/membership snapshots
+and binds their identities into the release's audience revision. Native origin configuration
+now also requires the relay public key. Health output reports configured surfaces
+separately from the still-in-progress qualification status.
+
 ## Requested OAuth model amendment
 
 The owner directed Codex/ChatGPT Pro OAuth for this continuation. The installed

@@ -79,3 +79,20 @@ HTTPS/independent-database synthetic owner, not a `ConsumerPort` double.
 The first OAuth compatibility request returned HTTP 400 for `max_output_tokens`.
 The exact backend output-limit behavior is a qualification gap, not a reason to
 silently drop cumulative accounting or declare a live model pass.
+
+2026-09-22 — Clean-source continuation results: discovery/observations at
+`d6e9288cff7613c9e793367e9ee804bfa666eea2`, HTTPS owner commit/recovery at
+`2fb25e84d6b6e8580cf796a62a93212e501eda21`, and retained native intake at
+`8b9056f96f262b53e1415fb07bd42a2e28fe220c` passed their targeted PostgreSQL scenarios.
+Strict Clippy passed before the latter clean-source reruns; the full portable document
+stage passed at `8b9056f…`. That source is pushed to the same draft PR, whose description
+now reflects full completion scope and continuing work. No new hosted Actions run
+appeared after publication; the historical failures remain visible.
+
+Item 04.4 now has a passing working-tree publication ledger scenario: frozen signed
+identity, original-owner lookup after lost response, changed-audience denial and
+preserved canceled-root scope. Its native transport remains an explicit fixture pending
+the real relay/client run. Item 04.6 has an isolated Ubuntu 24.04.4 arm64 VM running
+the selected Docker 29.8.1; pinned native executables are compiling there. Full gateway,
+agent/model/tool, media, restore and distribution qualification remains claimed work,
+not an accepted capability or proof profile.

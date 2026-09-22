@@ -308,6 +308,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "buzz-sdk"
+version = "0.1.0"
+source = "git+https://github.com/block/buzz?rev=01b6174a1cbad249e93f31df97d4b2ed1d0e8638#01b6174a1cbad249e93f31df97d4b2ed1d0e8638"
+dependencies = [
+ "buzz-core",
+ "nostr",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1437,6 +1450,7 @@ dependencies = [
  "base64 0.22.1",
  "buzz-auth",
  "buzz-core",
+ "buzz-sdk",
  "chrono",
  "futures-util",
  "http-body-util",

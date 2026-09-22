@@ -451,6 +451,13 @@ impl Provider {
         body: &[u8],
         headers: Headers<'_>,
     ) -> Result<CommandResult> {
+        Ok(self.prepare_publication(body, headers).await?.0)
+    }
+    pub(crate) async fn prepare_publication(
+        &self,
+        body: &[u8],
+        headers: Headers<'_>,
+    ) -> Result<(CommandResult, crate::publication::PublicationPermit)> {
         let c: Command = Self::decode(body)?;
         if c.operation != "publish" {
             return Err(Fault::Unavailable.into());
@@ -477,8 +484,35 @@ impl Provider {
         }
         claims.release_for(&publication, Self::now(&mut tx).await?.timestamp())?;
         if let Some(result) = Self::replay(&mut tx, &c).await? {
+            let publication_id =
+                Uuid::parse_str(&result.receipt.operation_id).map_err(|_| Fault::Conflict)?;
+            let scoped:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM observations WHERE consumer_id=$1 AND module_id=$2 AND context_domain=$3 AND record->>'operation'='publish' AND record->>'operation_id'=$4)")
+                .bind(&c.consumer_id).bind(&claims.module_id).bind(&claims.context_domain).bind(publication_id.to_string()).fetch_one(&mut *tx).await?;
+            if !scoped {
+                return Err(Fault::Denied.into());
+            }
+            let (original, root): (Json<crate::tasks::ScopeStamp>, Option<String>) =
+                sqlx::query_as(
+                    "SELECT scope,root_task_id FROM publication_scopes WHERE publication_id=$1",
+                )
+                .bind(publication_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or(Fault::Denied)?;
+            original.0.new_work(&claims)?;
+            if root != claims.root_task_id {
+                return Err(Fault::Denied.into());
+            }
             tx.commit().await?;
-            return Ok(result);
+            return Ok((
+                result,
+                crate::publication::PublicationPermit {
+                    publication_id,
+                    command: c,
+                    publication,
+                    claims,
+                },
+            ));
         }
         if let Some(root_id) = &claims.root_task_id {
             let (root, state) = Self::root(&mut tx, &c.consumer_id, root_id).await?;
@@ -497,10 +531,26 @@ impl Provider {
         let now = Self::now(&mut tx).await?.timestamp();
         claims.fresh(now)?;
         claims.release_for(&publication, now)?;
+        sqlx::query(
+            "INSERT INTO publication_scopes(publication_id,scope,root_task_id) VALUES($1,$2,$3)",
+        )
+        .bind(publication_id)
+        .bind(Json(crate::tasks::ScopeStamp::from_claims(&claims)))
+        .bind(&claims.root_task_id)
+        .execute(&mut *tx)
+        .await?;
         let result=Self::remember(&mut tx,(&c, &claims),publication_id.to_string(),Execution::Pending,1,
-            serde_json::json!({"publication_id":publication_id,"delivery":"unavailable","final_native_audience_check":"not-implemented","signed_native_event":null})).await?;
+            serde_json::json!({"publication_id":publication_id,"delivery":"pending","final_native_audience_check":"pending","signed_native_event":null})).await?;
         tx.commit().await?;
-        Ok(result)
+        Ok((
+            result,
+            crate::publication::PublicationPermit {
+                publication_id,
+                command: c,
+                publication,
+                claims,
+            },
+        ))
     }
     pub(crate) async fn attempt(tx: &mut Tx, id: Uuid) -> Result<AttemptView> {
         Ok(

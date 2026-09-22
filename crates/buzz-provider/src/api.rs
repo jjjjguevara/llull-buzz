@@ -14,7 +14,7 @@ use axum::{
     Json, Router,
 };
 use llull_buzz_wire::Fault;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::sync::Arc;
 
 fn value<'a>(headers: &'a HeaderMap, name: &str) -> crate::Result<&'a str> {
@@ -63,10 +63,13 @@ impl IntoResponse for ProviderError {
 async fn unavailable() -> Response {
     ProviderError::from(Fault::Unavailable).into_response()
 }
-async fn health() -> Json<Value> {
-    Json(
-        json!({"service":"llull-buzz","stage":"foundation-only","restricted_profile_active":false,"native_gateway":"unavailable","model_dispatch":"unavailable","publication_delivery":"unavailable"}),
-    )
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct ConfiguredSurfaces {
+    pub native_intake: bool,
+    pub publication_delivery: bool,
+    pub native_gateway: bool,
+    pub media_gateway: bool,
+    pub model_dispatch: bool,
 }
 macro_rules! body_handler {
     ($name:ident,$method:ident) => {
@@ -83,7 +86,6 @@ body_handler!(enroll, enroll);
 body_handler!(access, change_access);
 body_handler!(retire, retire_key);
 body_handler!(start, start_task);
-body_handler!(publication, admit_publication);
 body_handler!(model_reservation, reserve_model_budget);
 body_handler!(observation_ack, ack_observations);
 body_handler!(intake_registration, register_intake);
@@ -94,6 +96,16 @@ async fn evidence(
 ) -> crate::Result<Json<crate::RetainedEvidence>> {
     Ok(Json(
         p.evidence(value(&h, "x-llull-consumer")?, &id, credentials(&h)?)
+            .await?,
+    ))
+}
+async fn publication_view(
+    State(p): State<Provider>,
+    Path(id): Path<uuid::Uuid>,
+    h: HeaderMap,
+) -> crate::Result<Json<crate::PublicationView>> {
+    Ok(Json(
+        p.observe_publication(value(&h, "x-llull-consumer")?, id, credentials(&h)?)
             .await?,
     ))
 }
@@ -182,6 +194,18 @@ async fn complete(
 }
 
 pub fn router(provider: Provider) -> Router {
+    router_with_surfaces(provider, ConfiguredSurfaces::default())
+}
+/// Configuration status is distinct from runtime readiness and qualification.
+pub fn router_with_surfaces(provider: Provider, surfaces: ConfiguredSurfaces) -> Router {
+    let health = move || {
+        let configured = surfaces.clone();
+        async move {
+            Json(
+                json!({"service":"llull-buzz","stage":"implementation","restricted_profile_active":false,"configured":configured,"qualification":"in-progress"}),
+            )
+        }
+    };
     Router::new()
         .route("/healthz", get(health))
         .route("/integration/v1/profile", get(profile))
@@ -194,7 +218,7 @@ pub fn router(provider: Provider) -> Router {
         .route("/integration/v1/tasks/{id}", get(observe))
         .route("/integration/v1/tasks/{id}/cancel", post(cancel))
         .route("/integration/v1/tasks/{id}/reconcile", post(reconcile))
-        .route("/integration/v1/publications", post(publication))
+        .route("/integration/v1/publications/{id}", get(publication_view))
         .route("/integration/v1/evidence/{id}", get(evidence))
         .route(
             "/integration/v1/intake-registrations",
@@ -234,6 +258,37 @@ pub fn native_routes<S: crate::NativeEventSource + 'static>(
     };
     Router::new()
         .route("/integration/v1/conversation-intakes", post(intake))
+        .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
+}
+
+pub fn publication_routes<P: crate::PublicationPort + 'static>(
+    provider: Provider,
+    publisher: Arc<crate::Publisher<P>>,
+) -> Router {
+    let ep = provider.clone();
+    let outgoing = publisher.clone();
+    let publish = move |h: HeaderMap, b: Bytes| {
+        let p = ep.clone();
+        let publisher = outgoing.clone();
+        async move {
+            Ok::<_, ProviderError>(Json(
+                p.publish(&b, credentials(&h)?, publisher.as_ref()).await?,
+            ))
+        }
+    };
+    let recover = move |Path(id): Path<uuid::Uuid>, h: HeaderMap, b: Bytes| {
+        let p = provider.clone();
+        let publisher = publisher.clone();
+        async move {
+            Ok::<_, ProviderError>(Json(
+                p.reconcile_publication(id, &b, credentials(&h)?, publisher.as_ref())
+                    .await?,
+            ))
+        }
+    };
+    Router::new()
+        .route("/integration/v1/publications", post(publish))
+        .route("/integration/v1/publications/{id}/reconcile", post(recover))
         .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
 }
 

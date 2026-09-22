@@ -1,11 +1,11 @@
 //! Fixed private native origin. Credentials and routing are trusted operator inputs.
-use crate::{native, ports::PortError, NativeEventSource};
+use crate::{native, ports::PortError, Audience, NativeEventSource, PublicationPort};
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use futures_util::StreamExt;
 use llull_buzz_wire::{canonical, id, parse, sha256, MAX_BYTES};
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 use url::Url;
 
 pub struct HttpNativeOrigin {
@@ -13,6 +13,8 @@ pub struct HttpNativeOrigin {
     private_origin: Url,
     public_origin: Url,
     key: nostr::Keys,
+    relay_key: nostr::PublicKey,
+    owner: String,
     client: reqwest::Client,
 }
 impl HttpNativeOrigin {
@@ -21,10 +23,12 @@ impl HttpNativeOrigin {
         private_origin: &str,
         public_origin: &str,
         key: nostr::Keys,
+        relay_key: nostr::PublicKey,
     ) -> std::result::Result<Self, PortError> {
         id(&community).map_err(|_| PortError)?;
         let private_origin = origin(private_origin, false)?;
         let public_origin = origin(public_origin, true)?;
+        let owner=format!("native:{}",llull_buzz_wire::digest(&json!({"community":community,"origin":public_origin.as_str(),"sender":key.public_key().to_hex(),"relay":relay_key.to_hex()})).map_err(|_|PortError)?);
         let client = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
@@ -37,6 +41,8 @@ impl HttpNativeOrigin {
             private_origin,
             public_origin,
             key,
+            relay_key,
+            owner,
             client,
         })
     }
@@ -113,6 +119,88 @@ impl HttpNativeOrigin {
     }
     pub fn public_key(&self) -> nostr::PublicKey {
         self.key.public_key()
+    }
+}
+#[async_trait]
+impl PublicationPort for HttpNativeOrigin {
+    fn owner(&self) -> &str {
+        &self.owner
+    }
+    fn public_key(&self) -> nostr::PublicKey {
+        self.key.public_key()
+    }
+    async fn submit(&self, community: &str, bytes: &[u8]) -> std::result::Result<bool, PortError> {
+        HttpNativeOrigin::submit(self, community, bytes).await
+    }
+    async fn audience(
+        &self,
+        community: &str,
+        channel: &str,
+    ) -> std::result::Result<Audience, PortError> {
+        if community != self.community {
+            return Err(PortError);
+        }
+        uuid::Uuid::parse_str(channel).map_err(|_| PortError)?;
+        let request = canonical(&json!([
+            {"kinds":[39000],"authors":[self.relay_key.to_hex()],"#d":[channel],"limit":1},
+            {"kinds":[39002],"authors":[self.relay_key.to_hex()],"#d":[channel],"limit":1}
+        ]))
+        .map_err(|_| PortError)?;
+        let values: Vec<Value> =
+            parse(&self.post("/query", &request).await?).map_err(|_| PortError)?;
+        if values.len() != 2 {
+            return Err(PortError);
+        }
+        let mut metadata = None;
+        let mut roster = None;
+        let mut members = BTreeSet::new();
+        for value in values {
+            let event = native::event(&serde_json::to_vec(&value).map_err(|_| PortError)?)
+                .map_err(|_| PortError)?;
+            if event.pubkey != self.relay_key
+                || native::tag(&event, "d").map_err(|_| PortError)? != channel
+            {
+                return Err(PortError);
+            }
+            match event.kind.as_u16() {
+                39000 => {
+                    if metadata.replace(event.id.to_hex()).is_some()
+                        || !event.tags.iter().any(|t| t.as_slice() == ["closed"])
+                        || event
+                            .tags
+                            .iter()
+                            .any(|t| t.as_slice() == ["archived", "true"])
+                    {
+                        return Err(PortError);
+                    }
+                }
+                39002 => {
+                    if roster.replace(event.id.to_hex()).is_some() {
+                        return Err(PortError);
+                    }
+                    for tag in event.tags.iter() {
+                        let fields = tag.as_slice();
+                        if fields.first().is_some_and(|f| f == "p") {
+                            if fields.len() != 4 {
+                                return Err(PortError);
+                            }
+                            llull_buzz_wire::hash(&fields[1]).map_err(|_| PortError)?;
+                            if !members.insert(fields[1].clone()) {
+                                return Err(PortError);
+                            }
+                        }
+                    }
+                }
+                _ => return Err(PortError),
+            }
+        }
+        let revision=llull_buzz_wire::digest(&json!({"community":community,"channel":channel,"metadata":metadata.ok_or(PortError)?,"roster":roster.ok_or(PortError)?})).map_err(|_|PortError)?;
+        Ok(Audience {
+            community_id: community.into(),
+            channel_id: channel.into(),
+            revision,
+            members,
+        })
     }
 }
 #[async_trait]

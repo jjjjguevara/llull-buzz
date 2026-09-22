@@ -122,6 +122,8 @@ impl Rig {
             "intake",
             "read-evidence",
             "register-intake",
+            "reconcile-publication",
+            "observe-publication",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -534,6 +536,8 @@ mod https_consumer;
 mod intake;
 #[path = "cases/observations.rs"]
 mod observations;
+#[path = "cases/publication.rs"]
+mod publication;
 #[derive(Default)]
 struct Consumer {
     calls: AtomicUsize,
@@ -601,7 +605,9 @@ fn permit(admission: ToolAdmission<SetLabel>) -> DispatchPermit<SetLabel> {
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
-async fn postgres_foundation_contracts() {
+// This scenario deliberately advances the shared recovery floor. Run last in
+// the documented single-threaded suite; all other cases preserve that floor.
+async fn zz_postgres_foundation_contracts() {
     let rig = Rig::new().await;
     let native = nostr::Keys::generate();
     let (binding, _, _) = rig.enroll("module-a", &native).await;
@@ -1036,7 +1042,7 @@ async fn postgres_foundation_contracts() {
     );
     let accepted = rig.p.admit_publication(&body, h.headers()).await.unwrap();
     assert_eq!(accepted.receipt.execution, Execution::Pending);
-    assert_eq!(accepted.result["delivery"], "unavailable");
+    assert_eq!(accepted.result["delivery"], "pending");
     let mut altered = c.clone();
     altered.intent_id = Uuid::new_v4().to_string();
     altered.payload["channel_id"] = json!("other-audience");
