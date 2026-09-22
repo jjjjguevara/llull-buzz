@@ -1,0 +1,41 @@
+# Build unmodified, pinned native executables separately from provider iteration.
+# Build arguments must be immutable image references, recorded by the delivery stage.
+ARG RUST_IMAGE
+ARG RUNTIME_IMAGE
+FROM ${RUST_IMAGE} AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ca-certificates cmake clang pkg-config libssl-dev python3 && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /upstream
+RUN git init && git remote add origin https://github.com/block/buzz && \
+    git fetch --depth 1 origin 01b6174a1cbad249e93f31df97d4b2ed1d0e8638 && \
+    git checkout --detach FETCH_HEAD && \
+    test "$(git rev-parse HEAD)" = 01b6174a1cbad249e93f31df97d4b2ed1d0e8638
+ENV CARGO_BUILD_JOBS=2 \
+    BUZZ_SOURCE_SHA=01b6174a1cbad249e93f31df97d4b2ed1d0e8638 \
+    BUZZ_BUILD_ID=llull-buzz-local-completion
+RUN cargo +1.98.1 build --locked --release \
+    -p buzz-agent --bin buzz-agent -p buzz-acp --bin buzz-acp \
+    -p buzz-relay --bin buzz-relay -p buzz-cli --bin buzz \
+    -p buzz-admin --bin buzz-admin
+RUN mkdir -p /image/opt/llull/upstream /image/usr/share/doc/buzz-upstream && \
+    cp target/release/buzz-agent target/release/buzz-acp target/release/buzz-relay \
+       target/release/buzz target/release/buzz-admin /image/opt/llull/upstream/ && \
+    cp Cargo.lock /image/usr/share/doc/buzz-upstream/ && \
+    find . -maxdepth 1 -type f \( -iname 'LICENSE*' -o -iname 'NOTICE*' \) \
+       -exec cp {} /image/usr/share/doc/buzz-upstream/ \; && \
+    sha256sum /image/opt/llull/upstream/* > /image/usr/share/doc/buzz-upstream/SHA256SUMS && \
+    cargo metadata --locked --format-version 1 > /image/usr/share/doc/buzz-upstream/cargo-metadata.json
+FROM ${RUNTIME_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates git openssl && rm -rf /var/lib/apt/lists/* && \
+    groupadd --gid 65532 buzz && \
+    useradd --uid 65532 --gid 65532 --no-create-home --home-dir /work/task/home buzz && \
+    mkdir -p /work/task && chown 65532:65532 /work/task && chmod 700 /work/task
+COPY --from=build /image/ /
+LABEL org.opencontainers.image.source="https://github.com/jjjjguevara/llull-buzz" \
+    org.llull.buzz.upstream="01b6174a1cbad249e93f31df97d4b2ed1d0e8638"
+USER 65532:65532
+WORKDIR /work/task
+# Operators select one fixed executable; no entrypoint carries credentials.
+CMD ["/opt/llull/upstream/buzz", "--help"]
