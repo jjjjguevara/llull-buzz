@@ -656,6 +656,7 @@ enableUpsert = true
         attempt = docker("run", "--rm", "--network", self.name("storage"),
                          "--label", self.label(), "--user", "65532:65532", "--read-only",
                          "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+                         "--env", "NATIVE_ORIGIN_DIAGNOSTIC=1",
                          "--env-file", str(self.directory / "provider.env"), "--mount",
                          f"type=volume,src={secret_volume},dst=/run/bz-provider,readonly",
                          "--entrypoint", "/opt/llull/bin/llull-buzz-provider", image,

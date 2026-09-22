@@ -78,10 +78,33 @@ impl HttpNativeOrigin {
             .send()
             .await
             .map_err(|_| PortError)?;
-        if !response.status().is_success()
-            || response
-                .content_length()
-                .is_some_and(|s| s > MAX_BYTES as u64)
+        if !response.status().is_success() {
+            if std::env::var_os("NATIVE_ORIGIN_DIAGNOSTIC").is_some() {
+                let status = response.status();
+                let mut error = Vec::new();
+                let mut stream = response.bytes_stream();
+                while let Some(Ok(chunk)) = stream.next().await {
+                    if error.len() + chunk.len() > 1024 {
+                        break;
+                    }
+                    error.extend_from_slice(&chunk);
+                }
+                let reason = serde_json::from_slice::<Value>(&error)
+                    .ok()
+                    .and_then(|value| {
+                        value["error"]
+                            .as_str()
+                            .or_else(|| value["message"].as_str())
+                            .map(|text| text.chars().take(256).collect::<String>())
+                    })
+                    .unwrap_or_else(|| "unavailable".into());
+                eprintln!("native origin {path} returned {status}: {reason}");
+            }
+            return Err(PortError);
+        }
+        if response
+            .content_length()
+            .is_some_and(|s| s > MAX_BYTES as u64)
         {
             return Err(PortError);
         }
