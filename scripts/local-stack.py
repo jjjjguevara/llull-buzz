@@ -349,7 +349,7 @@ enableUpsert = true
             require(set(matches) == {"Public key", "Secret key"}, "Pinned upstream key generator output changed")
             return {"public": matches["Public key"], "secret": matches["Secret key"]}
         keys = json.loads(path.read_text()) if path.exists() else {}
-        for identity in ["owner", "relay", "bot", "outsider"]:
+        for identity in ["owner", "relay", "bot", "outsider", "service"]:
             if identity not in keys:
                 keys[identity] = generate()
         save(path, keys)
@@ -524,6 +524,96 @@ enableUpsert = true
         save(self.directory / "native-restart.json", report)
         print(json.dumps(report, indent=2))
 
+    def provider_secrets(self, native_config, service_key):
+        volume = self.create("volume", "provider-secrets")
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode="w") as tar:
+            for name, body in [("native.json", json.dumps(native_config).encode()),
+                               ("service.key", (service_key + "\n").encode())]:
+                item = tarfile.TarInfo(name)
+                item.uid = item.gid = 65532
+                item.mode = 0o600
+                item.size = len(body)
+                tar.addfile(item, io.BytesIO(body))
+        name = self.name("provider-configure")
+        self.remember("container", name)
+        if self.inspect("container", name):
+            docker("rm", "-f", name)
+        docker("run", "--rm", "-i", "--name", name, "--label", self.label(),
+               "--network", "none", "--mount", f"type=volume,src={volume},dst=/config",
+               "--entrypoint", "tar", IMAGES["config"], "-xpf", "-", "-C", "/config",
+               data=archive.getvalue())
+        return volume
+
+    def up_provider(self, source_sha):
+        require(self.state["stage"] in {"native-started", "provider-started"},
+                "Qualify native relay before provider deployment")
+        require(source_sha and re.fullmatch(r"[0-9a-f]{40}", source_sha), "Full provider source SHA required")
+        image = "llull-buzz-completion-provider:" + source_sha[:12]
+        built = json.loads(docker("image", "inspect", image).stdout)[0]
+        require(built["Config"]["Labels"].get("org.opencontainers.image.revision") == source_sha,
+                "Provider image source label differs")
+        require(built["Os"] == "linux" and built["Architecture"] == "arm64", "Provider image architecture differs")
+        keys = self.native_keys()
+        service = keys["service"]
+        self.native_admin("add-member", "--pubkey", service["public"])
+        channel_id = json.loads((self.directory / "native-check.json").read_text())["channel_id"]
+        members = json.loads(self.native_client("owner", "channels", "members", "--channel", channel_id).stdout)
+        if not any(member.get("pubkey") == service["public"] for member in members):
+            self.native_client("owner", "channels", "add-member", "--channel", channel_id,
+                               "--pubkey", service["public"], "--role", "bot")
+        volume = self.provider_secrets({
+            "community_id": "synthetic-community",
+            "private_origin": "http://buzz-relay.synthetic.invalid:3000",
+            "public_origin": "https://buzz-relay.synthetic.invalid",
+            "service_key_file": "/run/bz-provider/service.key",
+            "relay_public_key": keys["relay"]["public"],
+        }, service["secret"])
+        pw = self.state["passwords"]
+        env = self.envfile("provider", {
+            "DATABASE_URL": f"postgresql://bz_provider:{pw['provider']}@postgres:5432/bz_foundation_test?sslmode=disable",
+            "PUBLIC_ORIGIN": "https://provider.synthetic.invalid",
+            "EXTERNAL_RECOVERY_EPOCH": "1",
+            "NATIVE_ORIGIN_CONFIG": "/run/bz-provider/native.json",
+            "BIND_ADDR": "0.0.0.0:8080",
+        })
+        common = ["--network", self.name("storage"), "--label", self.label(),
+                  "--user", "65532:65532", "--cap-drop", "ALL", "--read-only",
+                  "--security-opt", "no-new-privileges:true", "--env-file", env,
+                  "--mount", f"type=volume,src={volume},dst=/run/bz-provider,readonly"]
+        docker("run", "--rm", *common, image, "migrate")
+        self.run("provider", image,
+                 ["--user", "65532:65532", "--read-only", "--cap-drop", "ALL",
+                  "--env-file", env, "--mount",
+                  f"type=volume,src={volume},dst=/run/bz-provider,readonly"],
+                 ["serve"], aliases=("provider.synthetic.invalid",), memory="1g")
+        self.state.update(stage="provider-started", provider_source_sha=source_sha,
+                          provider_image_id=built["Id"])
+        self.persist()
+        print(json.dumps({"stage": "provider-started", "provider_image_id": built["Id"],
+                          "provider_source_sha": source_sha, "native_service_pubkey": service["public"]}, indent=2))
+
+    def check_provider(self):
+        require(self.state["stage"] == "provider-started", "Start provider first")
+        info = self.inspect("container", self.name("provider"))
+        require(info and info["State"]["Running"], "Provider container is not running")
+        require(not any(info["NetworkSettings"]["Ports"].values()), "Provider port exposed to host")
+        response = docker("run", "--rm", "--network", self.name("storage"), "--label", self.label(),
+                          "--user", "65532:65532", "--read-only", "--cap-drop", "ALL",
+                          "--entrypoint", "curl", IMAGES["client"], "--fail", "--silent", "--show-error",
+                          "--max-time", "10", "http://provider.synthetic.invalid:8080/healthz")
+        health = json.loads(response.stdout)
+        require(health["restricted_profile_active"] is False and health["qualification"] == "in-progress",
+                "Provider reported an unsupported qualification state")
+        require(health["configured"]["native_intake"] and health["configured"]["publication_delivery"],
+                "Native adapters were not configured")
+        report = {"provider_source_sha": self.state["provider_source_sha"],
+                  "provider_image_id": self.state["provider_image_id"], "health": health,
+                  "private_network": True, "host_ports": False,
+                  "scope": "configured service boot; signed native request and consumer path remain separate"}
+        save(self.directory / "provider-check.json", report)
+        print(json.dumps(report, indent=2))
+
     def check_native(self):
         require(self.state["stage"] == "native-started", "Start native relay first")
         relay = self.inspect("container", self.name("relay"))
@@ -602,14 +692,17 @@ enableUpsert = true
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["up-storage", "check-storage", "up-native", "check-native", "probe-media", "restart-native", "status", "down"])
+    parser.add_argument("action", choices=["up-storage", "check-storage", "up-native", "check-native", "probe-media", "restart-native", "up-provider", "check-provider", "status", "down"])
     parser.add_argument("--state", type=Path, default=ROOT / "artifacts/completion/stack")
+    parser.add_argument("--provider-source", help="Exact committed 40-hex provider image source")
     args = parser.parse_args()
     stack = Stack(args.state)
     {"up-storage": stack.up, "check-storage": stack.check_storage, "up-native": stack.up_native,
      "check-native": stack.check_native,
      "probe-media": stack.probe_media,
      "restart-native": stack.restart_native,
+     "up-provider": lambda: stack.up_provider(args.provider_source),
+     "check-provider": stack.check_provider,
      "status": stack.status, "down": stack.down}[args.action]()
 
 
