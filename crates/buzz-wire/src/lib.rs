@@ -30,6 +30,8 @@ pub enum Fault {
     Exhausted,
     #[error("operation requires original-owner recovery")]
     Unknown,
+    #[error("observation cursor expired or retained history has a gap")]
+    Gap,
 }
 pub type Result<T> = std::result::Result<T, Fault>;
 

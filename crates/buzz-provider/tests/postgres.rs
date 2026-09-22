@@ -115,6 +115,9 @@ impl Rig {
             "publish",
             "reconcile-effect",
             "reserve-model-budget",
+            "discover-profile",
+            "observe",
+            "ack-observations",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -518,6 +521,11 @@ impl Rig {
             .unwrap()
     }
 }
+
+#[path = "cases/discovery.rs"]
+mod discovery;
+#[path = "cases/observations.rs"]
+mod observations;
 #[derive(Default)]
 struct Consumer {
     calls: AtomicUsize,

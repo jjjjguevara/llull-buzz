@@ -497,7 +497,7 @@ impl Provider {
         let now = Self::now(&mut tx).await?.timestamp();
         claims.fresh(now)?;
         claims.release_for(&publication, now)?;
-        let result=Self::remember(&mut tx,&c,publication_id.to_string(),Execution::Pending,1,
+        let result=Self::remember(&mut tx,(&c, &claims),publication_id.to_string(),Execution::Pending,1,
             serde_json::json!({"publication_id":publication_id,"delivery":"unavailable","final_native_audience_check":"not-implemented","signed_native_event":null})).await?;
         tx.commit().await?;
         Ok(result)

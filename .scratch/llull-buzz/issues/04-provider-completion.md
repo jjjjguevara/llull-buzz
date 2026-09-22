@@ -67,3 +67,15 @@ also passed. The portable command retains the unchanged supplement and verifies 
 preceding checker against the immutable bootstrap object. Full current-subject results
 are recorded separately after committing a clean subject. Hosted history is preserved;
 automatic PR runs are replaced by explicit manual dispatch while Actions is exhausted.
+
+2026-09-21 — Items 04.1/04.2: authenticated discovery and a transactionally ordered,
+module/context-scoped observation journal are implemented in the working tree.
+Three new real PostgreSQL/signature scenarios passed after missing-method red tests
+and a corrected invalid-query test helper. See [continuation details](../../../docs/implementation/COMPLETION.md).
+No whole capability/proof profile is accepted; snapshot recovery, native mediation
+and background effect coverage remain in progress. Item 04.5 is adding an actual
+HTTPS/independent-database synthetic owner, not a `ConsumerPort` double.
+
+The first OAuth compatibility request returned HTTP 400 for `max_output_tokens`.
+The exact backend output-limit behavior is a qualification gap, not a reason to
+silently drop cumulative accounting or declare a live model pass.

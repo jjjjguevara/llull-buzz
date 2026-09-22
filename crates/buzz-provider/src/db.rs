@@ -162,7 +162,7 @@ impl Provider {
         target: &Target<'_>,
     ) -> Result<(Registration, Claims)> {
         let headers = request.headers;
-        if !path.starts_with('/') || path.contains('?') || path.contains('#') {
+        if !path.starts_with('/') || path.contains('#') {
             return Err(Fault::Invalid.into());
         }
         let row = sqlx::query(
@@ -265,12 +265,13 @@ impl Provider {
     }
     pub(crate) async fn remember<T: Serialize>(
         tx: &mut Tx,
-        c: &Command,
+        command: (&Command, &Claims),
         operation_id: String,
         execution: Execution,
         revision: u64,
         result: T,
     ) -> Result<CommandResult> {
+        let (c, claims) = command;
         let response = CommandResult {
             receipt: Receipt {
                 contract: CONTRACT.into(),
@@ -290,6 +291,7 @@ impl Provider {
         sqlx::query("INSERT INTO commands(consumer_id,operation,intent_id,request_sha256,result) VALUES ($1,$2,$3,$4,$5)")
             .bind(&c.consumer_id).bind(&c.operation).bind(&c.intent_id).bind(&response.receipt.request_sha256)
             .bind(sqlx::types::Json(&response)).execute(&mut **tx).await?;
+        Self::journal(tx, c, claims, &response).await?;
         Ok(response)
     }
     pub(crate) fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {

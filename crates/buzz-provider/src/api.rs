@@ -7,7 +7,7 @@ use crate::{
 };
 use axum::{
     body::Bytes,
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -47,6 +47,7 @@ impl IntoResponse for ProviderError {
             ProviderError::Admission(Fault::Unknown) => {
                 (StatusCode::CONFLICT, "unknown-requires-lookup")
             }
+            ProviderError::Admission(Fault::Gap) => (StatusCode::GONE, "gap-requires-snapshot"),
             _ => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "unknown-provider-commit-status",
@@ -84,6 +85,26 @@ body_handler!(retire, retire_key);
 body_handler!(start, start_task);
 body_handler!(publication, admit_publication);
 body_handler!(model_reservation, reserve_model_budget);
+body_handler!(observation_ack, ack_observations);
+async fn observations(
+    State(p): State<Provider>,
+    Query(query): Query<crate::ObservationQuery>,
+    h: HeaderMap,
+) -> crate::Result<Json<crate::ObservationPage>> {
+    Ok(Json(
+        p.observations(value(&h, "x-llull-consumer")?, query, credentials(&h)?)
+            .await?,
+    ))
+}
+async fn profile(
+    State(p): State<Provider>,
+    h: HeaderMap,
+) -> crate::Result<Json<crate::ProfileView>> {
+    Ok(Json(
+        p.discover_profile(value(&h, "x-llull-consumer")?, credentials(&h)?)
+            .await?,
+    ))
+}
 async fn proof(
     State(p): State<Provider>,
     Path(id): Path<String>,
@@ -152,6 +173,9 @@ async fn complete(
 pub fn router(provider: Provider) -> Router {
     Router::new()
         .route("/healthz", get(health))
+        .route("/integration/v1/profile", get(profile))
+        .route("/integration/v1/observations", get(observations))
+        .route("/integration/v1/observation-acks", post(observation_ack))
         .route("/integration/v1/enrollments", post(enroll))
         .route("/integration/v1/enrollments/{id}/proof", post(proof))
         .route("/integration/v1/access-changes", post(access))

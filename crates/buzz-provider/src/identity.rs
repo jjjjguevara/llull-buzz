@@ -111,8 +111,15 @@ impl Provider {
         let final_now = Self::now(&mut tx).await?.timestamp();
         claims.fresh(final_now)?;
         claims.browser(true, final_now)?;
-        let result =
-            Self::remember(&mut tx, &c, enrollment_id, Execution::Pending, 1, &response).await?;
+        let result = Self::remember(
+            &mut tx,
+            (&c, &claims),
+            enrollment_id,
+            Execution::Pending,
+            1,
+            &response,
+        )
+        .await?;
         tx.commit().await?;
         Ok(result)
     }
@@ -251,7 +258,7 @@ impl Provider {
         claims.browser(false, final_now)?;
         let result = Self::remember(
             &mut tx,
-            &c,
+            (&c, &claims),
             enrollment_id.into(),
             Execution::Completed,
             1,
@@ -315,7 +322,7 @@ impl Provider {
         claims.fresh(Self::now(&mut tx).await?.timestamp())?;
         let result = Self::remember(
             &mut tx,
-            &c,
+            (&c, &claims),
             binding.enrollment_id.clone(),
             Execution::Completed,
             binding.revision as u64,
@@ -375,7 +382,7 @@ impl Provider {
         claims.fresh(Self::now(&mut tx).await?.timestamp())?;
         let result = Self::remember(
             &mut tx,
-            &c,
+            (&c, &claims),
             binding.enrollment_id.clone(),
             Execution::Completed,
             binding.revision as u64,

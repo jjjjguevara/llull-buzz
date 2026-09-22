@@ -200,7 +200,7 @@ impl Provider {
         state.live(&record.manifest, final_now)?;
         let result = Self::remember(
             &mut tx,
-            &c,
+            (&c, &claims),
             manifest.task_id.clone(),
             Execution::Pending,
             state.revision,
@@ -310,7 +310,7 @@ impl Provider {
             .await?;
             let result = Self::remember(
                 &mut tx,
-                &c,
+                (&c, &claims),
                 task_id.into(),
                 Execution::EffectUnknown,
                 state.revision,
@@ -347,7 +347,7 @@ impl Provider {
         )?;
         let result = Self::remember(
             &mut tx,
-            &c,
+            (&c, &claims),
             task_id.into(),
             Execution::Running,
             state.revision,
@@ -470,7 +470,7 @@ impl Provider {
         let attempts =
             Self::attempts(&mut tx, &c.consumer_id, &record.manifest.root_task_id).await?;
         claims.fresh(Self::now(&mut tx).await?.timestamp())?;
-        let result=Self::remember(&mut tx,&c,task_id.into(),state.phase,state.revision,serde_json::json!({"task":TaskView::new(task_id,&record,&state),"attempts":attempts,"recovery":"lookup-original-owner-only"})).await?;
+        let result=Self::remember(&mut tx,(&c, &claims),task_id.into(),state.phase,state.revision,serde_json::json!({"task":TaskView::new(task_id,&record,&state),"attempts":attempts,"recovery":"lookup-original-owner-only"})).await?;
         tx.commit().await?;
         Ok(result)
     }
@@ -554,7 +554,7 @@ impl Provider {
         claims.fresh(Self::now(&mut tx).await?.timestamp())?;
         let result = Self::remember(
             &mut tx,
-            &c,
+            (&c, &claims),
             task_id.into(),
             Execution::Completed,
             state.revision,

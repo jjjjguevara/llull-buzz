@@ -122,7 +122,7 @@ impl Provider {
             &root.manifest,
             final_now,
         )?;
-        let result=Self::remember(&mut tx,&c,reservation_id.to_string(),Execution::Pending,state.revision,
+        let result=Self::remember(&mut tx,(&c, &claims),reservation_id.to_string(),Execution::Pending,state.revision,
             serde_json::json!({"reservation_id":reservation_id,"charge":charge,"model_dispatch":"unavailable","task_generation":state.generation})).await?;
         tx.commit().await?;
         Ok(result)
