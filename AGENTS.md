@@ -52,3 +52,23 @@ on `impl/restricted-task-foundation`; do not reopen bootstrap PR #1. Read
 [actual evidence](docs/implementation/EVIDENCE.md). All privacy, license, authority,
 tracker and reviewer-ownership constraints remain. No Actions usage, unapproved paid
 capacity, live credentials, profile activation, certification or merge is authorized.
+
+## Full completion — subsequent owner authorization 2026-09-21
+
+The owner's local-resumption instruction supersedes the foundation-only execution
+limit above. Complete BZ-C01..08 on the existing PR: actual upstream execution,
+governed tools/model/publication/native/media paths, recovery, distribution and an
+isolated test deployment. Run real-boundary TDD and qualification with synthetic
+data and test identities using existing authorized capacity. The owner subsequently
+directed use of Codex/ChatGPT Pro OAuth and independent progress while the counterpart
+lane completes. Record and qualify that provider amendment; subscription login is
+not evidence of API compatibility, an unlimited budget or runtime conformance.
+
+Use [task 04](.scratch/llull-buzz/issues/04-provider-completion.md). Preserve historical
+evidence and non-forced updates. GitHub Actions is exhausted: execute portable stages
+locally and correct implementation applicability without weakening document assertions
+or claiming a hosted pass. Isolate task resources; never stop shared daemons, mount
+host control sockets into agents or globally prune. Public records contain only
+neutral provider material. Private counterpart details stay in the authorized private
+coordination surface. Human UAT, independent certification and merge remain separate;
+keep PR #2 draft and unmerged.

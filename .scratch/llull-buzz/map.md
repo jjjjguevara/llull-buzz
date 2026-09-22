@@ -59,3 +59,11 @@ The [local continuation](../../docs/implementation/LOCAL-VALIDATION.md) records 
 lockfile, clean Rust checks, real PostgreSQL execution, remediations and exact probe limits.
 Task 03 remains claimed for reviewer acceptance. No human case, whole proof profile or
 restricted-profile activation is marked passed.
+
+## Full completion frontier
+
+[Task 04 — complete and qualify the restricted provider](issues/04-provider-completion.md)
+is claimed by the local implementation and test operator. It records the subsequent
+full-completion authorization, Codex/ChatGPT OAuth direction and independent progress
+while the counterpart lane completes. The foundation handoff above is historical;
+task 04's completion criterion is the whole accepted provider and applicable qualification.
