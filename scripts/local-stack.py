@@ -669,6 +669,153 @@ enableUpsert = true
         save(self.directory / "provider-origin-probe.json", report)
         print(json.dumps(report, indent=2))
 
+    def backup_storage(self):
+        require(self.state["stage"] in {"native-started", "provider-started"},
+                "Start native storage before backup")
+        backup = self.directory.parent / "backups" / uuid.uuid4().hex
+        backup.mkdir(parents=True, mode=0o700)
+        stopped = []
+        for part in ["provider", "relay", "seaweed"]:
+            info = self.inspect("container", self.name(part))
+            if info and info["State"]["Running"]:
+                docker("stop", "--time", "10", self.name(part))
+                stopped.append(part)
+        files = {}
+        try:
+            pg = self.name("postgres")
+            require(self.inspect("container", pg)["State"]["Running"], "PostgreSQL is unavailable for backup")
+            for role, database in [("bz_provider", "bz_foundation_test"),
+                                   ("bz_native", "bz_native"), ("bz_filer", "bz_filer")]:
+                content = docker("exec", pg, "pg_dump", "-Fc", "-U", role, "-d", database).stdout
+                require(content.startswith(b"PGDMP"), "PostgreSQL custom dump header missing")
+                path = backup / (database + ".dump")
+                with open(path, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
+                    out.write(content)
+                files[path.name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
+            for suffix in ["media", "relay-data"]:
+                volume = self.name(suffix)
+                require(self.inspect("volume", volume) is not None, "Owned data volume is missing")
+                content = docker("run", "--rm", "--network", "none", "--label", self.label(),
+                                 "--mount", f"type=volume,src={volume},dst=/data,readonly",
+                                 "--entrypoint", "tar", IMAGES["config"], "-cf", "-", "-C", "/data", ".").stdout
+                path = backup / (suffix + ".tar")
+                with open(path, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
+                    out.write(content)
+                files[path.name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
+            # Synthetic test identities are copied separately from database
+            # state so the restore can prove original signed identity. This is
+            # private local evidence, not a production key-backup design.
+            for name in ["native-identities.json", "native-check.json", "media-probe.json",
+                         "storage-check.json"]:
+                source = self.directory / name
+                require(source.is_file(), "Native restore reference is missing: " + name)
+                content = source.read_bytes()
+                with open(backup / name, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
+                    out.write(content)
+                files[name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
+        finally:
+            for part in reversed(stopped):
+                docker("start", self.name(part))
+                if part == "seaweed":
+                    self.wait_seaweed()
+                if part == "relay":
+                    self.wait_relay()
+        report = {"owner": self.state["owner"], "docker_engine": "29.8.1", "files": files,
+                  "quiesced_owned_services": stopped,
+                  "scope": "quiesced synthetic DB/volume and test-identity copies; Valkey excluded; production key protection and restore separate"}
+        save(backup / "manifest.json", report)
+        print(json.dumps({"backup_directory": str(backup), **report}, indent=2))
+
+    def wait_seaweed(self):
+        digest = json.loads((self.directory / "storage-check.json").read_text())["object_sha256"]
+        deadline = time.monotonic() + 120
+        while True:
+            info = self.inspect("container", self.name("seaweed"))
+            require(info and info["State"]["Running"], "Owned Seaweed exited during recovery")
+            try:
+                status, body = self.storage_request("GET", "/buzz-media/qualification/" + digest)
+                if status == 200 and hashlib.sha256(body).hexdigest() == digest:
+                    return
+            except (RuntimeError, OSError, http.client.HTTPException):
+                pass
+            if time.monotonic() > deadline:
+                raise RuntimeError("Owned Seaweed did not recover authenticated retained bytes")
+            time.sleep(2)
+
+    def wait_relay(self):
+        checked = json.loads((self.directory / "native-check.json").read_text())
+        deadline = time.monotonic() + 120
+        while True:
+            info = self.inspect("container", self.name("relay"))
+            require(info and info["State"]["Running"], "Owned relay exited during recovery")
+            read = self.native_client("owner", "messages", "get", "--channel", checked["channel_id"], check=False)
+            if read.returncode == 0 and any(e.get("id") == checked["message_event_id"]
+                                            for e in json.loads(read.stdout)):
+                return
+            if time.monotonic() > deadline:
+                raise RuntimeError("Owned relay did not recover its original event")
+            time.sleep(2)
+
+    def restore_storage(self, backup_directory):
+        require(self.state["stage"] == "storage-started", "Restore requires a new isolated storage stack")
+        require(backup_directory is not None, "Pass --backup for a task-owned backup directory")
+        backup = backup_directory.resolve()
+        backup.relative_to(ROOT / "artifacts/completion/backups")
+        manifest_bytes = (backup / "manifest.json").read_bytes()
+        manifest = json.loads(manifest_bytes)
+        require(manifest["owner"] != self.state["owner"], "Refusing to restore over source stack")
+        expected = set(manifest["files"])
+        require(expected == {"bz_foundation_test.dump", "bz_native.dump", "bz_filer.dump",
+                             "media.tar", "relay-data.tar", "native-identities.json",
+                             "native-check.json", "media-probe.json", "storage-check.json"},
+                "Backup file set differs")
+        for name, record in manifest["files"].items():
+            data = (backup / name).read_bytes()
+            require(len(data) == record["size"] and hashlib.sha256(data).hexdigest() == record["sha256"],
+                    "Backup digest differs: " + name)
+        seaweed = self.name("seaweed")
+        require(self.inspect("container", seaweed)["State"]["Running"], "Owned target Seaweed is not running")
+        docker("stop", "--time", "10", seaweed)
+        pg = self.name("postgres")
+        for role, database in [("bz_provider", "bz_foundation_test"),
+                               ("bz_native", "bz_native"), ("bz_filer", "bz_filer")]:
+            docker("exec", "-i", pg, "pg_restore", "--clean", "--if-exists", "--no-owner",
+                   "--no-acl", "--single-transaction", "--exit-on-error", "-U", role,
+                   "-d", database, data=(backup / (database + ".dump")).read_bytes())
+        relay_data = self.create("volume", "relay-data")
+        self.data_owner(relay_data)
+        for suffix in ["media", "relay-data"]:
+            volume = self.name(suffix)
+            require(self.inspect("volume", volume) is not None, "Target owned data volume is missing")
+            docker("run", "--rm", "-i", "--network", "none", "--label", self.label(),
+                   "--mount", f"type=volume,src={volume},dst=/data",
+                   "--entrypoint", "tar", IMAGES["config"], "-xpf", "-", "-C", "/data",
+                   data=(backup / (suffix + ".tar")).read_bytes())
+        for name in ["native-identities.json", "native-check.json", "media-probe.json",
+                     "storage-check.json"]:
+            with open(self.directory / name, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
+                out.write((backup / name).read_bytes())
+        docker("start", seaweed)
+        self.wait_seaweed()
+        self.up_native()
+        checked = json.loads((self.directory / "native-check.json").read_text())
+        media = json.loads((self.directory / "media-probe.json").read_text())
+        self.wait_relay()
+        blob = self.native_client("owner", "media", "get", media["blob_sha256"])
+        require(hashlib.sha256(blob.stdout).hexdigest() == media["blob_sha256"],
+                "Original attachment bytes missing after restore")
+        denied = self.native_client("bot", "messages", "get", "--channel", checked["channel_id"], check=False)
+        require(denied.returncode == 0 and json.loads(denied.stdout) == [],
+                "Restored private-channel revocation was lost")
+        report = {"backup_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+                  "source_owner": manifest["owner"], "restored_owner": self.state["owner"],
+                  "original_native_event_id": checked["message_event_id"],
+                  "original_media_sha256": media["blob_sha256"],
+                  "exact_event_and_media_recovered": True, "revoked_channel_read_denied": True,
+                  "scope": "fresh isolated PostgreSQL/Seaweed/relay restore; provider operations and protected key backup separate"}
+        save(self.directory / "restore-check.json", report)
+        print(json.dumps(report, indent=2))
+
     def check_native(self):
         require(self.state["stage"] == "native-started", "Start native relay first")
         relay = self.inspect("container", self.name("relay"))
@@ -747,9 +894,10 @@ enableUpsert = true
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["up-storage", "check-storage", "up-native", "check-native", "probe-media", "restart-native", "up-provider", "check-provider", "probe-provider-origin", "switch-native-wss", "status", "down"])
+    parser.add_argument("action", choices=["up-storage", "check-storage", "up-native", "check-native", "probe-media", "restart-native", "up-provider", "check-provider", "probe-provider-origin", "switch-native-wss", "backup-storage", "restore-storage", "status", "down"])
     parser.add_argument("--state", type=Path, default=ROOT / "artifacts/completion/stack")
     parser.add_argument("--provider-source", help="Exact committed 40-hex provider image source")
+    parser.add_argument("--backup", type=Path, help="Task-owned backup directory for restore-storage")
     args = parser.parse_args()
     stack = Stack(args.state)
     {"up-storage": stack.up, "check-storage": stack.check_storage, "up-native": stack.up_native,
@@ -760,6 +908,8 @@ def main():
      "check-provider": stack.check_provider,
      "probe-provider-origin": stack.probe_provider_origin,
      "switch-native-wss": stack.switch_native_wss,
+     "backup-storage": stack.backup_storage,
+     "restore-storage": lambda: stack.restore_storage(args.backup),
      "status": stack.status, "down": stack.down}[args.action]()
 
 

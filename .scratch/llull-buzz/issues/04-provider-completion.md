@@ -124,3 +124,13 @@ identity outside that channel retrieved the exact PNG by hash.
 has no host-published port; this is not permission to activate the profile.
 Provider media mediation and bypass-proof native routing under item 04.4
 remain required. See [continuation details](../../../docs/implementation/COMPLETION.md).
+
+2026-09-22 — Item 04.6: a corrected task-only backup/restart and a fresh
+isolated PostgreSQL/Seaweed/relay-data restore passed. The first attempts
+exposed a relay-versus-Seaweed startup race; the corrected path waits for an
+authenticated retained S3 object before starting the relay. The new namespace
+recovered the original signed event, exact media digest and revoked-channel
+denial after rebuilding its disposable Valkey cache. The restored provider DB
+contained no populated command/effect records, and protected key backup is
+still open; this does not resolve item 04.6 or BZ-PF05. Evidence and exact
+source/target identities are in [continuation details](../../../docs/implementation/COMPLETION.md).

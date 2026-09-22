@@ -240,6 +240,43 @@ owned relay. The original signed message event and the original media digest
 were recovered with the same image. This is a process-restart check, not
 PostgreSQL/Seaweed backup restoration or media authorization evidence.
 
+## Isolated synthetic storage restoration
+
+`scripts/local-stack.py backup-storage` quiesces only containers carrying this
+task's owner label, then takes custom-format dumps of the provider, native and
+filer PostgreSQL databases and tar copies of the Seaweed data and relay data
+volumes. It includes the disposable test identities and expected event/media
+references in the ignored owner-only backup directory; this is not a
+production key-backup or encryption design. Valkey is intentionally disposable.
+Each copy has a digest and size in the private manifest.
+
+The first backup copied the data but exposed a startup-ordering fault: the
+relay restarted before SeaweedFS could serve its authenticated retained object,
+then exited during its Git-store conformance check. The corrected command
+waits for an exact authenticated S3 read before starting the relay and for an
+original signed event read before reporting success. Its later run exited 0.
+The first fresh restore reproduced the same ordering failure; that run was
+interrupted after the relay exit, and the failed target was removed using only
+its own owner labels. The corrected `restore-storage` now applies the same
+Seaweed readiness gate before starting the relay.
+
+The corrected fresh run used `up-storage --state
+artifacts/completion/restore-8b05` followed by `restore-storage --state
+artifacts/completion/restore-8b05 --backup
+artifacts/completion/backups/e71c6b57ac04409c8836337d6aea8950`; both
+exited 0 with `DOCKER_HOST` set to the task VM and `DOCKER_CONTEXT` empty.
+Manifest SHA-256 was
+`6865188e5a72c7c80b009fe6cf7e86fedb1166fc14b89470100d019b1311e688`.
+The new owner was `afaf2b5f87ac4b83abf069d5a1f4eeb0`, distinct from the
+source `1866114f818d4b29b325b582c8a83197`. The restored relay recovered
+the original signed event
+`4c32971568c08e6a34c5fe4bcbea15aed49697e25450aa31ae57c2ba4548ea9f`,
+the exact PNG digest
+`6935ddb5b3ba39a86e03f7394829f2e65f88003d311927b26e97db59537a9464`,
+and the private-channel revocation denial with a new empty Valkey cache.
+Provider command/effect records were not populated in that dump, and protected
+key restoration remains unqualified.
+
 The owner directed Codex/ChatGPT Pro OAuth for this continuation. The installed
 `codex-cli 0.155.1` reports a ChatGPT login. Pinned Buzz supports the OpenAI Responses
 transport through `OPENAI_COMPAT_API=responses` and an owned base URL, so the Buzz
