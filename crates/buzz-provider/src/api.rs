@@ -89,6 +89,26 @@ body_handler!(start, start_task);
 body_handler!(model_reservation, reserve_model_budget);
 body_handler!(observation_ack, ack_observations);
 body_handler!(intake_registration, register_intake);
+body_handler!(create_snapshot, create_snapshot);
+async fn snapshot_page(
+    State(p): State<Provider>,
+    Path(id): Path<uuid::Uuid>,
+    Query(query): Query<crate::SnapshotQuery>,
+    h: HeaderMap,
+) -> crate::Result<Json<crate::SnapshotPage>> {
+    Ok(Json(
+        p.snapshot_page(value(&h, "x-llull-consumer")?, id, query, credentials(&h)?)
+            .await?,
+    ))
+}
+async fn snapshot_ack(
+    State(p): State<Provider>,
+    Path(id): Path<uuid::Uuid>,
+    h: HeaderMap,
+    b: Bytes,
+) -> crate::Result<Json<crate::CommandResult>> {
+    Ok(Json(p.ack_snapshot(id, &b, credentials(&h)?).await?))
+}
 async fn evidence(
     State(p): State<Provider>,
     Path(id): Path<String>,
@@ -211,6 +231,18 @@ pub fn router_with_surfaces(provider: Provider, surfaces: ConfiguredSurfaces) ->
         .route("/integration/v1/profile", get(profile))
         .route("/integration/v1/observations", get(observations))
         .route("/integration/v1/observation-acks", post(observation_ack))
+        .route(
+            "/integration/v1/observation-snapshots",
+            post(create_snapshot),
+        )
+        .route(
+            "/integration/v1/observation-snapshots/{id}",
+            get(snapshot_page),
+        )
+        .route(
+            "/integration/v1/observation-snapshots/{id}/ack",
+            post(snapshot_ack),
+        )
         .route("/integration/v1/enrollments", post(enroll))
         .route("/integration/v1/enrollments/{id}/proof", post(proof))
         .route("/integration/v1/access-changes", post(access))

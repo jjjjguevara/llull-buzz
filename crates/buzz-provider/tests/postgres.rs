@@ -124,6 +124,9 @@ impl Rig {
             "register-intake",
             "reconcile-publication",
             "observe-publication",
+            "create-snapshot",
+            "read-snapshot",
+            "ack-snapshot",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -538,6 +541,8 @@ mod intake;
 mod observations;
 #[path = "cases/publication.rs"]
 mod publication;
+#[path = "cases/snapshots.rs"]
+mod snapshots;
 #[derive(Default)]
 struct Consumer {
     calls: AtomicUsize,

@@ -131,6 +131,47 @@ and binds their identities into the release's audience revision. Native origin c
 now also requires the relay public key. Health output reports configured surfaces
 separately from the still-in-progress qualification status.
 
+The complete seven-scenario PostgreSQL suite passed at clean source
+`953767bbda59018ebe4b9f9aad19126937a6e3a4`, including the historical foundation
+case. Its command log SHA-256 is
+`b1a8a8c4fcd0f2a0cd298e925feb4d3c3cebbce69c255ccbc0ae1037c6739148`.
+All twelve workspace library tests also passed at that source (log SHA-256
+`ce81ffdd8205656bbdd8bcbf845bbc9b0212f5d8fcb776636e2ef82e437074d4`).
+The native relay transports in the intake/publication cases remain declared fixtures.
+
+### Observation snapshot recovery
+
+`POST /integration/v1/observation-snapshots` accepts a closed empty payload under
+`create-snapshot` authority for the consumer's `observations` resource at revision 1.
+It freezes the latest retained observation for each stable operation identity in
+the authorized module/context at one committed high-water boundary. It includes
+minimal operation/resource references and outcomes, not source content or signatures.
+Current task/source/publication reads retain their separate authorization gates.
+
+`GET /integration/v1/observation-snapshots/{id}` requires `read-snapshot` authority
+for that snapshot resource. Pages contain at most 100 records. Random page handles
+are stored in PostgreSQL and bound to the snapshot; they cannot select an arbitrary
+offset or supply independent read authority. Snapshots expire after 24 hours and
+cannot cross the external recovery epoch. New work after capture is excluded from
+the frozen pages and remains available through subsequent observation delivery.
+
+Only the final-page handle can accompany `ack-snapshot` at
+`POST /integration/v1/observation-snapshots/{id}/ack`. The signed command binds the
+snapshot, handle and consumer durable receipt. This advances the scoped observation
+offset without erasing history; an incomplete snapshot cannot silently skip a gap.
+Reusing a durable receipt for another cursor now produces an explicit conflict,
+rather than a database-error response. Snapshot creation/ACK produce no recursive
+observation events. Migration `0005_observation_snapshots.sql` preserves immutable
+snapshot rows, entries and handles.
+
+The new PostgreSQL scenario passed in the working tree after a missing-method red
+and a correction to its native-enrollment fixture: one existing principal cannot
+silently replace its native key between modules. It exercises a retention gap,
+module/cursor denial, immutable capture during new work, incomplete-ACK denial,
+duplicate receipt handling and reconnect after durable snapshot acceptance.
+Background task/effect event coverage and retained business-result reads remain
+under implementation; this snapshot result alone does not close BZ-C08.
+
 ## Requested OAuth model amendment
 
 The owner directed Codex/ChatGPT Pro OAuth for this continuation. The installed

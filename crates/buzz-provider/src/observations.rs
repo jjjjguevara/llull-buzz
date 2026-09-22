@@ -96,7 +96,10 @@ impl Provider {
         claims: &Claims,
         response: &CommandResult,
     ) -> Result<()> {
-        if c.operation == "ack-observations" {
+        if matches!(
+            c.operation.as_str(),
+            "ack-observations" | "create-snapshot" | "ack-snapshot"
+        ) {
             return Ok(());
         }
         sqlx::query(
@@ -278,7 +281,11 @@ impl Provider {
         })
     }
 
-    async fn observation_offset(tx: &mut Tx, consumer: &str, claims: &Claims) -> Result<u64> {
+    pub(crate) async fn observation_offset(
+        tx: &mut Tx,
+        consumer: &str,
+        claims: &Claims,
+    ) -> Result<u64> {
         sqlx::query("INSERT INTO observation_offsets(consumer_id,module_id,context_domain,recovery_epoch) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING")
             .bind(consumer).bind(&claims.module_id).bind(&claims.context_domain).bind(claims.recovery_epoch as i64).execute(&mut **tx).await?;
         let offset:i64=sqlx::query_scalar("SELECT acknowledged FROM observation_offsets WHERE consumer_id=$1 AND module_id=$2 AND context_domain=$3 AND recovery_epoch=$4 FOR UPDATE")
@@ -329,6 +336,11 @@ impl Provider {
             }
             Some(_) => (),
             None => {
+                let reused: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM observation_receipts WHERE consumer_id=$1 AND durable_receipt_id=$2)")
+                    .bind(&c.consumer_id).bind(&ack.durable_receipt_id).fetch_one(&mut *tx).await?;
+                if reused {
+                    return Err(Fault::Conflict.into());
+                }
                 let offset = Self::observation_offset(&mut tx, &c.consumer_id, &claims).await?;
                 if offset != cursor.after {
                     return Err(Fault::Conflict.into());

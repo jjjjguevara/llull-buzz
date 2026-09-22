@@ -96,6 +96,10 @@ async fn observations_are_scoped_contiguous_and_durable() {
     assert!(ack(&rig, "module-a", &a.cursor, "changed-receipt")
         .await
         .is_err());
+    assert!(matches!(
+        ack(&rig, "module-a", &b.cursor, "receipt-a").await,
+        Err(ProviderError::Admission(Fault::Conflict))
+    ));
     ack(&rig, "module-a", &b.cursor, "receipt-b").await.unwrap();
     let reconnect = page(
         &rig,

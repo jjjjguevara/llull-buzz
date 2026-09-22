@@ -96,3 +96,10 @@ the real relay/client run. Item 04.6 has an isolated Ubuntu 24.04.4 arm64 VM run
 the selected Docker 29.8.1; pinned native executables are compiling there. Full gateway,
 agent/model/tool, media, restore and distribution qualification remains claimed work,
 not an accepted capability or proof profile.
+
+2026-09-22 — All seven PostgreSQL scenarios and twelve library tests passed at
+`953767bbda59018ebe4b9f9aad19126937a6e3a4`. Item 04.2 adds frozen, scoped snapshot
+recovery with final-page durable acknowledgment, plus explicit duplicate-receipt
+conflicts. Its working-tree PostgreSQL scenario passed after a missing-implementation
+red and fixture correction. Current scope and precise remaining boundaries remain
+in [continuation details](../../../docs/implementation/COMPLETION.md).
