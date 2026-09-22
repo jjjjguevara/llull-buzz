@@ -78,19 +78,32 @@ impl<C: ConsumerCommand> HttpConsumer<C> {
         lookup_url: &str,
         key: nostr::Keys,
     ) -> std::result::Result<Self, PortError> {
+        Self::with_roots(owner, command_url, lookup_url, key, vec![])
+    }
+    /// Operator-selected private PKI, with ordinary chain and hostname checks.
+    /// Nonempty roots replace platform roots; no caller can disable TLS verification.
+    pub fn with_roots(
+        owner: String,
+        command_url: &str,
+        lookup_url: &str,
+        key: nostr::Keys,
+        roots: Vec<reqwest::Certificate>,
+    ) -> std::result::Result<Self, PortError> {
         llull_buzz_wire::id(&owner).map_err(|_| PortError)?;
         let command_url = endpoint(command_url)?;
         let lookup_url = endpoint(lookup_url)?;
         if command_url.origin() != lookup_url.origin() || command_url == lookup_url {
             return Err(PortError);
         }
-        let client = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
             .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|_| PortError)?;
+            .timeout(Duration::from_secs(30));
+        if !roots.is_empty() {
+            builder = builder.tls_certs_only(roots);
+        }
+        let client = builder.build().map_err(|_| PortError)?;
         Ok(Self {
             owner,
             command_url,

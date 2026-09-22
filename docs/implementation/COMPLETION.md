@@ -56,6 +56,21 @@ unwrapped an intentionally invalid page-size result; that test-driver error was 
 without removing the denial assertion. Final committed-source reruns and full-suite
 regressions are recorded separately; a working-tree pass is not a pass of its parent SHA.
 
+The HTTPS owner scenario now uses the production `HttpConsumer` transport against
+an independently listening TLS server and a separate PostgreSQL database. The owner
+verifies native signatures, ES256 evidence, exact command identity and its own current
+authority inside its commit transaction. A useful `SetLabel` write commits, its response
+is deliberately lost, and original-owner lookup returns the retained result with one
+write. The provider then explicitly completes the task. A second request pauses after
+dispatch; an owner-side revocation denies it before the write. An untrusted TLS root
+also fails. This synthetic owner is protocol evidence, not composed application UAT.
+
+The initial runtime attempt failed before any owner commit because the generated
+certificate was marked as a CA certificate. The fixture now generates a leaf certificate
+and asserts the owner commit before testing recovery. The corrected working-tree
+scenario passed on 2026-09-22. `HttpConsumer::with_roots` permits operator-selected
+private PKI with normal chain/hostname verification; no insecure TLS mode is added.
+
 ## Requested OAuth model amendment
 
 The owner directed Codex/ChatGPT Pro OAuth for this continuation. The installed

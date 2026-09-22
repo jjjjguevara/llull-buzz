@@ -524,6 +524,8 @@ impl Rig {
 
 #[path = "cases/discovery.rs"]
 mod discovery;
+#[path = "cases/https_consumer.rs"]
+mod https_consumer;
 #[path = "cases/observations.rs"]
 mod observations;
 #[derive(Default)]
