@@ -172,8 +172,6 @@ duplicate receipt handling and reconnect after durable snapshot acceptance.
 Background task/effect event coverage and retained business-result reads remain
 under implementation; this snapshot result alone does not close BZ-C08.
 
-## Requested OAuth model amendment
-
 ## Isolated selected storage stack
 
 [`scripts/local-stack.py`](../../scripts/local-stack.py) owns a private Docker
@@ -276,6 +274,71 @@ the exact PNG digest
 and the private-channel revocation denial with a new empty Valkey cache.
 Provider command/effect records were not populated in that dump, and protected
 key restoration remains unqualified.
+
+## Private provider image and pinned native origin
+
+The provider image built from committed source
+`eae913c6e4c9a9d4cfcf25bbd2c59be648aba438` on the selected Docker Engine
+29.8.1 using BuildKit, an exact-ID local dependency-builder layer and immutable
+Debian base. `scripts/build-provider-image.sh` archives the committed tree and
+checks the image's source label. The image ID is
+`sha256:e6707c512639123882dbd0ed134619c5d01054cb292634db9e1dcf101e6525b1`;
+the Linux arm64 provider binary SHA-256 is
+`5e11d861d2cb28be4d5ffc69d46ab1bcaf8fb4366b1908c3891e1f755daa34d4`.
+The successful build log SHA-256 is
+`0a7898bf2ceb4e4516f25d0296d685066da101a0664f189a403ce14f358be38d`.
+The preceding full legacy-builder run compiled the release binary but was
+interrupted during a long image-layer commit; the successful image reused that
+builder layer. A clean independent final image build and complete OS notices
+remain open.
+
+`scripts/local-stack.py up-provider --provider-source eae913c6e4c9a9d4cfcf25bbd2c59be648aba438`
+enrolled a synthetic service in the original private channel, migrated the
+isolated provider database and started the provider as UID 65532 with a
+read-only root, no Linux capabilities and no host port. The first admin enrollment
+attempt exited 5 during a competing image build; a redacted retry succeeded,
+and the owned deployment then exited 0. `check-provider` exited 0 before and
+after the owned process restart. Health reports native intake and publication
+delivery configured, but model dispatch, native gateway and media gateway false;
+qualification remains `in-progress` and the restricted profile inactive.
+
+The first `switch-native-wss` recipe changed the public URL from
+`ws://buzz-relay.synthetic.invalid:3000` to
+`wss://buzz-relay.synthetic.invalid`. Pinned upstream treats the host **and
+non-default port** as tenant authority. That switch created a new empty
+community; its admin list contained only the owner, while the service and
+original event remained in the old community. The signed native-origin probe
+failed. Commit `8ec269206ebbb86d776b406c8c52a364addf4649` preserves
+`buzz-relay.synthetic.invalid:3000` while changing the scheme to `wss` and
+signing `https://buzz-relay.synthetic.invalid:3000`. The corrected admin list
+contained the enrolled service. The production `HttpNativeOrigin` probe then
+exited 0 against the unmodified pinned relay: original event
+`4c32971568c08e6a34c5fe4bcbea15aed49697e25450aa31ae57c2ba4548ea9f`,
+retrieved byte digest
+`5687040ef6378848c883704cd1358cb047a2a71c545743a5f9a91a9e3bb8a483`,
+and current two-member audience revision
+`9ee50d635e7761cb481a2cef03b7ce498c885f4f9a42cec9d2dae0de5f93f43c`.
+This proves the fixed-origin signed read, not consumer command admission,
+publication through the live process, an external TLS terminator or native
+client compatibility over TLS. The source stack remains private and profile
+activation is still prohibited.
+
+The corrected WSS-posture `backup-storage` command exited 0 from clean
+`8ec269206ebbb86d776b406c8c52a364addf4649` script source. It quiesced
+only the owned provider, relay and SeaweedFS, then restarted them in dependency
+order and used the signed fixed-origin probe to verify the original event.
+The command log SHA-256 is
+`07473efd374c1ba94efcf082ac8b7ba4ca8843f8c26917851e1013eb8320c78d`;
+the private manifest SHA-256 is
+`1794af5ed6a918307b0ca9177a15f32f9b22266d87e0c5e8315dfacf4f872b18`.
+The first WSS-posture backup also exited 0, but its wrapper expected one JSON
+document while the command printed both the readiness probe and backup report.
+The script now suppresses the nested report; the clean-source run parsed one
+report. Subsequent provider health and signed native-origin checks exited 0.
+This is a quiesced backup/restart check, not a fresh WSS restore of populated
+provider effects or protected production keys.
+
+## Requested OAuth model amendment
 
 The owner directed Codex/ChatGPT Pro OAuth for this continuation. The installed
 `codex-cli 0.155.1` reports a ChatGPT login. Pinned Buzz supports the OpenAI Responses

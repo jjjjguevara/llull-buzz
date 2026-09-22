@@ -134,3 +134,16 @@ denial after rebuilding its disposable Valkey cache. The restored provider DB
 contained no populated command/effect records, and protected key backup is
 still open; this does not resolve item 04.6 or BZ-PF05. Evidence and exact
 source/target identities are in [continuation details](../../../docs/implementation/COMPLETION.md).
+
+2026-09-22 — Items 04.2/04.4/04.6: a BuildKit image from committed provider
+source `eae913c6e4c9a9d4cfcf25bbd2c59be648aba438` booted with the real
+PostgreSQL database and pinned relay in the owned private stack. The initial
+`wss://host` switch changed upstream tenant authority from `host:3000` and
+created a new empty community. Commit `8ec269206ebbb86d776b406c8c52a364addf4649`
+retains the host and port while changing only the signing scheme. The production
+`HttpNativeOrigin` then recovered the original signed event and current
+two-member audience; a clean-source WSS-posture backup/restart also passed.
+The image used an exact-ID cached dependency builder, so a clean independent
+distribution build remains open. No external TLS terminator, live publication
+command, media gateway, model/tool execution, populated-effect restore or
+human UAT is qualified by these results. The status stays claimed.
