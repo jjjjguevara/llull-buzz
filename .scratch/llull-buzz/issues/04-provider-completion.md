@@ -112,3 +112,15 @@ The isolated PostgreSQL 16.15, SeaweedFS 4.47/PostgreSQL filer and Valkey 8.1.10
 storage stack passed real authenticated S3 write/read/range and role/access
 denials, with evidence recorded in continuation details. These qualify the
 storage component, not yet the native relay/agent/client or media gateway.
+
+2026-09-22 — Items 04.4/04.6: the pinned upstream relay and real `buzz` CLI
+passed private-channel create, signed-message recovery, relay enrollment
+denial, channel-member grant/revocation and owned relay restart with exact
+event/media recovery on the selected Docker Engine. A real Blossom upload
+then exposed a concrete disclosure counterexample: the original signed
+private-channel message carried the PNG `imeta` digest, yet a relay-enrolled
+identity outside that channel retrieved the exact PNG by hash.
+`probe-media` records the failed artifact gate and exits nonzero. The origin
+has no host-published port; this is not permission to activate the profile.
+Provider media mediation and bypass-proof native routing under item 04.4
+remain required. See [continuation details](../../../docs/implementation/COMPLETION.md).

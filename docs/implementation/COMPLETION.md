@@ -204,6 +204,42 @@ SigV4 and HTTP transport from an ephemeral, restricted client container.
 This qualifies the storage component; native client authorization, media
 disclosure, relay restart and backup/restore are separate gates.
 
+## Pinned native relay and media disclosure counterexample
+
+The same task-owned Docker 29.8.1 stack now starts the unmodified
+`block/buzz@01b6174a1cbad249e93f31df97d4b2ed1d0e8638` relay and uses
+its `buzz` and `buzz-admin` clients. The image ID is
+`sha256:a66ab3005e2a458772109b98233bf5a48c21315e80bf55d703381e94acefa5b4`.
+The relay runs unprivileged with a read-only root, no Linux capabilities,
+an owned data volume and no host-published port. Its startup Git-store
+conformance probe passed. `scripts/local-stack.py check-native` exited 0:
+the real client created a private channel, signed and recovered a message,
+denied an unenrolled identity, hid channel metadata and messages from an
+enrolled nonmember, allowed a channel member to recover the retained message,
+and removed that access after roster revocation. Upstream represents a hidden
+private-channel query as an empty result, not an HTTP error. The fixed
+synthetic event ID and channel ID are in the ignored task-local report.
+
+`scripts/local-stack.py probe-media` uploaded a valid synthetic PNG through
+the real Blossom client, attached it to an accepted signed private-channel
+message and verified its `imeta` digest; its owner recovered identical bytes
+by SHA-256. An unenrolled identity was denied. **The artifact-disclosure gate
+failed:** a relay-enrolled bot with no private-channel membership recovered
+the exact attached blob by its hash. The probe records
+`enrolled_nonchannel_read_denied: false` and intentionally exits nonzero;
+the counterexample digest is
+`6935ddb5b3ba39a86e03f7394829f2e65f88003d311927b26e97db59537a9464`.
+The pinned upstream media read checks Blossom signature and relay membership,
+but this deployment cannot treat either as artifact-specific release. The
+relay remains on an internal task network and the restricted profile is not
+activated. Provider media mediation and bypass-proof client routing remain
+required under BZ-PF03 and BZ-PF06.
+
+`scripts/local-stack.py restart-native` exited 0 after restarting only its
+owned relay. The original signed message event and the original media digest
+were recovered with the same image. This is a process-restart check, not
+PostgreSQL/Seaweed backup restoration or media authorization evidence.
+
 The owner directed Codex/ChatGPT Pro OAuth for this continuation. The installed
 `codex-cli 0.155.1` reports a ChatGPT login. Pinned Buzz supports the OpenAI Responses
 transport through `OPENAI_COMPAT_API=responses` and an owned base URL, so the Buzz

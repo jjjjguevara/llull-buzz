@@ -12,11 +12,14 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import secrets
+import struct
 import subprocess
 import tarfile
 import time
 import uuid
+import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGES = {
@@ -110,11 +113,14 @@ class Stack:
             docker(kind, "create", "--label", self.label(), *args, name)
         return name
 
-    def run(self, suffix, image, options, command):
+    def run(self, suffix, image, options, command, aliases=(), memory="768m"):
         name = self.name(suffix)
         self.remember("container", name)
         info = self.inspect("container", name)
-        recipe = hashlib.sha256(json.dumps([image, options, command]).encode()).hexdigest()
+        identity = [image, options, command]
+        if aliases or memory != "768m":
+            identity.extend([list(aliases), memory])
+        recipe = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         if info:
             if info["Config"]["Labels"].get(LABEL + ".recipe") != recipe:
                 raise RuntimeError("Container configuration changed; remove this owned stack before recreating it")
@@ -123,8 +129,9 @@ class Stack:
         else:
             docker("run", "-d", "--name", name, "--label", self.label(), "--label", LABEL + ".recipe=" + recipe,
                    "--network", self.name("storage"), "--network-alias", suffix,
+                   *(part for alias in aliases for part in ("--network-alias", alias)),
                    "--security-opt", "no-new-privileges:true", "--pids-limit", "256",
-                   "--memory", "768m", *options, image, *command)
+                   "--memory", memory, *options, image, *command)
         return name
 
     def envfile(self, name, values):
@@ -332,6 +339,257 @@ enableUpsert = true
         save(self.directory / "storage-check.json", report)
         print(json.dumps(report, indent=2))
 
+    def native_keys(self):
+        path = self.directory / "native-identities.json"
+        def generate():
+            result = docker("run", "--rm", "--network", "none", "--label", self.label(),
+                            "--entrypoint", "/opt/llull/upstream/buzz-admin",
+                            "llull-buzz-completion-upstream:01b6174", "generate-key")
+            matches = dict(re.findall(r"(?m)^(Public key|Secret key):\s+([0-9a-f]{64})$", result.stdout.decode()))
+            require(set(matches) == {"Public key", "Secret key"}, "Pinned upstream key generator output changed")
+            return {"public": matches["Public key"], "secret": matches["Secret key"]}
+        keys = json.loads(path.read_text()) if path.exists() else {}
+        for identity in ["owner", "relay", "bot", "outsider"]:
+            if identity not in keys:
+                keys[identity] = generate()
+        save(path, keys)
+        return keys
+
+    def up_native(self):
+        require(self.state["stage"] in {"storage-started", "native-started"}, "Start and check storage first")
+        image = "llull-buzz-completion-upstream:01b6174"
+        inspected = docker("image", "inspect", image)
+        built = json.loads(inspected.stdout)[0]
+        labels = built["Config"]["Labels"]
+        require(labels.get("org.llull.buzz.upstream") == "01b6174a1cbad249e93f31df97d4b2ed1d0e8638"
+                and labels.get("org.llull.buzz.recipe") == "983ff79",
+                "Upstream image is not the pinned local recipe")
+        require(built["Os"] == "linux" and built["Architecture"] == "arm64", "Selected local VM requires Linux arm64 image")
+        keys = self.native_keys()
+        pw = self.state["passwords"]
+        values = {
+            "DATABASE_URL": f"postgresql://bz_native:{pw['native']}@postgres:5432/bz_native?sslmode=disable",
+            "REDIS_URL": f"redis://:{pw['valkey']}@valkey:6379",
+            "BUZZ_RELAY_PRIVATE_KEY": keys["relay"]["secret"],
+            "RELAY_OWNER_PUBKEY": keys["owner"]["public"],
+            "RELAY_URL": "ws://buzz-relay.synthetic.invalid:3000",
+            "BUZZ_BIND_ADDR": "0.0.0.0:3000",
+            "BUZZ_REQUIRE_RELAY_MEMBERSHIP": "true",
+            "BUZZ_AUTO_MIGRATE": "true",
+            "BUZZ_PUSH_ENABLED": "false",
+            "BUZZ_AUDIT_ENABLED": "true",
+            "BUZZ_DB_POOL_SIZE": "8",
+            "BUZZ_REDIS_POOL_SIZE": "4",
+            "BUZZ_S3_ENDPOINT": "http://seaweed:8333",
+            "BUZZ_S3_ACCESS_KEY": "bz-media",
+            "BUZZ_S3_SECRET_KEY": pw["media"],
+            "BUZZ_S3_BUCKET": "buzz-media",
+            "BUZZ_S3_REGION": "us-east-1",
+            "BUZZ_S3_ADDRESSING_STYLE": "path",
+            "BUZZ_MEDIA_BASE_URL": "https://buzz-relay.synthetic.invalid/media",
+            "BUZZ_GIT_REPO_PATH": "/work/task/git-repos",
+            "BUZZ_GIT_PACK_CACHE_PATH": "/work/task/git-cache",
+            "BUZZ_GIT_HOOK_HMAC_SECRET": pw["provider"],
+            "RUST_LOG": "buzz_relay=info",
+        }
+        env = self.envfile("native", values)
+        data = self.create("volume", "relay-data")
+        self.data_owner(data)
+        self.run("relay", image,
+                 ["--user", "65532:65532", "--read-only", "--cap-drop", "ALL",
+                  "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "--env-file", env,
+                  "--mount", f"type=volume,src={data},dst=/work/task,volume-nocopy"],
+                 ["/opt/llull/upstream/buzz-relay"], aliases=("buzz-relay.synthetic.invalid",), memory="2g")
+        self.state["stage"] = "native-started"
+        self.state["upstream_image_id"] = built["Id"]
+        self.persist()
+        print(json.dumps({"stage":"native-started", "upstream_image_id":built["Id"],
+                          "relay_public_key":keys["relay"]["public"],
+                          "owner_public_key":keys["owner"]["public"],
+                          "bot_public_key":keys["bot"]["public"]}, indent=2))
+
+    def native_client(self, identity, *args, check=True):
+        require(identity in {"owner", "bot", "outsider"}, "Unknown synthetic native identity")
+        keys = self.native_keys()
+        env = self.envfile("native-client-" + identity, {
+            "BUZZ_RELAY_URL": "http://buzz-relay.synthetic.invalid:3000",
+            "BUZZ_PRIVATE_KEY": keys[identity]["secret"],
+        })
+        return docker("run", "--rm", "--network", self.name("storage"),
+                      "--label", self.label(), "--user", "65532:65532",
+                      "--cap-drop", "ALL", "--read-only", "--security-opt", "no-new-privileges:true",
+                      "--env-file", env, "--entrypoint", "/opt/llull/upstream/buzz",
+                      "llull-buzz-completion-upstream:01b6174", *args, check=check)
+
+    def native_admin(self, *args):
+        env = str(self.directory / "native.env")
+        require(Path(env).is_file(), "Native relay environment is missing")
+        return docker("run", "--rm", "--network", self.name("storage"),
+                      "--label", self.label(), "--user", "65532:65532",
+                      "--cap-drop", "ALL", "--read-only", "--security-opt", "no-new-privileges:true",
+                      "--env-file", env, "--entrypoint", "/opt/llull/upstream/buzz-admin",
+                      "llull-buzz-completion-upstream:01b6174", *args)
+
+    def native_file_client(self, identity, body, *args):
+        require(identity in {"owner", "bot"}, "Unknown synthetic native file identity")
+        env = self.envfile("native-client-" + identity, {
+            "BUZZ_RELAY_URL": "http://buzz-relay.synthetic.invalid:3000",
+            "BUZZ_PRIVATE_KEY": self.native_keys()[identity]["secret"],
+        })
+        archive = io.BytesIO()
+        with tarfile.open(fileobj=archive, mode="w") as tar:
+            item = tarfile.TarInfo("synthetic.png")
+            item.uid = item.gid = 65532
+            item.mode = 0o600
+            item.size = len(body)
+            tar.addfile(item, io.BytesIO(body))
+        return docker("run", "--rm", "-i", "--network", self.name("storage"),
+                      "--label", self.label(), "--user", "65532:65532",
+                      "--cap-drop", "ALL", "--read-only", "--security-opt", "no-new-privileges:true",
+                      "--tmpfs", "/tmp:rw,noexec,nosuid,size=1m", "--env-file", env,
+                      "--entrypoint", "sh", "llull-buzz-completion-upstream:01b6174",
+                      "-c", "tar -xpf - -C /tmp && exec /opt/llull/upstream/buzz \"$@\"", "buzz", *args,
+                      data=archive.getvalue(), check=False)
+
+    def probe_media(self):
+        require((self.directory / "native-check.json").is_file(), "Check native client first")
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+        body = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0))
+                + chunk(b"IDAT", zlib.compress(b"\x00\x32\x64\x96\xff")) + chunk(b"IEND", b""))
+        upload = self.native_file_client("owner", body, "upload", "file", "--file", "/tmp/synthetic.png")
+        require(upload.returncode == 0, "Native media upload failed")
+        uploaded = json.loads(upload.stdout)
+        digest = hashlib.sha256(body).hexdigest()
+        require(uploaded["sha256"] == digest and uploaded["size"] == len(body), "Native media upload descriptor differs")
+        channel_id = json.loads((self.directory / "native-check.json").read_text())["channel_id"]
+        attached = self.native_file_client("owner", body, "messages", "send", "--channel", channel_id,
+                                           "--content", "synthetic private media attachment",
+                                           "--file", "/tmp/synthetic.png")
+        require(attached.returncode == 0, "Private attachment message failed")
+        attached_result = json.loads(attached.stdout)
+        require(attached_result.get("accepted") is True, "Private attachment event was not accepted")
+        attached_events = json.loads(self.native_client("owner", "messages", "get", "--channel", channel_id).stdout)
+        signed_attachment = next((e for e in attached_events if e.get("id") == attached_result.get("event_id")), None)
+        require(signed_attachment is not None and any(
+            tag[0] == "imeta" and any(digest in field for field in tag[1:])
+            for tag in signed_attachment.get("tags", []) if tag
+        ), "Original signed private event lacks this attachment digest")
+        owner = self.native_client("owner", "media", "get", digest)
+        require(owner.stdout == body, "Native owner media read differs")
+        outsider = self.native_client("outsider", "media", "get", digest, check=False)
+        require(outsider.returncode != 0, "Unenrolled native identity read media")
+        # The bot is relay-enrolled but deliberately has no access to the
+        # private channel. Observe the upstream artifact gate without assuming
+        # that relay membership and attachment disclosure are equivalent.
+        bot = self.native_client("bot", "media", "get", digest, check=False)
+        report = {"blob_sha256": digest, "native_upload_and_owner_read": True,
+                  "private_attachment_registered": True,
+                  "private_attachment_event_id": attached_result["event_id"],
+                  "unenrolled_read_denied": True, "enrolled_nonchannel_read_denied": bot.returncode != 0,
+                  "enrolled_nonchannel_received_exact_bytes": bot.returncode == 0 and bot.stdout == body,
+                  "scope": "isolated pinned upstream media path; provider artifact gate not yet in place"}
+        save(self.directory / "media-probe.json", report)
+        print(json.dumps(report, indent=2))
+        require(report["enrolled_nonchannel_read_denied"],
+                "Pinned upstream media disclosure is not artifact-scoped")
+
+    def restart_native(self):
+        prior = json.loads((self.directory / "native-check.json").read_text())
+        media = json.loads((self.directory / "media-probe.json").read_text())
+        relay_name = self.name("relay")
+        before = self.inspect("container", relay_name)
+        require(before and before["State"]["Running"], "Owned native relay is not running")
+        started_before = before["State"]["StartedAt"]
+        docker("restart", "--time", "10", relay_name)
+        deadline = time.monotonic() + 90
+        while True:
+            current = self.inspect("container", relay_name)
+            require(current and current["State"]["Running"], "Native relay exited on restart")
+            recovered = self.native_client("owner", "messages", "get", "--channel", prior["channel_id"], check=False)
+            if recovered.returncode == 0:
+                events = json.loads(recovered.stdout)
+                if any(e.get("id") == prior["message_event_id"] for e in events):
+                    break
+            if time.monotonic() > deadline:
+                raise RuntimeError("Original signed native message unavailable after restart")
+            time.sleep(2)
+        require(current["State"]["StartedAt"] != started_before, "Native process did not restart")
+        blob = self.native_client("owner", "media", "get", media["blob_sha256"])
+        require(hashlib.sha256(blob.stdout).hexdigest() == media["blob_sha256"],
+                "Original private media bytes unavailable after restart")
+        report = {"relay_restarted": True, "original_message_event_recovered": True,
+                  "original_media_digest_recovered": True, "upstream_image_id": self.state["upstream_image_id"],
+                  "scope": "owned relay process restart; not PostgreSQL/media backup restoration"}
+        save(self.directory / "native-restart.json", report)
+        print(json.dumps(report, indent=2))
+
+    def check_native(self):
+        require(self.state["stage"] == "native-started", "Start native relay first")
+        relay = self.inspect("container", self.name("relay"))
+        require(relay and relay["State"]["Running"], "Pinned native relay is not running")
+        require(not any(relay["NetworkSettings"]["Ports"].values()), "Native relay port exposed to host")
+        require(relay["Config"]["User"] == "65532:65532", "Native relay must use configured unprivileged UID")
+        require(relay["HostConfig"]["ReadonlyRootfs"], "Native relay root filesystem is writable")
+        require(relay["HostConfig"]["CapDrop"] == ["ALL"], "Native relay has unexpected capabilities")
+        name = "synthetic-restricted-" + self.state["owner"][:12]
+        found = self.native_client("owner", "channels", "search", "--query", name, "--exact")
+        channels = json.loads(found.stdout)
+        if channels:
+            require(len(channels) == 1, "Synthetic channel name is ambiguous")
+            channel_id = channels[0]["channel_id"]
+        else:
+            created = self.native_client("owner", "channels", "create", "--name", name,
+                                         "--type", "stream", "--visibility", "private")
+            channel_id = json.loads(created.stdout)["channel_id"]
+        require(re.fullmatch(r"[0-9a-f-]{36}", channel_id) is not None, "Native channel ID is invalid")
+        # Distinguish relay enrollment from private-channel membership.
+        outsider = self.native_client("outsider", "messages", "get", "--channel", channel_id, check=False)
+        require(outsider.returncode != 0 and b"relay_membership_required" in outsider.stderr,
+                "Unenrolled native identity was not denied")
+        bot_public = self.native_keys()["bot"]["public"]
+        self.native_admin("add-member", "--pubkey", bot_public)
+        members = json.loads(self.native_client("owner", "channels", "members", "--channel", channel_id).stdout)
+        if any(member.get("pubkey") == bot_public for member in members):
+            self.native_client("owner", "channels", "remove-member", "--channel", channel_id,
+                               "--pubkey", bot_public)
+        denied = self.native_client("bot", "messages", "get", "--channel", channel_id, check=False)
+        require(denied.returncode == 0 and json.loads(denied.stdout) == [],
+                "Enrolled nonmember discovered private channel messages")
+        hidden = self.native_client("bot", "channels", "get", "--channel", channel_id)
+        require(json.loads(hidden.stdout) is None, "Private channel metadata was visible to nonmember")
+        marker = "synthetic retained native message " + self.state["owner"][:12]
+        sent = self.native_client("owner", "messages", "send", "--channel", channel_id,
+                                  "--content", marker)
+        message = json.loads(sent.stdout)
+        require(message.get("accepted") is True, "Native relay did not accept signed message")
+        denied_after = self.native_client("bot", "messages", "get", "--channel", channel_id, check=False)
+        require(denied_after.returncode == 0 and json.loads(denied_after.stdout) == [],
+                "Nonmember recovered private message")
+        read = self.native_client("owner", "messages", "get", "--channel", channel_id)
+        events = json.loads(read.stdout)
+        require(any(e.get("content") == marker for e in events), "Owner could not recover native message")
+        self.native_client("owner", "channels", "add-member", "--channel", channel_id,
+                           "--pubkey", bot_public, "--role", "bot")
+        bot_read = json.loads(self.native_client("bot", "messages", "get", "--channel", channel_id).stdout)
+        require(any(e.get("content") == marker for e in bot_read), "New member could not recover retained message")
+        self.native_client("owner", "channels", "remove-member", "--channel", channel_id,
+                           "--pubkey", bot_public)
+        denied_revoked = self.native_client("bot", "messages", "get", "--channel", channel_id, check=False)
+        require(denied_revoked.returncode == 0 and json.loads(denied_revoked.stdout) == [],
+                "Removed member retained private channel read access")
+        report = {"upstream_image_id": self.state["upstream_image_id"],
+                  "relay_running": True, "private_network": True, "host_ports": False,
+                  "native_client_create_private_channel": True,
+                  "native_client_unenrolled_identity_denied": True,
+                  "native_client_nonmember_read_denied": True,
+                  "native_client_signed_message_send_and_recover": True,
+                  "native_client_member_grant_and_revocation": True,
+                  "channel_id": channel_id, "message_event_id": message.get("event_id"),
+                  "scope": "native relay/client path only; provider mediation and media authorization separate"}
+        save(self.directory / "native-check.json", report)
+        print(json.dumps(report, indent=2))
+
     def down(self):
         # Reverse dependency order, containers first. Never discover by wildcard.
         for kind in ["container", "network", "volume"]:
@@ -344,11 +602,15 @@ enableUpsert = true
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["up-storage", "check-storage", "status", "down"])
+    parser.add_argument("action", choices=["up-storage", "check-storage", "up-native", "check-native", "probe-media", "restart-native", "status", "down"])
     parser.add_argument("--state", type=Path, default=ROOT / "artifacts/completion/stack")
     args = parser.parse_args()
     stack = Stack(args.state)
-    {"up-storage": stack.up, "check-storage": stack.check_storage, "status": stack.status, "down": stack.down}[args.action]()
+    {"up-storage": stack.up, "check-storage": stack.check_storage, "up-native": stack.up_native,
+     "check-native": stack.check_native,
+     "probe-media": stack.probe_media,
+     "restart-native": stack.restart_native,
+     "status": stack.status, "down": stack.down}[args.action]()
 
 
 if __name__ == "__main__":
