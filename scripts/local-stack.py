@@ -374,7 +374,7 @@ enableUpsert = true
             "REDIS_URL": f"redis://:{pw['valkey']}@valkey:6379",
             "BUZZ_RELAY_PRIVATE_KEY": keys["relay"]["secret"],
             "RELAY_OWNER_PUBKEY": keys["owner"]["public"],
-            "RELAY_URL": ("wss://buzz-relay.synthetic.invalid" if self.state.get("native_public_wss")
+            "RELAY_URL": ("wss://buzz-relay.synthetic.invalid:3000" if self.state.get("native_public_wss")
                           else "ws://buzz-relay.synthetic.invalid:3000"),
             "BUZZ_BIND_ADDR": "0.0.0.0:3000",
             "BUZZ_REQUIRE_RELAY_MEMBERSHIP": "true",
@@ -565,7 +565,7 @@ enableUpsert = true
         self.persist()
         print(json.dumps({"native_public_wss": True,
                           "internal_origin": "http://buzz-relay.synthetic.invalid:3000",
-                          "public_signing_origin": "https://buzz-relay.synthetic.invalid",
+                          "public_signing_origin": "https://buzz-relay.synthetic.invalid:3000",
                           "scope": "relay public URL posture; external TLS terminator not yet deployed"}, indent=2))
 
     def up_provider(self, source_sha):
@@ -594,7 +594,7 @@ enableUpsert = true
         volume = self.provider_secrets({
             "community_id": "synthetic-community",
             "private_origin": "http://buzz-relay.synthetic.invalid:3000",
-            "public_origin": "https://buzz-relay.synthetic.invalid",
+            "public_origin": "https://buzz-relay.synthetic.invalid:3000",
             "service_key_file": "/run/bz-provider/service.key",
             "relay_public_key": keys["relay"]["public"],
         }, service["secret"])
@@ -647,7 +647,7 @@ enableUpsert = true
         save(self.directory / "provider-check.json", report)
         print(json.dumps(report, indent=2))
 
-    def probe_provider_origin(self):
+    def probe_provider_origin(self, emit=True):
         require(self.state["stage"] == "provider-started", "Start provider first")
         image = "llull-buzz-completion-provider:" + self.state["provider_source_sha"][:12]
         checked = json.loads((self.directory / "native-check.json").read_text())
@@ -656,7 +656,6 @@ enableUpsert = true
         attempt = docker("run", "--rm", "--network", self.name("storage"),
                          "--label", self.label(), "--user", "65532:65532", "--read-only",
                          "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
-                         "--env", "NATIVE_ORIGIN_DIAGNOSTIC=1",
                          "--env-file", str(self.directory / "provider.env"), "--mount",
                          f"type=volume,src={secret_volume},dst=/run/bz-provider,readonly",
                          "--entrypoint", "/opt/llull/bin/llull-buzz-provider", image,
@@ -668,7 +667,8 @@ enableUpsert = true
         require(report["native_event_id"] == checked["message_event_id"] and report["audience_member_count"] >= 2,
                 "Fixed-origin native identity or audience differs")
         save(self.directory / "provider-origin-probe.json", report)
-        print(json.dumps(report, indent=2))
+        if emit:
+            print(json.dumps(report, indent=2))
 
     def backup_storage(self):
         require(self.state["stage"] in {"native-started", "provider-started"},
@@ -749,10 +749,17 @@ enableUpsert = true
         while True:
             info = self.inspect("container", self.name("relay"))
             require(info and info["State"]["Running"], "Owned relay exited during recovery")
-            read = self.native_client("owner", "messages", "get", "--channel", checked["channel_id"], check=False)
-            if read.returncode == 0 and any(e.get("id") == checked["message_event_id"]
-                                            for e in json.loads(read.stdout)):
-                return
+            if self.state.get("native_public_wss"):
+                try:
+                    self.probe_provider_origin(emit=False)
+                    return
+                except RuntimeError:
+                    pass
+            else:
+                read = self.native_client("owner", "messages", "get", "--channel", checked["channel_id"], check=False)
+                if read.returncode == 0 and any(e.get("id") == checked["message_event_id"]
+                                                for e in json.loads(read.stdout)):
+                    return
             if time.monotonic() > deadline:
                 raise RuntimeError("Owned relay did not recover its original event")
             time.sleep(2)

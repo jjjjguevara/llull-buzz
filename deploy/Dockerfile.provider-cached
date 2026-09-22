@@ -14,12 +14,12 @@ RUN mkdir -p /image/opt/llull/bin /image/usr/share/doc/llull-buzz && \
     sha256sum /image/opt/llull/bin/llull-buzz-provider > /image/usr/share/doc/llull-buzz/SHA256SUMS && \
     cargo metadata --locked --format-version 1 > /image/usr/share/doc/llull-buzz/cargo-metadata.json
 FROM ${RUNTIME_IMAGE}
-ARG SOURCE_SHA
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --gid 65532 buzz && \
     useradd --uid 65532 --gid 65532 --no-create-home --home-dir /work/task/home buzz && \
     mkdir -p /work/task && chown 65532:65532 /work/task && chmod 700 /work/task
+ARG SOURCE_SHA
 COPY --from=build /image/ /
 LABEL org.opencontainers.image.source="https://github.com/jjjjguevara/llull-buzz" \
     org.opencontainers.image.revision="${SOURCE_SHA}"
