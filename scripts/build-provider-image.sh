@@ -15,7 +15,9 @@ if [[ "$(docker version --format '{{.Server.Version}}')" != 29.8.1 ]]; then
 fi
 build_root="$(mktemp -d "$repo_root/artifacts/completion/provider-build.XXXXXXXX")"
 trap 'rm -rf "$build_root"' EXIT
-git archive --format=tar "$source_sha" | tar -xf - -C "$build_root"
+git archive --format=tar --output="$build_root/source.tar" "$source_sha"
+tar -xf "$build_root/source.tar" -C "$build_root"
+rm "$build_root/source.tar"
 runtime_image=debian@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
 if [[ -n "${PROVIDER_BUILD_CACHE_IMAGE:-}" ]]; then
   if [[ -z "${PROVIDER_BUILD_CACHE_ID:-}" || "$(docker image inspect "$PROVIDER_BUILD_CACHE_IMAGE" --format '{{.Id}}')" != "$PROVIDER_BUILD_CACHE_ID" ]]; then
