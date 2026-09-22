@@ -113,13 +113,15 @@ class Stack:
             docker(kind, "create", "--label", self.label(), *args, name)
         return name
 
-    def run(self, suffix, image, options, command, aliases=(), memory="768m"):
+    def run(self, suffix, image, options, command, aliases=(), memory="768m", recipe_extra=None):
         name = self.name(suffix)
         self.remember("container", name)
         info = self.inspect("container", name)
         identity = [image, options, command]
         if aliases or memory != "768m":
             identity.extend([list(aliases), memory])
+        if recipe_extra is not None:
+            identity.append(recipe_extra)
         recipe = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         if info:
             if info["Config"]["Labels"].get(LABEL + ".recipe") != recipe:
@@ -372,7 +374,8 @@ enableUpsert = true
             "REDIS_URL": f"redis://:{pw['valkey']}@valkey:6379",
             "BUZZ_RELAY_PRIVATE_KEY": keys["relay"]["secret"],
             "RELAY_OWNER_PUBKEY": keys["owner"]["public"],
-            "RELAY_URL": "ws://buzz-relay.synthetic.invalid:3000",
+            "RELAY_URL": ("wss://buzz-relay.synthetic.invalid" if self.state.get("native_public_wss")
+                          else "ws://buzz-relay.synthetic.invalid:3000"),
             "BUZZ_BIND_ADDR": "0.0.0.0:3000",
             "BUZZ_REQUIRE_RELAY_MEMBERSHIP": "true",
             "BUZZ_AUTO_MIGRATE": "true",
@@ -399,7 +402,8 @@ enableUpsert = true
                  ["--user", "65532:65532", "--read-only", "--cap-drop", "ALL",
                   "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "--env-file", env,
                   "--mount", f"type=volume,src={data},dst=/work/task,volume-nocopy"],
-                 ["/opt/llull/upstream/buzz-relay"], aliases=("buzz-relay.synthetic.invalid",), memory="2g")
+                 ["/opt/llull/upstream/buzz-relay"], aliases=("buzz-relay.synthetic.invalid",), memory="2g",
+                 recipe_extra="wss-public-origin" if self.state.get("native_public_wss") else None)
         self.state["stage"] = "native-started"
         self.state["upstream_image_id"] = built["Id"]
         self.persist()
@@ -545,6 +549,25 @@ enableUpsert = true
                data=archive.getvalue())
         return volume
 
+    def switch_native_wss(self):
+        require(self.state["stage"] == "provider-started", "Enroll the native service before switching public TLS posture")
+        checked = json.loads((self.directory / "native-check.json").read_text())
+        require(self.state.get("native_service_channel") == checked["channel_id"],
+                "Native service channel enrollment is not recorded")
+        relay = self.inspect("container", self.name("relay"))
+        require(relay and relay["State"]["Running"], "Owned relay is not running")
+        docker("rm", "-f", self.name("relay"))
+        self.state["native_public_wss"] = True
+        self.state["stage"] = "native-started"
+        self.persist()
+        self.up_native()
+        self.state["stage"] = "provider-started"
+        self.persist()
+        print(json.dumps({"native_public_wss": True,
+                          "internal_origin": "http://buzz-relay.synthetic.invalid:3000",
+                          "public_signing_origin": "https://buzz-relay.synthetic.invalid",
+                          "scope": "relay public URL posture; external TLS terminator not yet deployed"}, indent=2))
+
     def up_provider(self, source_sha):
         require(self.state["stage"] in {"native-started", "provider-started"},
                 "Qualify native relay before provider deployment")
@@ -558,10 +581,16 @@ enableUpsert = true
         service = keys["service"]
         self.native_admin("add-member", "--pubkey", service["public"])
         channel_id = json.loads((self.directory / "native-check.json").read_text())["channel_id"]
-        members = json.loads(self.native_client("owner", "channels", "members", "--channel", channel_id).stdout)
-        if not any(member.get("pubkey") == service["public"] for member in members):
-            self.native_client("owner", "channels", "add-member", "--channel", channel_id,
-                               "--pubkey", service["public"], "--role", "bot")
+        if self.state.get("native_public_wss"):
+            require(self.state.get("native_service_channel") == channel_id,
+                    "WSS relay requires prior service channel enrollment")
+        else:
+            members = json.loads(self.native_client("owner", "channels", "members", "--channel", channel_id).stdout)
+            if not any(member.get("pubkey") == service["public"] for member in members):
+                self.native_client("owner", "channels", "add-member", "--channel", channel_id,
+                                   "--pubkey", service["public"], "--role", "bot")
+            self.state["native_service_channel"] = channel_id
+            self.persist()
         volume = self.provider_secrets({
             "community_id": "synthetic-community",
             "private_origin": "http://buzz-relay.synthetic.invalid:3000",
@@ -582,6 +611,10 @@ enableUpsert = true
                   "--security-opt", "no-new-privileges:true", "--env-file", env,
                   "--mount", f"type=volume,src={volume},dst=/run/bz-provider,readonly"]
         docker("run", "--rm", *common, image, "migrate")
+        existing = self.inspect("container", self.name("provider"))
+        if existing and self.state.get("provider_source_sha") != source_sha:
+            # Only this exactly labeled task-owned provider is replaced.
+            docker("rm", "-f", self.name("provider"))
         self.run("provider", image,
                  ["--user", "65532:65532", "--read-only", "--cap-drop", "ALL",
                   "--env-file", env, "--mount",
@@ -612,6 +645,28 @@ enableUpsert = true
                   "private_network": True, "host_ports": False,
                   "scope": "configured service boot; signed native request and consumer path remain separate"}
         save(self.directory / "provider-check.json", report)
+        print(json.dumps(report, indent=2))
+
+    def probe_provider_origin(self):
+        require(self.state["stage"] == "provider-started", "Start provider first")
+        image = "llull-buzz-completion-provider:" + self.state["provider_source_sha"][:12]
+        checked = json.loads((self.directory / "native-check.json").read_text())
+        secret_volume = self.name("provider-secrets")
+        self.inspect("volume", secret_volume)
+        attempt = docker("run", "--rm", "--network", self.name("storage"),
+                         "--label", self.label(), "--user", "65532:65532", "--read-only",
+                         "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+                         "--env-file", str(self.directory / "provider.env"), "--mount",
+                         f"type=volume,src={secret_volume},dst=/run/bz-provider,readonly",
+                         "--entrypoint", "/opt/llull/bin/llull-buzz-provider", image,
+                         "native-probe", checked["channel_id"], checked["message_event_id"], check=False)
+        with open(self.directory / "provider-origin-probe.log", "wb", opener=lambda p, f: os.open(p, f, 0o600)) as f:
+            f.write(attempt.stdout + attempt.stderr)
+        require(attempt.returncode == 0, "Fixed-origin provider adapter could not read pinned native event and audience")
+        report = json.loads(attempt.stdout)
+        require(report["native_event_id"] == checked["message_event_id"] and report["audience_member_count"] >= 2,
+                "Fixed-origin native identity or audience differs")
+        save(self.directory / "provider-origin-probe.json", report)
         print(json.dumps(report, indent=2))
 
     def check_native(self):
@@ -692,7 +747,7 @@ enableUpsert = true
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["up-storage", "check-storage", "up-native", "check-native", "probe-media", "restart-native", "up-provider", "check-provider", "status", "down"])
+    parser.add_argument("action", choices=["up-storage", "check-storage", "up-native", "check-native", "probe-media", "restart-native", "up-provider", "check-provider", "probe-provider-origin", "switch-native-wss", "status", "down"])
     parser.add_argument("--state", type=Path, default=ROOT / "artifacts/completion/stack")
     parser.add_argument("--provider-source", help="Exact committed 40-hex provider image source")
     args = parser.parse_args()
@@ -703,6 +758,8 @@ def main():
      "restart-native": stack.restart_native,
      "up-provider": lambda: stack.up_provider(args.provider_source),
      "check-provider": stack.check_provider,
+     "probe-provider-origin": stack.probe_provider_origin,
+     "switch-native-wss": stack.switch_native_wss,
      "status": stack.status, "down": stack.down}[args.action]()
 
 

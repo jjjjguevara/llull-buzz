@@ -1,5 +1,8 @@
 //! Operator CLI and credential-bearing control daemon. Never run in the agent sandbox.
-use llull_buzz_provider::{api, auth::Registration, HttpNativeOrigin, Provider, Publisher};
+use llull_buzz_provider::{
+    api, auth::Registration, HttpNativeOrigin, NativeEventSource, Provider, PublicationPort,
+    Publisher,
+};
 use std::{env, error::Error};
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -10,11 +13,48 @@ struct NativeConfiguration {
     service_key_file: std::path::PathBuf,
     relay_public_key: String,
 }
+async fn native_origin() -> Result<(String, HttpNativeOrigin, nostr::Keys), Box<dyn Error>> {
+    let config: NativeConfiguration =
+        llull_buzz_wire::parse(&tokio::fs::read(env::var("NATIVE_ORIGIN_CONFIG")?).await?)?;
+    use std::os::unix::fs::PermissionsExt;
+    let metadata = tokio::fs::metadata(&config.service_key_file).await?;
+    if !metadata.is_file() || metadata.len() > 1024 || metadata.permissions().mode() & 0o077 != 0 {
+        return Err("native service key must be an owner-only regular file".into());
+    }
+    let secret = tokio::fs::read_to_string(config.service_key_file).await?;
+    let key = nostr::Keys::parse(secret.trim()).map_err(|_| "invalid native service key")?;
+    let source = HttpNativeOrigin::new(
+        config.community_id.clone(),
+        &config.private_origin,
+        &config.public_origin,
+        key.clone(),
+        nostr::PublicKey::from_hex(&config.relay_public_key)
+            .map_err(|_| "invalid native relay public key")?,
+    )?;
+    Ok((config.community_id, source, key))
+}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("--help") || args.is_empty() {
-        println!("llull-buzz-provider: migrate | register FILE [EXPECTED_DIGEST] | service-active CONSUMER true|false EXPECTED_DIGEST | advance-recovery-epoch EXPECTED | serve\nRequired trusted environment: DATABASE_URL, PUBLIC_ORIGIN (https origin), EXTERNAL_RECOVERY_EPOCH. Optional BIND_ADDR (default 127.0.0.1:8080). No implicit migrations or registrations.");
+        println!("llull-buzz-provider: migrate | register FILE [EXPECTED_DIGEST] | service-active CONSUMER true|false EXPECTED_DIGEST | advance-recovery-epoch EXPECTED | native-probe CHANNEL EVENT_ID | serve\nRequired trusted environment for DB commands: DATABASE_URL, PUBLIC_ORIGIN (https origin), EXTERNAL_RECOVERY_EPOCH. NATIVE_ORIGIN_CONFIG is required for native-probe and optional for serve. Optional BIND_ADDR (default 127.0.0.1:8080). No implicit migrations or registrations.");
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("native-probe") && args.len() == 3 {
+        let (community, source, _) = native_origin().await?;
+        let audience = source.audience(&community, &args[1]).await?;
+        let bytes = source.event(&community, &args[1], &args[2]).await?;
+        let event = llull_buzz_provider::native::event(&bytes)?;
+        println!(
+            "{}",
+            serde_json::json!({
+                "native_event_id": event.id.to_hex(),
+                "native_event_sha256": llull_buzz_wire::sha256(&bytes),
+                "audience_revision": audience.revision,
+                "audience_member_count": audience.members.len(),
+                "scope": "fixed native origin read; no provider command admission"
+            })
+        );
         return Ok(());
     }
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -51,28 +91,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("serve") if args.len() == 1 => {
             let mut router = axum::Router::new();
             let mut surfaces = api::ConfiguredSurfaces::default();
-            if let Ok(path) = env::var("NATIVE_ORIGIN_CONFIG") {
-                let config: NativeConfiguration =
-                    llull_buzz_wire::parse(&tokio::fs::read(path).await?)?;
-                use std::os::unix::fs::PermissionsExt;
-                let metadata = tokio::fs::metadata(&config.service_key_file).await?;
-                if !metadata.is_file()
-                    || metadata.len() > 1024
-                    || metadata.permissions().mode() & 0o077 != 0
-                {
-                    return Err("native service key must be an owner-only regular file".into());
-                }
-                let secret = tokio::fs::read_to_string(config.service_key_file).await?;
-                let key =
-                    nostr::Keys::parse(secret.trim()).map_err(|_| "invalid native service key")?;
-                let source = HttpNativeOrigin::new(
-                    config.community_id,
-                    &config.private_origin,
-                    &config.public_origin,
-                    key.clone(),
-                    nostr::PublicKey::from_hex(&config.relay_public_key)
-                        .map_err(|_| "invalid native relay public key")?,
-                )?;
+            if env::var_os("NATIVE_ORIGIN_CONFIG").is_some() {
+                let (_, source, key) = native_origin().await?;
                 let source = std::sync::Arc::new(source);
                 let publisher = std::sync::Arc::new(Publisher::new(
                     source.clone(),
