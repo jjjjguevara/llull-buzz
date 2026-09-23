@@ -147,3 +147,45 @@ The image used an exact-ID cached dependency builder, so a clean independent
 distribution build remains open. No external TLS terminator, live publication
 command, media gateway, model/tool execution, populated-effect restore or
 human UAT is qualified by these results. The status stays claimed.
+
+2026-09-22 — Items 04.4/04.6: a compiled Linux arm64 test executed a signed
+synthetic `publish` command through the running provider, real PostgreSQL and
+unmodified pinned relay. It recovered the exact signed event from the relay;
+a fresh signed retry reused the original native identity with one delivery
+row. The manually invoked case exited 0 at test source `c3d6bd0ef19a02ce2a4fc1fb9c974b4a7e95a42e`;
+its private log SHA-256 is
+`83de1724375ec0499293234679d3b09e21ba9ed3ba4c35d7a009c8ea8be7b5c3`.
+An initial scripted cold build hit root-versus-UID key permissions, and a
+revised run retained a completed test executable but timed out compiling the
+provider CLI. The credential-separated runner is being qualified separately;
+these failures are not erased by the direct positive case.
+
+The selected stack then backed up and freshly restored two completed
+publication rows into a separately owned PostgreSQL/Seaweed/relay namespace.
+Signed-byte digests, native event IDs and completed states matched, both
+native events were present, and the original media digest and revoked-channel
+denial recovered. Backup and restore exited 0; manifest SHA-256 is
+`b5c486d487f4d17293f293705bc339238972047fcae7800c7fd6eab53802fcda`.
+The restore-only namespaces were removed by exact owner labels; the source
+test deployment remains running. Protected-key restoration and full native
+gateway coverage remain open.
+
+Item 04.3: `codex exec` with ChatGPT login completed one synthetic
+`gpt-5.6-luna` turn (`OK`, 17,960 input/five output tokens, no tools); log
+SHA-256 is `49f6438698d2a939af60cd53499b7942da1d84d8d308604781c142aeee56bb69`.
+This does not cure the observed 400 for `max_output_tokens`, prove a bounded
+Buzz model proxy or execute the ACP agent loop. Pinned `buzz` CLI source also
+refuses to sign media GET for a non-relay origin; the current publisher emits
+provider-origin attachment URLs. Item 04.4 requires a relay-origin governed
+media gateway and actual artifact release before attachment UAT. No item or
+whole proof profile is accepted.
+
+Item 04.6: the locked Linux arm64 provider target has 222 distinct package
+versions, not 290 once repeated Cargo tree entries are collapsed. A new build
+inventory copies each selected package's license/notice texts, pinned workspace
+root texts, and three exact upstream texts absent from published crate archives.
+The host run exited 0 with no undeclared or missing texts; its manifest SHA-256
+is `96c56e0a775a350602c911ff89ad1f31ea41b39320edc8e652b4bc1166520a52`.
+The revised Dockerfile records OS package versions and copyright-file hashes
+and requires every installed package's copyright file. This source has not yet
+produced a revised image, so distribution closure stays open.

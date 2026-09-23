@@ -338,6 +338,78 @@ report. Subsequent provider health and signed native-origin checks exited 0.
 This is a quiesced backup/restart check, not a fresh WSS restore of populated
 provider effects or protected production keys.
 
+## Live publication and populated restore
+
+The `live_provider_publishes_one_signed_event_to_pinned_relay` integration case
+was compiled in the selected Linux arm64 Docker 29.8.1 VM and executed as UID
+65532 against the running provider image from `eae913c6e4c9a9d4cfcf25bbd2c59be648aba438`,
+actual PostgreSQL and unmodified pinned relay. The manually invoked test at
+source `c3d6bd0ef19a02ce2a4fc1fb9c974b4a7e95a42e` exited 0; its owner-only
+log SHA-256 is `83de1724375ec0499293234679d3b09e21ba9ed3ba4c35d7a009c8ea8be7b5c3`.
+A synthetic signed `publish` command completed, the exact event was fetched
+from the relay and matched PostgreSQL's retained signed bytes, and a fresh
+signed retry of the same command returned the original event identity with
+one publication ledger row. The logged event ID is
+`21a2906a6af601dfdbbe53940a393e649aacccd88941f5015fbf0bfc966f3672`.
+This is real text publication, not an attachment or native-client gateway pass.
+
+The first scripted container attempt failed on compiler-image selection, then
+missing offline dev dependencies, then a root/UID 65532 key-file permission
+boundary. A later script compiled the test executable but hit its 30-minute
+window while Cargo also compiled the provider CLI; its target artifacts were
+retained. The current runner separates public dependency fetch, no-network and
+credential-free compilation, and UID 65532 execution with synthetic secrets on
+the private network. Its full scripted result is reported separately when run.
+
+The source stack's subsequent `backup-storage` and fresh `restore-storage`
+into owner `6369e174a9194176b500cf99151878eb` both exited 0. The source
+owner was `1866114f818d4b29b325b582c8a83197`; the private backup manifest
+SHA-256 is `b5c486d487f4d17293f293705bc339238972047fcae7800c7fd6eab53802fcda`.
+Two completed publication rows, including their original native event IDs and
+signed-byte digests, matched after restore, and the restored owner client found
+both native events. The original media digest and revoked-channel denial also
+recovered. `check-provider` exited 0 on the source stack after backup. This
+does not qualify protected service-key restore, external TLS, native gateway
+mediation or a lost upstream publication response.
+
+Attachment compatibility is still open. The pinned
+[`buzz` CLI media URL validator](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-cli/src/client.rs#L270-L334)
+refuses to sign a media GET on an origin different from its configured relay.
+The current [publisher assembly](../../crates/buzz-provider/src/main.rs) gives
+`Publisher` the provider origin for attachment URLs, while the native client
+uses the relay origin. A governed gateway on that relay origin and actual
+artifact-specific authorization are required before attachments can work
+without bypassing release policy. This is pinned-source inspection, not a
+passing attachment test.
+
+## Distribution inventory in progress
+
+Host `cargo +1.98.1 metadata --locked --offline` resolved 338 workspace graph
+packages. `cargo +1.98.1 tree --locked --offline --target aarch64-unknown-linux-gnu
+-p llull-buzz-provider -e normal,build` identified 222 distinct package versions
+after collapsing repeated `(*)` tree entries for the selected provider target.
+The new `scripts/distribution-inventory.py` copied exact source-package license
+and notice files, including the workspace-root Apache text for original and
+pinned Buzz crates. The two CC0 Bitcoin crates and `nostr` lacked license text in
+their published crate archives, so their full texts were taken from matching
+pinned upstream commits. Those three upstream file hashes are enforced by the
+script and recorded in [the source register](../../deploy/licenses/README.md).
+
+The host inventory command exited 0 with 222 declared licenses and zero missing
+texts. Its private manifest SHA-256 is
+`96c56e0a775a350602c911ff89ad1f31ea41b39320edc8e652b4bc1166520a52`.
+The revised provider Dockerfile now runs that check during its build and also
+records installed OS package names, versions, architectures and copyright-file
+hashes. **The revised image has not yet been built**, so the current deployed
+image still has only four provider-document files and distribution closure is
+not qualified by the host inventory.
+
+Inside the currently deployed image, 91 installed Debian packages each had a readable
+`/usr/share/doc/<package>/copyright` after architecture suffix normalization.
+The updated manifest/check command passed against that prior image, but its
+output was not yet packaged there. A clean independent build and final
+source/image applicability checks remain before distribution closure.
+
 ## Requested OAuth model amendment
 
 The owner directed Codex/ChatGPT Pro OAuth for this continuation. The installed

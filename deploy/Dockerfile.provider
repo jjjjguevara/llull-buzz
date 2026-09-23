@@ -15,13 +15,24 @@ RUN mkdir -p /image/opt/llull/bin /image/usr/share/doc/llull-buzz && \
     cp target/release/llull-buzz-provider /image/opt/llull/bin/ && \
     cp LICENSE Cargo.lock /image/usr/share/doc/llull-buzz/ && \
     sha256sum /image/opt/llull/bin/llull-buzz-provider > /image/usr/share/doc/llull-buzz/SHA256SUMS && \
-    cargo metadata --locked --format-version 1 > /image/usr/share/doc/llull-buzz/cargo-metadata.json
+    cargo metadata --locked --format-version 1 > /image/usr/share/doc/llull-buzz/cargo-metadata.json && \
+    python3 scripts/distribution-inventory.py --package llull-buzz-provider \
+      --target aarch64-unknown-linux-gnu \
+      --output /image/usr/share/doc/llull-buzz/third-party
 FROM ${RUNTIME_IMAGE}
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --gid 65532 buzz && \
     useradd --uid 65532 --gid 65532 --no-create-home --home-dir /work/task/home buzz && \
-    mkdir -p /work/task && chown 65532:65532 /work/task && chmod 700 /work/task
+    mkdir -p /work/task /usr/share/doc/llull-buzz && \
+    chown 65532:65532 /work/task && chmod 700 /work/task && \
+    dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' | \
+      LC_ALL=C sort > /usr/share/doc/llull-buzz/OS-PACKAGES.tsv && \
+    dpkg-query -W -f='${binary:Package}\n' | while read package; do \
+      test -r "/usr/share/doc/${package%%:*}/copyright" || exit 1; \
+    done && \
+    find /usr/share/doc -name copyright -type f -print0 | sort -z | \
+      xargs -0 sha256sum > /usr/share/doc/llull-buzz/OS-COPYRIGHT-SHA256SUMS
 ARG SOURCE_SHA
 COPY --from=build /image/ /
 LABEL org.opencontainers.image.source="https://github.com/jjjjguevara/llull-buzz" \
