@@ -20,7 +20,7 @@ RUN cargo +1.98.1 build --locked --release \
     -p buzz-admin --bin buzz-admin
 # Keep the accepted upstream source unchanged while allowing an operator CA
 # for the selected WSS endpoint and isolated TLS qualification.
-RUN cargo +1.98.1 build --locked --release -p buzz-acp --bin buzz-acp \
+RUN CARGO_BUILD_JOBS=1 cargo +1.98.1 build --locked --release -p buzz-acp --bin buzz-acp \
     --features tokio-tungstenite/rustls-tls-native-roots
 COPY scripts/distribution-inventory.py /inventory/scripts/distribution-inventory.py
 COPY deploy/licenses/ /inventory/deploy/licenses/
