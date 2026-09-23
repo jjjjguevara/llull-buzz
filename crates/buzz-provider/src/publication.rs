@@ -216,6 +216,17 @@ impl Provider {
         if !permit.publication.attachments.is_empty() {
             return Err(Fault::Unavailable.into());
         }
+        // A prior dispatch may have committed at the native owner even when
+        // its response was lost. Replaying publish cannot prove otherwise.
+        // Only the original-owner lookup route may resolve this unknown state;
+        // in particular, never resubmit the retained signed event on retry.
+        if view.state == "unknown" {
+            tx.commit().await?;
+            return Ok(PublishResult {
+                admission,
+                publication: view,
+            });
+        }
         self.current_publication_authority(&mut tx, &permit).await?;
         let audience = publisher.audience(&permit.publication).await?;
         if view.native_event_id.is_none() {

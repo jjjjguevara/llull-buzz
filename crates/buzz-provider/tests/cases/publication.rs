@@ -133,6 +133,21 @@ async fn publication_freezes_signed_identity_and_recovers_without_duplicate_deli
             .content,
         publication.text
     );
+    // A same-command retry cannot infer that the lost response means the
+    // original relay submission failed. It must retain the original unknown
+    // state until original-owner reconciliation, without another send.
+    let (retry_body, retry_signed) = signed_publication(&rig, &c);
+    let retry = rig
+        .p
+        .publish(&retry_body, retry_signed.headers(), &publisher)
+        .await
+        .unwrap();
+    assert_eq!(retry.publication.state, "unknown");
+    assert_eq!(
+        retry.publication.native_event_id.as_deref(),
+        Some(event_id.as_str())
+    );
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
     let recovery = rig.command(
         "reconcile-publication",
         rig.resource(&id.to_string(), 1),
