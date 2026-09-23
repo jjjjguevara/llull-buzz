@@ -74,6 +74,14 @@ impl<P: PublicationPort> Publisher<P> {
         Ok(a)
     }
     fn sign(&self, id: Uuid, p: &Publication) -> Result<Vec<u8>> {
+        // A signed imeta is a disclosure surface. Until the same-origin,
+        // artifact-scoped media gateway is installed, the current native CLI
+        // cannot read provider-origin URLs and the relay's host-scoped Blossom
+        // token cannot prove release of this particular blob. Keep the admitted
+        // intent pending so a later governed retry preserves its identity.
+        if !p.attachments.is_empty() {
+            return Err(Fault::Unavailable.into());
+        }
         let channel = Uuid::parse_str(&p.channel_id).map_err(|_| Fault::Invalid)?;
         let mut media = Vec::new();
         for e in &p.attachments {

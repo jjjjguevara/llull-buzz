@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let publisher = std::sync::Arc::new(Publisher::new(
                     source.clone(),
                     key,
-                    &env::var("PUBLIC_ORIGIN")?,
+                    source.public_origin().as_str(),
                 )?);
                 router = router
                     .merge(api::native_routes(provider.clone(), source))

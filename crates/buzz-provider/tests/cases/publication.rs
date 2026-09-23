@@ -188,6 +188,62 @@ async fn publication_freezes_signed_identity_and_recovers_without_duplicate_deli
     assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
 }
 
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16"]
+async fn attachment_publication_keeps_admission_without_unsafe_native_delivery() {
+    let rig = Rig::new().await;
+    let key = nostr::Keys::generate();
+    let sink = Arc::new(Sink {
+        key: key.public_key(),
+        revision: Mutex::new("audience-1".into()),
+        events: Mutex::new(BTreeMap::new()),
+        calls: AtomicUsize::new(0),
+        lose: AtomicBool::new(false),
+    });
+    let publisher =
+        Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap();
+    let text = "Synthetic attachment announcement";
+    let publication = Publication {
+        community_id: rig.registration.community_id.clone(),
+        channel_id: Uuid::new_v4().to_string(),
+        audience_policy: "synthetic-private".into(),
+        audience_revision: "audience-1".into(),
+        release_ref: Uuid::new_v4().to_string(),
+        text: text.into(),
+        text_sha256: sha256(text.as_bytes()),
+        copy_mode: CopyMode::ExplicitCopy,
+        attachments: vec![Evidence {
+            source_id: Uuid::new_v4().to_string(),
+            sha256: sha256(b"synthetic attachment bytes"),
+            media_type: "image/png".into(),
+            size_bytes: 26,
+            release_ref: Uuid::new_v4().to_string(),
+        }],
+    };
+    let command = rig.command("publish", rig.resource("synthetic-result", 1), &publication);
+    let (body, signed) = signed_publication(&rig, &command);
+    let result = rig.p.publish(&body, signed.headers(), &publisher).await;
+    assert!(matches!(
+        result,
+        Err(ProviderError::Admission(Fault::Unavailable))
+    ));
+    let admission_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM publications WHERE consumer_id=$1 AND intent_id=$2",
+    )
+    .bind(&command.consumer_id)
+    .bind(&command.intent_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    let delivery_count: i64 = sqlx::query_scalar("SELECT count(*) FROM publication_deliveries")
+        .fetch_one(&rig.pool)
+        .await
+        .unwrap();
+    assert_eq!(admission_count, 1);
+    assert_eq!(delivery_count, 0);
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+}
+
 /// This case targets the running provider and the unmodified pinned relay on
 /// an isolated task network. Ordinary library/DB suites keep the fixture above.
 #[tokio::test]

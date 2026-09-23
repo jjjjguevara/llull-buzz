@@ -120,6 +120,9 @@ impl HttpNativeOrigin {
     pub fn public_key(&self) -> nostr::PublicKey {
         self.key.public_key()
     }
+    pub fn public_origin(&self) -> &Url {
+        &self.public_origin
+    }
 }
 #[async_trait]
 impl PublicationPort for HttpNativeOrigin {
