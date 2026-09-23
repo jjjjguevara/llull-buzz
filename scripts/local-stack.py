@@ -817,9 +817,14 @@ FROM publication_deliveries"""
                              "sha256": hashlib.sha256(rows).hexdigest()}
         return result
 
-    def backup_storage(self):
+    def backup_storage(self, backup_key_file):
         require(self.state["stage"] in {"native-started", "provider-started"},
                 "Start native storage before backup")
+        require(backup_key_file is not None, "Pass --backup-key-file outside the backup directory")
+        require(not backup_key_file.resolve().is_relative_to(ROOT / "artifacts/completion/backups"),
+                "Operator key must be outside task backup directories")
+        from backup_crypto import read_key, seal
+        key = read_key(backup_key_file)
         backup = self.directory.parent / "backups" / uuid.uuid4().hex
         backup.mkdir(parents=True, mode=0o700)
         stopped = []
@@ -859,10 +864,17 @@ FROM publication_deliveries"""
                 with open(path, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
                     out.write(content)
                 files[path.name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
-            # Synthetic test identities are copied separately from database
-            # state so the restore can prove original signed identity. This is
-            # private local evidence, not a production key-backup design.
-            for name in ["native-identities.json", "native-check.json", "media-probe.json",
+            # Native signing keys require an operator-held key outside the backup.
+            # The owner is authenticated as AEAD associated data; the archive
+            # contains no plaintext copy of these synthetic identities.
+            identities = self.directory / "native-identities.json"
+            require(identities.is_file(), "Native signing keys are missing")
+            content = seal(identities.read_bytes(), key, self.state["owner"])
+            name = "native-identities.enc"
+            with open(backup / name, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
+                out.write(content)
+            files[name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
+            for name in ["native-check.json", "media-probe.json",
                          "storage-check.json"]:
                 source = self.directory / name
                 require(source.is_file(), "Native restore reference is missing: " + name)
@@ -878,8 +890,9 @@ FROM publication_deliveries"""
                 if part == "relay":
                     self.wait_relay()
         report = {"owner": self.state["owner"], "docker_engine": "29.8.1", "files": files,
+                  "native_key_protection": "AES-256-GCM-v1; external owner-only 32-byte operator key",
                   "quiesced_owned_services": stopped,
-                  "scope": "quiesced synthetic DB/volume and test-identity copies including publication identity; Valkey excluded; production key protection and restore separate"}
+                  "scope": "quiesced synthetic DB/volume and authenticated encrypted native signing keys; Valkey excluded; production backup-key escrow, scheduling and full-archive authentication separate"}
         save(backup / "manifest.json", report)
         print(json.dumps({"backup_directory": str(backup), **report}, indent=2))
 
@@ -920,7 +933,7 @@ FROM publication_deliveries"""
                 raise RuntimeError("Owned relay did not recover its original event")
             time.sleep(2)
 
-    def restore_storage(self, backup_directory):
+    def restore_storage(self, backup_directory, backup_key_file, allow_legacy_plaintext_keys=False):
         require(self.state["stage"] == "storage-started", "Restore requires a new isolated storage stack")
         require(backup_directory is not None, "Pass --backup for a task-owned backup directory")
         backup = backup_directory.resolve()
@@ -932,13 +945,37 @@ FROM publication_deliveries"""
         historical = {"bz_foundation_test.dump", "bz_native.dump", "bz_filer.dump",
                       "media.tar", "relay-data.tar", "native-identities.json",
                       "native-check.json", "media-probe.json", "storage-check.json"}
-        require(expected in (historical, historical | {"publication-check.json"},
-                             historical | {"publication-check.json", "provider-integrity.json"}),
+        protected = (historical - {"native-identities.json"}) | {"native-identities.enc"}
+        extras = (set(), {"publication-check.json"},
+                  {"publication-check.json", "provider-integrity.json"})
+        protected_backup = any(expected == protected | extra for extra in extras)
+        legacy_backup = any(expected == historical | extra for extra in extras)
+        require(protected_backup or (legacy_backup and allow_legacy_plaintext_keys),
                 "Backup file set differs")
+        if protected_backup:
+            require(manifest.get("native_key_protection") ==
+                    "AES-256-GCM-v1; external owner-only 32-byte operator key",
+                    "Protected key format differs")
         for name, record in manifest["files"].items():
             data = (backup / name).read_bytes()
             require(len(data) == record["size"] and hashlib.sha256(data).hexdigest() == record["sha256"],
                     "Backup digest differs: " + name)
+        if protected_backup:
+            require(backup_key_file is not None, "Pass --backup-key-file to restore protected identities")
+            require(not backup_key_file.resolve().is_relative_to(backup),
+                    "Operator key must be outside the backup directory")
+            from backup_crypto import open_sealed, read_key
+            native_identity_bytes = open_sealed(
+                (backup / "native-identities.enc").read_bytes(),
+                read_key(backup_key_file), manifest["owner"])
+        else:
+            native_identity_bytes = (backup / "native-identities.json").read_bytes()
+        identities = json.loads(native_identity_bytes)
+        require(set(identities) == {"owner", "relay", "bot", "outsider", "service"}
+                and all(set(value) == {"public", "secret"}
+                        and all(re.fullmatch(r"[0-9a-f]{64}", part) for part in value.values())
+                        for value in identities.values()),
+                "Restored native identity structure differs")
         seaweed = self.name("seaweed")
         require(self.inspect("container", seaweed)["State"]["Running"], "Owned target Seaweed is not running")
         docker("stop", "--time", "10", seaweed)
@@ -957,8 +994,10 @@ FROM publication_deliveries"""
                    "--mount", f"type=volume,src={volume},dst=/data",
                    "--entrypoint", "tar", IMAGES["config"], "-xpf", "-", "-C", "/data",
                    data=(backup / (suffix + ".tar")).read_bytes())
-        for name in ["native-identities.json", "native-check.json", "media-probe.json",
-                     "storage-check.json"]:
+        with open(self.directory / "native-identities.json", "wb",
+                  opener=lambda p, f: os.open(p, f, 0o600)) as out:
+            out.write(native_identity_bytes)
+        for name in ["native-check.json", "media-probe.json", "storage-check.json"]:
             with open(self.directory / name, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
                 out.write((backup / name).read_bytes())
         docker("start", seaweed)
@@ -991,12 +1030,13 @@ FROM publication_deliveries"""
                     "Restored provider table content differs from source snapshot")
         report = {"backup_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
                   "source_owner": manifest["owner"], "restored_owner": self.state["owner"],
+                  "protected_native_keys_restored": protected_backup,
                   "original_native_event_id": checked["message_event_id"],
                   "original_media_sha256": media["blob_sha256"],
                   "exact_event_and_media_recovered": True, "revoked_channel_read_denied": True,
                   "publication_rows_recovered": None if publications is None else len(publications),
                   "provider_tables_recovered": None if integrity is None else len(integrity),
-                  "scope": "fresh isolated PostgreSQL/Seaweed/relay restore; protected key backup separate"}
+                  "scope": "fresh isolated PostgreSQL/Seaweed/relay restore; encrypted synthetic native keys when protected; production key escrow and full-archive authentication separate"}
         save(self.directory / "restore-check.json", report)
         print(json.dumps(report, indent=2))
 
@@ -1082,6 +1122,10 @@ def main():
     parser.add_argument("--state", type=Path, default=ROOT / "artifacts/completion/stack")
     parser.add_argument("--provider-source", help="Exact committed 40-hex provider image source")
     parser.add_argument("--backup", type=Path, help="Task-owned backup directory for restore-storage")
+    parser.add_argument("--backup-key-file", type=Path,
+                        help="Owner-only 32-byte operator key, kept outside the backup")
+    parser.add_argument("--allow-legacy-plaintext-keys", action="store_true",
+                        help="Explicitly restore historical plaintext synthetic-key backups")
     args = parser.parse_args()
     stack = Stack(args.state)
     {"up-storage": stack.up, "check-storage": stack.check_storage, "up-native": stack.up_native,
@@ -1093,8 +1137,9 @@ def main():
      "probe-provider-origin": stack.probe_provider_origin,
      "check-publication-live": stack.check_publication_live,
      "switch-native-wss": stack.switch_native_wss,
-     "backup-storage": stack.backup_storage,
-     "restore-storage": lambda: stack.restore_storage(args.backup),
+     "backup-storage": lambda: stack.backup_storage(args.backup_key_file),
+     "restore-storage": lambda: stack.restore_storage(args.backup, args.backup_key_file,
+                                                      args.allow_legacy_plaintext_keys),
      "status": stack.status, "down": stack.down}[args.action]()
 
 
