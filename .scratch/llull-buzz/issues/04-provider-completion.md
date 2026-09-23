@@ -521,3 +521,15 @@ fixed native-origin probes passed, with the profile inactive and no host
 port. The last independent clean build is still `742dd78`. Production
 model/native/media gateway, complete restore/distribution, composed Akita
 results and named human UAT remain open.
+
+2026-09-23 — Item 04.4: `9c1c572` closes malformed native-roster
+interpretation at the publication audience gate. The decoder now accepts only
+the pinned relay's signed `p` tag shape and five defined roles; nonempty relay
+addresses and unknown roles are denied. The targeted Rust regression was red
+before the decoder and green after it. Thirteen library tests, formatting and
+strict Clippy passed. The exact-source cached Linux arm64 image built on the
+selected Docker 29.8.1 VM, booted privately, and passed provider health and
+fixed-origin checks against the signed two-member relay audience. This does
+not resolve native subscriber/media mediation, the actual agent/model/MCP
+path, composed Akita qualification or human UAT. Exact source, image and log
+identities are in [completion evidence](../../../docs/implementation/COMPLETION.md).

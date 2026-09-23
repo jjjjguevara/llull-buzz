@@ -1469,3 +1469,44 @@ signed event and audience (ignored log SHA-256
 `e76b97e55e5fcbf1b5f527a1d1db140ffe35c0afff165f2099625b8cef38b8e5`).
 The model, native and media gateway health flags remain false; no complete
 native/client/media journey or live agent reply is claimed from this boot.
+
+## Pinned native audience member semantics
+
+At committed source `9c1c57226d3dfceee106a380318e38404bf5421d`,
+`HttpNativeOrigin::audience` requires each signed roster `p` tag to match the
+inspected pinned relay shape: a 64-character public key, empty relay URL and
+one of `owner`, `admin`, `member`, `guest` or `bot`. An unknown role or external
+relay address can no longer be treated as a known release audience member.
+The Rust regression initially failed to compile because the strict decoder
+did not exist; it then passed with four malformed variants and all five
+pinned roles. This is a decoder guard, not evidence that every native or
+media disclosure path is mediated.
+
+At that source, `cargo +1.98.1 test --locked --workspace --lib` exited 0
+with thirteen tests (ignored log SHA-256
+`0efd8eb550f9c9409ccd5c8eadc0a47b02754e39ca8e45c1411fef3405d5a8ad`).
+Locked strict all-target Clippy and Rustfmt exited 0 (Clippy log SHA-256
+`f3705343d75188eb3daa66b701ac3354781f6494ea395322b262a65fd5ee4276`).
+The selected Docker Engine 29.8.1 built the exact Git archive using the
+inspected cached dependency builder (exit 0, ignored log SHA-256
+`837cc9ded666907159da86adebecd2c24567eb43c678c7f9d44dc6428f48b600`),
+producing Linux arm64 image
+`sha256:4bcdf6d7f6d6491b11a8860f84dea51d418a860d7ee731493e638689fdeca04c`
+with the same source label. This was not a fresh dependency build. The first
+`up-provider` call exited 1 before contacting Docker because its CLI environment
+omitted the required explicit `DOCKER_HOST` (ignored log SHA-256
+`70581e397d4ddd15ada3b58d1281a02260843597575279470024881d700ae859`).
+With the selected socket and task-local Docker configuration, `up-provider`
+exited 0 (ignored log SHA-256
+`33a71b97a118adb36b3b5366342fe57445268f0421f86f928506cfd235c97f62`).
+`check-provider` exited 0 with no host port and inactive profile (ignored log
+SHA-256 `94dab367d26f0fd05210131ad7665f11f20289d07f9074d1a3bca9132de5a33d`).
+The fixed private-origin probe exited 0 against the pinned relay, returning
+the original signed event and a two-member audience (ignored log SHA-256
+`e76b97e55e5fcbf1b5f527a1d1db140ffe35c0afff165f2099625b8cef38b8e5`).
+The task-only VM had 138 MB free after this image build. Three verified,
+unused images from this same provider completion task were removed by exact
+tag without force or a global prune; the partition then had 193 MB free.
+No active container or unrelated image was touched. The selected deployment
+continues to run the `9c1c572` image. The model, native and media gateway
+health flags remain false; complete release qualification remains open.
