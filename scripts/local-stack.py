@@ -691,6 +691,22 @@ enableUpsert = true
                "--mount", f"type=volume,src={volume},dst=/next-source",
                "--entrypoint", "tar", IMAGES["config"], "-xpf", "-", "--no-same-owner",
                "-C", "/next-source", data=archive.read_bytes())
+        # Fetch locked public build inputs without any provider configuration or
+        # secrets. The credential-bearing execution remains on the private net.
+        cache = self.create("volume", "live-test-cargo-cache")
+        egress = self.create("network", "dependency-fetch")
+        fetched = docker("run", "--rm", "--label", self.label(), "--network", egress,
+               "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+               "--pids-limit", "256", "--memory", "1g",
+               "--mount", f"type=volume,src={volume},dst=/next-source,readonly",
+               "--mount", f"type=volume,src={cache},dst=/usr/local/cargo",
+               "--workdir", "/next-source", "--entrypoint", "/usr/local/cargo/bin/cargo",
+               builder, "+1.98.1", "fetch", "--locked", check=False, timeout=900)
+        fetch_log = self.directory / ("live-dependency-fetch-" + source_sha[:12] + ".log")
+        with open(fetch_log, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
+            out.write(fetched.stdout + fetched.stderr)
+        require(fetched.returncode == 0,
+                "Locked dependency fetch failed; inspect private log " + str(fetch_log))
         checked = json.loads((self.directory / "native-check.json").read_text())
         name = self.name("live-publication-test")
         self.remember("container", name)
@@ -704,6 +720,7 @@ enableUpsert = true
                 "--env", "BZ_TEST_CHANNEL=" + checked["channel_id"],
                 "--mount", f"type=volume,src={self.name('provider-secrets')},dst=/run/bz-provider,readonly",
                 "--mount", f"type=volume,src={volume},dst=/next-source,readonly",
+                "--mount", f"type=volume,src={cache},dst=/usr/local/cargo",
                 "--workdir", "/next-source", "--entrypoint", "bash", builder,
                 "-c", 'export TEST_DATABASE_URL="$DATABASE_URL" CARGO_TARGET_DIR=/source/target CARGO_BUILD_JOBS=1; /usr/local/cargo/bin/cargo +1.98.1 test --offline --locked -p llull-buzz-provider --test postgres live_provider_publishes_one_signed_event_to_pinned_relay -- --ignored --test-threads=1 --nocapture',
                 check=False, timeout=1800)
