@@ -268,6 +268,7 @@ async fn attachment_publication_keeps_admission_without_unsafe_native_delivery()
         .unwrap()
         .sign_with_keys(&key)
         .unwrap();
+    let original_id = original.id.to_hex();
     let original_bytes = serde_json::to_vec(&original).unwrap();
     let audience = Audience {
         community_id: publication.community_id.clone(),
@@ -278,7 +279,7 @@ async fn attachment_publication_keeps_admission_without_unsafe_native_delivery()
     sqlx::query("INSERT INTO publication_deliveries(publication_id,consumer_id,module_id,context_domain,owner,native_event_id,signed_event,event_sha256,audience,state) VALUES($1,$2,'module-a','synthetic-domain','synthetic-native-origin',$3,$4,$5,$6,'unknown')")
         .bind(publication_id)
         .bind(&command.consumer_id)
-        .bind(original.id.to_hex())
+        .bind(&original_id)
         .bind(&original_bytes)
         .bind(sha256(&original_bytes))
         .bind(sqlx::types::Json(&audience))
@@ -298,11 +299,29 @@ async fn attachment_publication_keeps_admission_without_unsafe_native_delivery()
         "SELECT state FROM publication_deliveries WHERE publication_id=$1 AND native_event_id=$2",
     )
     .bind(publication_id)
-    .bind(original.id.to_hex())
+    .bind(&original_id)
     .fetch_one(&rig.pool)
     .await
     .unwrap();
     assert_eq!(retained_state, "unknown");
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+
+    sqlx::query("UPDATE publication_deliveries SET state='completed',revision=revision+1,completed_at=clock_timestamp() WHERE publication_id=$1")
+        .bind(publication_id)
+        .execute(&rig.pool)
+        .await
+        .unwrap();
+    let (complete_body, complete_signed) = signed_publication(&rig, &command);
+    let complete = rig
+        .p
+        .publish(&complete_body, complete_signed.headers(), &publisher)
+        .await
+        .unwrap();
+    assert_eq!(complete.publication.state, "completed");
+    assert_eq!(
+        complete.publication.native_event_id.as_deref(),
+        Some(original_id.as_str())
+    );
     assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
 }
 
