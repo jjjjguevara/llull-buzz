@@ -709,11 +709,15 @@ enableUpsert = true
                 "Locked dependency fetch failed; inspect private log " + str(fetch_log))
         checked = json.loads((self.directory / "native-check.json").read_text())
         name = self.name("live-publication-test")
+        target = self.create("volume", "live-test-target")
         self.remember("container", name)
         self.inspect("volume", self.name("provider-secrets"))
+        require(not self.inspect("container", name), "A prior owned live-test container is still running")
+        compiled = None
+        executed = None
         try:
-            run = docker(
-                "run", "--rm", "--name", name, "--label", self.label(),
+            docker(
+                "run", "-d", "--rm", "--name", name, "--label", self.label(),
                 "--network", self.name("storage"), "--cap-drop", "ALL",
                 "--security-opt", "no-new-privileges:true", "--pids-limit", "256",
                 "--memory", "2700m", "--env-file", str(self.directory / "provider.env"),
@@ -721,22 +725,42 @@ enableUpsert = true
                 "--mount", f"type=volume,src={self.name('provider-secrets')},dst=/run/bz-provider,readonly",
                 "--mount", f"type=volume,src={volume},dst=/next-source,readonly",
                 "--mount", f"type=volume,src={cache},dst=/usr/local/cargo",
-                "--workdir", "/next-source", "--entrypoint", "bash", builder,
-                "-c", 'export TEST_DATABASE_URL="$DATABASE_URL" CARGO_TARGET_DIR=/source/target CARGO_BUILD_JOBS=1; /usr/local/cargo/bin/cargo +1.98.1 test --offline --release --locked -p llull-buzz-provider --test postgres live_provider_publishes_one_signed_event_to_pinned_relay -- --ignored --test-threads=1 --nocapture',
-                check=False, timeout=1800)
+                "--mount", f"type=volume,src={target},dst=/source/target",
+                "--workdir", "/next-source", "--entrypoint", "sleep", builder, "infinity")
+            compiled = docker("exec", name, "sh", "-c",
+                              'export CARGO_TARGET_DIR=/source/target CARGO_BUILD_JOBS=1; '
+                              '/usr/local/cargo/bin/cargo +1.98.1 test --offline --release '
+                              '--locked -p llull-buzz-provider --test postgres --no-run',
+                              check=False, timeout=1800)
+            if compiled.returncode == 0:
+                found = docker("exec", name, "find", "/source/target/release/deps",
+                               "-maxdepth", "1", "-type", "f", "-name", "postgres-*",
+                               "-perm", "-111", "-print").stdout.decode().splitlines()
+                require(len(found) == 1, "Expected exactly one compiled PostgreSQL test executable")
+                executed = docker(
+                    "exec", "--user", "65532:65532", name, "sh", "-c",
+                    'export TEST_DATABASE_URL="$DATABASE_URL"; exec "$@"', "sh", found[0],
+                    "live_provider_publishes_one_signed_event_to_pinned_relay",
+                    "--ignored", "--test-threads=1", "--nocapture", check=False, timeout=120)
         except subprocess.TimeoutExpired as error:
+            raise RuntimeError("Live publication test timed out") from error
+        finally:
             if self.inspect("container", name):
                 docker("rm", "-f", name)
-            raise RuntimeError("Live publication test timed out") from error
-        data = run.stdout + run.stderr
+        data = compiled.stdout + compiled.stderr if compiled is not None else b""
+        if executed is not None:
+            data += executed.stdout + executed.stderr
         log = self.directory / ("live-publication-" + source_sha[:12] + ".log")
         with open(log, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
             out.write(data)
-        require(run.returncode == 0, "Live publication test failed; inspect private log " + str(log))
+        require(compiled is not None and compiled.returncode == 0 and
+                executed is not None and executed.returncode == 0,
+                "Live publication test failed; inspect private log " + str(log))
         report = {"test_source_sha": source_sha,
                   "provider_source_sha": self.state["provider_source_sha"],
                   "provider_image_id": self.state["provider_image_id"],
                   "offline_builder_image_id": builder,
+                  "task_owned_target_cache": target,
                   "log_sha256": hashlib.sha256(data).hexdigest(),
                   "live_http_publication_and_same_command_retry": True,
                   "scope": "real provider, PostgreSQL and relay; external TLS and lost native response separate"}
