@@ -157,6 +157,22 @@ impl Provider {
         if imeta.len() != intake.evidence.len() {
             return Err(Fault::Denied.into());
         }
+        // The pinned native CLI emits one of each required media field.
+        // A signed tag carrying two hashes (or sizes, types or URLs) cannot
+        // establish which artifact a consumer's declaration names.
+        for tag in &imeta {
+            let fields = tag.as_slice();
+            for prefix in ["url ", "x ", "m ", "size "] {
+                if fields
+                    .iter()
+                    .filter(|field| field.starts_with(prefix))
+                    .count()
+                    != 1
+                {
+                    return Err(Fault::Denied.into());
+                }
+            }
+        }
         let mut matched = BTreeSet::new();
         for evidence in &intake.evidence {
             let matches: Vec<_> = imeta

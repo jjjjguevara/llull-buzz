@@ -133,6 +133,51 @@ async fn native_intake_retains_original_identity_and_separate_consumer_registrat
         exact_retained.native_event,
         serde_json::to_value(&attached).unwrap()
     );
+    let ambiguous_channel = Uuid::new_v4().to_string();
+    let ambiguous = nostr::EventBuilder::new(
+        nostr::Kind::Custom(buzz_core::kind::KIND_STREAM_MESSAGE as u16),
+        "Ambiguous synthetic attachment",
+    )
+    .tag(nostr::Tag::parse(["h", ambiguous_channel.as_str()]).unwrap())
+    .tag(
+        nostr::Tag::parse(vec![
+            "imeta".to_owned(),
+            "url https://relay.synthetic.invalid/media/ambiguous".to_owned(),
+            format!("x {}", sha256(b"first synthetic attachment")),
+            format!("x {}", sha256(b"second synthetic attachment")),
+            "m image/png".to_owned(),
+            "size 26".to_owned(),
+        ])
+        .unwrap(),
+    )
+    .sign_with_keys(&key)
+    .unwrap();
+    let ambiguous_intake = Intake {
+        event_id: ambiguous.id.to_hex(),
+        community_id: rig.registration.community_id.clone(),
+        channel_id: ambiguous_channel,
+        content_sha256: sha256(ambiguous.content.as_bytes()),
+        evidence: vec![Evidence {
+            source_id: Uuid::new_v4().to_string(),
+            sha256: sha256(b"first synthetic attachment"),
+            media_type: "image/png".into(),
+            size_bytes: 26,
+            release_ref: Uuid::new_v4().to_string(),
+        }],
+    };
+    let ambiguous_command = rig.command(
+        "intake",
+        rig.resource(&ambiguous.id.to_hex(), 1),
+        &ambiguous_intake,
+    );
+    assert!(accept(
+        &rig,
+        "module-a",
+        &ambiguous_command,
+        &Source(serde_json::to_vec(&ambiguous).unwrap())
+    )
+    .await
+    .is_err());
     let channel = Uuid::new_v4().to_string();
     let event = nostr::EventBuilder::new(
         nostr::Kind::Custom(buzz_core::kind::KIND_STREAM_MESSAGE as u16),
