@@ -45,6 +45,94 @@ async fn native_intake_retains_original_identity_and_separate_consumer_registrat
     let rig = Rig::new().await;
     let key = nostr::Keys::generate();
     let (binding, _, _) = rig.enroll("module-a", &key).await;
+    let attachment_channel = Uuid::new_v4().to_string();
+    let first_hash = sha256(b"first synthetic attachment");
+    let second_hash = sha256(b"second synthetic attachment");
+    let attached = nostr::EventBuilder::new(
+        nostr::Kind::Custom(buzz_core::kind::KIND_STREAM_MESSAGE as u16),
+        "Two synthetic attachments",
+    )
+    .tag(nostr::Tag::parse(["h", attachment_channel.as_str()]).unwrap())
+    .tag(
+        nostr::Tag::parse(vec![
+            "imeta".to_owned(),
+            "url https://relay.synthetic.invalid/media/first".to_owned(),
+            format!("x {first_hash}"),
+            "m image/png".to_owned(),
+            "size 26".to_owned(),
+        ])
+        .unwrap(),
+    )
+    .tag(
+        nostr::Tag::parse(vec![
+            "imeta".to_owned(),
+            "url https://relay.synthetic.invalid/media/second".to_owned(),
+            format!("x {second_hash}"),
+            "m image/png".to_owned(),
+            "size 27".to_owned(),
+        ])
+        .unwrap(),
+    )
+    .sign_with_keys(&key)
+    .unwrap();
+    let repeated = Evidence {
+        source_id: Uuid::new_v4().to_string(),
+        sha256: first_hash,
+        media_type: "image/png".into(),
+        size_bytes: 26,
+        release_ref: Uuid::new_v4().to_string(),
+    };
+    let mut second = repeated.clone();
+    second.source_id = Uuid::new_v4().to_string();
+    let attachment_intake = Intake {
+        event_id: attached.id.to_hex(),
+        community_id: rig.registration.community_id.clone(),
+        channel_id: attachment_channel,
+        content_sha256: sha256(attached.content.as_bytes()),
+        evidence: vec![repeated, second],
+    };
+    let attachment_command = rig.command(
+        "intake",
+        rig.resource(&attached.id.to_hex(), 1),
+        &attachment_intake,
+    );
+    assert!(accept(
+        &rig,
+        "module-a",
+        &attachment_command,
+        &Source(serde_json::to_vec(&attached).unwrap())
+    )
+    .await
+    .is_err());
+    let mut exact_attachment_intake = attachment_intake.clone();
+    exact_attachment_intake.evidence[1].sha256 = second_hash;
+    exact_attachment_intake.evidence[1].size_bytes = 27;
+    let exact_attachment_command = rig.command(
+        "intake",
+        rig.resource(&attached.id.to_hex(), 1),
+        &exact_attachment_intake,
+    );
+    let exact = accept(
+        &rig,
+        "module-a",
+        &exact_attachment_command,
+        &Source(serde_json::to_vec(&attached).unwrap()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(exact.result["attachment_bytes_durable"], false);
+    let exact_retained = read(
+        &rig,
+        "module-a",
+        exact.result["source_id"].as_str().unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(exact_retained.intake.evidence.len(), 2);
+    assert_eq!(
+        exact_retained.native_event,
+        serde_json::to_value(&attached).unwrap()
+    );
     let channel = Uuid::new_v4().to_string();
     let event = nostr::EventBuilder::new(
         nostr::Kind::Custom(buzz_core::kind::KIND_STREAM_MESSAGE as u16),
@@ -121,7 +209,7 @@ async fn native_intake_retains_original_identity_and_separate_consumer_registrat
         .fetch_one(&rig.pool)
         .await
         .unwrap();
-    assert_eq!(count, 1);
+    assert_eq!(count, 2);
     let immutability =
         sqlx::query("UPDATE native_inputs SET event_bytes='changed' WHERE consumer_id=$1")
             .bind(&c.consumer_id)

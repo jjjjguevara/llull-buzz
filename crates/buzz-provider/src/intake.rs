@@ -149,28 +149,28 @@ impl Provider {
         }
         // Every declared attachment must be present in the original signed imeta.
         // No URL is dereferenced here; original bytes have their own media gate.
-        if event
+        let imeta: Vec<_> = event
             .tags
             .iter()
             .filter(|t| t.as_slice().first().is_some_and(|f| f == "imeta"))
-            .count()
-            != intake.evidence.len()
-        {
+            .collect();
+        if imeta.len() != intake.evidence.len() {
             return Err(Fault::Denied.into());
         }
+        let mut matched = BTreeSet::new();
         for evidence in &intake.evidence {
-            let matches = event
-                .tags
+            let matches: Vec<_> = imeta
                 .iter()
-                .filter(|t| {
+                .enumerate()
+                .filter(|(_, t)| {
                     let fields = t.as_slice();
-                    fields.first().is_some_and(|f| f == "imeta")
-                        && fields.contains(&format!("x {}", evidence.sha256))
+                    fields.contains(&format!("x {}", evidence.sha256))
                         && fields.contains(&format!("m {}", evidence.media_type))
                         && fields.contains(&format!("size {}", evidence.size_bytes))
                 })
-                .count();
-            if matches != 1 {
+                .map(|(index, _)| index)
+                .collect();
+            if matches.len() != 1 || !matched.insert(matches[0]) {
                 return Err(Fault::Denied.into());
             }
         }
