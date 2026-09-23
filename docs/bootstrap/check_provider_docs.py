@@ -123,7 +123,7 @@ def main():
                    or name in {"README.md", "AGENTS.md", ".gitignore", "LICENSE"})
         if args.stage == "implementation":
             allowed = allowed or name.startswith(("crates/", "migrations/", "scripts/", "deploy/", "tests/")) or name in {
-                "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".dockerignore", "NOTICE", "THIRD-PARTY-NOTICES.md"}
+                "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".dockerignore", ".gitattributes", "NOTICE", "THIRD-PARTY-NOTICES.md"}
         if name in changed and not allowed:
             errors.append(f"out-of-scope changed artifact: {name}")
         if path.suffix.lower() not in {".md", ".yaml", ".yml", ".json", ".py", ".txt", ".rs", ".toml", ".sql", ".sh", ".lock"} and path.name not in {"Dockerfile", "NOTICE", "LICENSE"} and not path.name.startswith("Dockerfile."):

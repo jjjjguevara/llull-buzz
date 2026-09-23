@@ -67,6 +67,11 @@ class CheckoutChecks(unittest.TestCase):
         self.assertIn("out-of-scope changed artifact: crates/example/src/lib.rs",
                       self.check("bootstrap")["errors"])
 
+    def test_implementation_allows_local_legal_text_attributes(self):
+        (self.root / ".gitattributes").write_text(
+            "deploy/licenses/upstream.txt whitespace=-blank-at-eof\n")
+        self.assertEqual(self.check()["errors"], [])
+
     def test_implementation_still_checks_private_key_patterns(self):
         self.add_source('// ' + '-----BEGIN ' + 'PRIVATE KEY-----\n')
         self.assertIn("credential pattern: crates/example/src/lib.rs", self.check()["errors"])
