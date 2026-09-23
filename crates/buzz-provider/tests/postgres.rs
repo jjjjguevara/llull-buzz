@@ -679,12 +679,22 @@ async fn effect_result_reference_is_recoverable_only_in_its_original_scope() {
     let mut read_claims = rig.claims(&read, "module-a", Some(&task.root_task_id), Some(&binding));
     read_claims.payload_sha256 = sha256(b"");
     let read_path = format!("/integration/v1/effects/{}", attempt.attempt_id);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}{}", listener.local_addr().unwrap(), read_path);
+    let router = llull_buzz_provider::api::router(rig.p.clone());
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
     let h = rig.sign(&read_path, "GET", b"", &read_claims, INVOCATION);
-    let retained = rig
-        .p
-        .observe_effect(&read.consumer_id, attempt.attempt_id, h.headers())
+    let response = client
+        .get(&url)
+        .header("x-llull-consumer", &read.consumer_id)
+        .header("authorization", &h.resource)
+        .header("x-llull-invocation", &h.assertion)
+        .send()
         .await
         .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let retained: AttemptView = response.json().await.unwrap();
     assert_eq!(retained.state, "completed");
     assert_eq!(retained.effect_owner, attempt.effect_owner);
     assert_eq!(retained.result_ref, attempt.result_ref);
@@ -692,11 +702,16 @@ async fn effect_result_reference_is_recoverable_only_in_its_original_scope() {
     let mut other_scope = rig.claims(&read, "module-b", Some(&task.root_task_id), Some(&other));
     other_scope.payload_sha256 = sha256(b"");
     let h = rig.sign(&read_path, "GET", b"", &other_scope, INVOCATION);
-    assert!(rig
-        .p
-        .observe_effect(&read.consumer_id, attempt.attempt_id, h.headers())
+    let response = client
+        .get(&url)
+        .header("x-llull-consumer", &read.consumer_id)
+        .header("authorization", &h.resource)
+        .header("x-llull-invocation", &h.assertion)
+        .send()
         .await
-        .is_err());
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
+    server.abort();
 }
 
 #[tokio::test]

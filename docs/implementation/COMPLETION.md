@@ -880,5 +880,16 @@ The earlier broad foundation test failed in its later budget stress loop with
 a worker-lease conflict while the selected VM was concurrently compiling; it
 did not fail at the new read assertion (private log SHA-256
 `e0f728de3c73466ea65412aa2bcaa09c5522e76b4af66634ca426477580e4f35`).
-The focused pass is working-tree evidence until committed-source validation;
-it does not close the full suite or retained consumer result-byte access.
+The focused direct API scenario also passed from clean committed source
+`5704abcf17ca427594b5a42c952147dd7882e902`, including the PostgreSQL
+restart (private log SHA-256
+`99c903a0778977651f7a7cdb9a80953bb90a3b1ff53f42282d55545e247c8c7d`).
+The five-stage document check passed on that exact source (log SHA-256
+`e7d3fb5bb45888b3033a1069aa8f60e3cdc1aac05af81a38b37458d58400261b`).
+Strict all-target Clippy and all 12 library tests also passed on the same
+code line. The test was then strengthened to call the mounted HTTP route,
+parse its response, and require HTTP 403 for the different module. That
+working-tree run exited 0 with a real PostgreSQL restart (private log SHA-256
+`ee6b745e024ebbd4e9abb8aba49fbe0fe338296c2e5238a0640cc5fdcaae8fca`).
+The full suite, retained consumer result-byte access and a deployed image
+containing this new route remain unqualified.

@@ -349,5 +349,8 @@ module/context authority. A focused real PostgreSQL/signature scenario passed
 and a different module was denied; the script's PostgreSQL restart preserved
 durable records. The broader foundation case hit a worker-lease conflict in
 its later budget loop while the selected VM built dependencies. The focused
-result is working-tree evidence pending committed-source checks; retained
-business-result bytes and full gateway integration remain open.
+direct-API result also passed at clean source `5704abc` with a PostgreSQL
+restart, alongside strict Clippy, 12 library tests and all five document
+stages. A subsequent working-tree test passed through the mounted HTTP route
+and required a cross-module HTTP 403. The full suite, retained business-result
+bytes and gateway integration remain open.
