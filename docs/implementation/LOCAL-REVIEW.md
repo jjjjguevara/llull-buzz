@@ -1,9 +1,10 @@
-# Local review and execution — slice 1
+# Local review and execution — restricted provider PR
 
 Review the draft [PR #2](https://github.com/jjjjguevara/llull-buzz/pull/2), not a chat
-archive. [Scope](SLICE-1.md) and [actual evidence](EVIDENCE.md) distinguish implemented
-source from executed checks. The [2026-09-21 local validation](LOCAL-VALIDATION.md)
-records the executed continuation and remediation. Keep the PR draft; return findings
+archive. [Initial scope](SLICE-1.md), [foundation evidence](EVIDENCE.md),
+[local validation](LOCAL-VALIDATION.md) and [completion evidence](COMPLETION.md)
+distinguish implemented source from executed checks and remaining boundaries.
+Keep the PR draft; return findings
 to the same PR with the full candidate SHA. No Actions dispatch, rerun, minutes purchase or check weakening is
 part of this procedure.
 
@@ -87,11 +88,14 @@ and direct-agent ACP are early seam probes, not a complete host/native-client ma
 bash scripts/test-postgres.sh
 ```
 
-The script requires a committed lockfile and creates a uniquely named disposable
-PostgreSQL 16 container, synthetic database/user/password and loopback-only random port.
-It runs the ignored real-database test and then restarts PostgreSQL, comparing durable
-root, effect, publication, binding and epoch snapshots before/after. It removes only its
-own container. Never substitute a live database or existing user resource.
+The script requires a committed lockfile. It discovers the nine non-live
+ignored scenarios and gives each a uniquely named disposable PostgreSQL 16
+container, synthetic database/user/password and loopback-only random port.
+After each real-database case it restarts that server and compares durable
+root, effect, publication, binding and observation snapshots. It removes only
+its own container. The two live-relay cases use
+`scripts/local-stack.py check-publication-live` with the separate private stack.
+Never substitute a live database or existing user resource.
 
 The test `postgres_foundation_contracts` uses actual SQLx transactions, migrations,
 Nostr signatures and ES256 evidence. Only the external consumer is doubled. It covers:
@@ -101,14 +105,14 @@ Nostr signatures and ES256 evidence. Only the external consumer is doubled. It c
 | 03.2 / AC-BZ05 / BZ-PF01,05 | Wrong intended key, challenge replay and repeated authentication fail. Independent module enrollment survives another module's revocation. Attribution history cannot be deleted. |
 | 03.4 / AC-BZ02,06 / BZ-PF01,04 | Authorized typed command completes once; changed intent, forged scope, bad signature/purpose/raw-body proof and missing payload hash fail. Exact known effects permit explicit task completion. |
 | 03.3 / AC-BZ02,06 / BZ-PF04,05 | Children share root model/tool budgets; concurrent final-slot admissions have one winner. Real lease expiry advances generation without replenishment; stale generations and absolute expiry fail. Six concurrent roots admit only four. |
-| 03.4 / AC-BZ03,06 / BZ-PF03,04 | Lost response retains an unknown effect. New IDs/roots cannot repeat it. Lookup recovers the original result without another execute. Publication content/audience/release substitutions fail; accepted publication remains pending and undelivered. |
+| 03.4 / AC-BZ03,06 / BZ-PF03,04 | Lost response retains an unknown effect. New IDs/roots cannot repeat it. Lookup recovers the original result without another execute. Publication content/audience/release substitutions fail; separate live-relay tests cover signed delivery and reconciliation. |
 | 03.2–03.4 / BZ-PF05 | Revocation fences a previously minted dispatch permit. An externally advanced recovery epoch rejects the old restored admission namespace. |
 
-For manual execution in an already created **disposable** test environment, set
+For one manual case in an already created **disposable** test environment, set
 `TEST_DATABASE_URL` to a PostgreSQL 16 database named exactly `bz_foundation_test`, then:
 
 ```sh
-cargo +1.98.1 test --locked -p llull-buzz-provider --test postgres -- --ignored --test-threads=1
+cargo +1.98.1 test --locked -p llull-buzz-provider --test postgres zz_postgres_foundation_contracts -- --ignored --exact --test-threads=1
 ```
 
 The suite intentionally waits for real lease/expiry boundaries; do not replace these with
@@ -148,11 +152,14 @@ owner effect and original-ID lookup. An owner lookup miss must remain unknown be
 original request may still be in flight. Test service revocation between admission and
 effect commit. This network/owner-commit integration is not replaced by the included mock.
 
-For publication, submit a fresh signed release for exact text and destination; expect
-pending plus `delivery: unavailable`. Alter text/hash, audience revision, destination or
-attachments without the corresponding new exact release and require rejection. Do not
-add transport calls: native membership recheck, signed-event identity and delivery belong
-to a later slice. The real-database suite tests the preflight and substitution cases.
+For publication, submit a fresh signed release for exact text and destination.
+The provider now persists the original signed event before dispatch, rechecks
+the current audience and task scope, and reconciles a lost response through
+original-event lookup. Alter text/hash, audience revision, destination or
+attachments without the corresponding exact release and require rejection.
+The real PostgreSQL scenario covers ledger behavior; the separate live-relay
+cases cover accepted delivery and lost-response recovery. Native subscriber and
+media gateway mediation remain unqualified.
 
 For restore review, advance the trusted deployment's recovery-epoch floor outside the
 PostgreSQL backup before using a restored database. Old claims must fail. The operator
@@ -167,9 +174,31 @@ Attach failed commands and minimal repros to this PR; remediation returns throug
 same branch with regression tests and revision-bound replies. Do not approve, merge or
 resolve the reviewer's findings as the implementation agent.
 
-Use [local validation](LOCAL-VALIDATION.md) for command results and exact tested revisions.
-HTTPS consumer/commit fencing, complete installed-distribution license closure and all
-human UAT remain unexecuted. BZ-UAT01,02,04,05 bindings identify affected cases, not
-completed human acceptance. Full native protocol/media/client coverage, publication
-delivery and cross-product integration remain
-later slices. No full restricted-profile activation or certification is claimed.
+Use [completion evidence](COMPLETION.md) for current command results and exact
+tested revisions. HTTPS consumer commit fencing, signed text publication,
+selected-engine builds, nine isolated PostgreSQL cases and a protected synthetic
+native-key restore have local passes at their recorded sources. Model dispatch,
+consequential MCP bridging, native/media gateway coverage, production backup
+escrow and complete distribution applicability remain open. BZ-UAT01..05 are
+named human judgments, not completed acceptance. No full restricted-profile
+activation or certification is claimed.
+
+## 6. Protected synthetic-key backup review
+
+Use the operator-only Python environment from
+[`scripts/requirements-operator.txt`](../../scripts/requirements-operator.txt).
+Keep a separately managed raw 32-byte backup key in an ignored owner-only
+file outside `artifacts/completion/backups`; provide only its path to
+`--backup-key-file`. Never print, commit or mount the key into an agent.
+`backup-storage` now encrypts native signing identities, quiesces only its
+owned provider/relay/SeaweedFS services, and records DB/volume digests.
+`restore-storage` authenticates the encrypted identity archive before changing
+target storage. Test a wrong-key denial first, then restore into a newly owned
+stack and compare retained event/media/publication/table identities. Restore
+the provider image with the original service identity and run `check-provider`
+and `probe-provider-origin` before removing only the restore namespace.
+The exact passing command inputs, image IDs and limits are in
+[completion evidence](COMPLETION.md). Earlier plaintext synthetic-key backups
+require the explicit `--allow-legacy-plaintext-keys` flag; they are historical
+evidence, not the new backup format. Full production key escrow and whole-archive
+protection remain to be implemented.

@@ -391,3 +391,22 @@ foundation capacity/budget/lease case. This is local real-database evidence;
 the two live-relay cases remain covered by their separate runner, and model,
 MCP, media/client, protected-key restore, composed Akita and named human UAT
 qualification remain open. No entire capability or proof profile is accepted.
+
+2026-09-23 — Item 04.6: committed operator tooling at `185d00e` encrypts the
+task's five synthetic native signing identities with a separate owner-only
+32-byte key and authenticates the backup owner before restore mutation. A
+new backup from that source contained `native-identities.enc` and no plaintext
+identity file. A wrong-key restore was denied before any target service was
+stopped. A correct-key fresh restore matched all 28 provider tables, seven
+publication rows, original native/media identities and revoked-channel denial.
+The restored provider booted with the original service public key, then recovered
+the exact event and audience through the source WSS signing posture. The restore
+namespace was removed by exact owner label; the original private deployment
+remains healthy. Exact commands, manifest/image identities and log hashes are
+in [completion evidence](../../../docs/implementation/COMPLETION.md).
+
+This is local synthetic protected-key recovery, not complete BZ-PF05 or BZ-C08.
+Production key escrow, whole-archive encryption/authentication, backup scheduling,
+failover, model/MCP/native/media gateways, composed Akita results and human UAT
+remain claimed work. Historical private plaintext-key backups are preserved as
+past test evidence and require an explicit legacy restore flag.

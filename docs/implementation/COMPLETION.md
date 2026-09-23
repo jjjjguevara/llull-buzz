@@ -1000,3 +1000,80 @@ Its ignored local log SHA-256 is
 This removes unintended inter-case state dependence; the foundation case
 continues to exercise four-root concurrent admission within one database.
 Neither runner shape supplies the live relay cases or a human UAT verdict.
+
+## Authenticated native-key backup and fresh restore
+
+Operator backup tooling at committed source
+`185d00ed698c98a1a8c50c643a4fdc530dee6e4a` encrypts the five synthetic
+native signing-identity pairs into `native-identities.enc` before writing the
+backup manifest. The key is a separate, owner-only 32-byte file outside the
+backup directory. The envelope uses AES-256-GCM with a fresh 12-byte nonce and
+binds the backup owner as associated data. Restore authenticates and validates
+that envelope **before** stopping or modifying target storage. Historical
+plaintext-key archives require the explicit `--allow-legacy-plaintext-keys`
+restore flag; new backups never write that plaintext file. The format follows
+the [PyCA AES-GCM guidance](https://cryptography.io/en/latest/hazmat/primitives/aead/).
+The operator-only environment uses the pinned
+[`scripts/requirements-operator.txt`](../../scripts/requirements-operator.txt),
+including `cryptography 50.0.1`; that release includes the fix for the separate
+[PyCA PKCS#7 decryption advisory](https://github.com/pyca/cryptography/security/advisories/GHSA-g6cj-pr64-35w5).
+This archive does not invoke the PKCS#7 API. The tested CPython 3.12 macOS arm64
+environment also selected `cffi 2.1.1` and `pycparser 3.0` (private inventory
+SHA-256 `1f75ea07c997da3af67006e9a83dbfba9b38e467063c19bf156435f64b2b437c`).
+
+The envelope tests first failed on the missing module (private log SHA-256
+`9f2ae95ed38da03a67a4ab3b611c049df7b181a50322547590d3dcb343a8c18b`),
+then passed from clean committed source (log SHA-256
+`ff0d9d76afc3dbb79c6b38117df28de76fbde4ee2cb805be51be5cfb3e97579d`).
+They deny wrong key, wrong owner, tampering, weak file permissions and a
+symlinked key path. Python syntax compilation and `pip check` exited 0.
+`backup-storage` without `--backup-key-file` failed before quiescing a service
+(log SHA-256 `b08f7f555853372b81181669ee50a728515499cffcc97ed8f8b3cda9eb14668f`).
+
+With a task-local mode-0600 key reference at
+`artifacts/completion/secrets/backup-key`, the command
+`python scripts/local-stack.py backup-storage --backup-key-file
+artifacts/completion/secrets/backup-key` exited 0 at clean source `185d00e`.
+Its private log SHA-256 is
+`cf6ca7fb01a3aee082cd03ead98105f53c4d181a57a7020b92a1ba14ca367cfc`;
+the private manifest SHA-256 is
+`04f981ce0c8d69b2e1baabcdc0b37fdd894b30ba3bf6c86703347b3fe36cfa42`.
+The manifest lists 11 files, including `native-identities.enc` and no
+`native-identities.json`. The backup quiesced and restarted only the owned
+provider, relay and SeaweedFS services.
+
+A fresh namespace with owner `e5cb431a7ef941e6a159f821f5726e0a` first
+attempted restore with a different 32-byte key. Authentication failed before
+target mutation (private log SHA-256
+`be68dd7a81b9e0a666ef6bee3495bb7ef3aefb745f885a243b4c284bed8a70c0`);
+its PostgreSQL, SeaweedFS and Valkey processes remained running. Correct-key
+`restore-storage` then exited 0 (log SHA-256
+`1ff59826adab2fcbf4225338f14bebd9e98ae1b9f91ffed28ebf4e9e0216afd9`).
+It matched all 28 provider table digests and seven publication rows, recovered
+the exact original signed native event and media bytes, and kept the revoked
+channel read denied. All five restored signing-identity pairs equaled the
+source; the restored file was mode 0600, and no plaintext identity file existed
+in the backup (comparison log SHA-256
+`23d29761196b6465d388c643803f0d06c4f440e7d2f431e8579d9bf089495a6f`).
+
+The restored namespace then booted the same provider image
+`sha256:78e32fdb5a44d13b9515f120c309e70e6c5b03bd60c429809fab570fd12137c1`
+with the original service public key. After restoring the source WSS signing
+posture, its private provider health and fixed native-origin probes both exited
+0, returning the same event, byte digest and audience revision. The WSS switch
+log SHA-256 is
+`0b6f664444cafdf6e93a437b4ea9e30e733eadd5027f833030c2f79e58a13fca`;
+the health and origin logs match the earlier hashes
+`d72b2fec1bbac43846f164cf5d4ba36b32381406fd708b07aa38cc1581c08a50`
+and `e76b97e55e5fcbf1b5f527a1d1db140ffe35c0afff165f2099625b8cef38b8e5`.
+Only this restore namespace was removed by its exact owner label; no containers,
+volumes or networks with that label remained. The source deployment's health
+check still exited 0 afterward.
+
+This proves local protected *native-key* restoration with the selected storage
+and provider image. It does not establish external escrow/KMS, an encrypted and
+authenticated whole-database/media archive, a production backup schedule, or
+power-loss/failover behavior. Earlier private test backups containing plaintext
+synthetic keys remain historical evidence and are not retroactively protected.
+The restored provider's model/native/media gateways still report unavailable;
+this result does not accept BZ-PF05 or the complete BZ-C08 capability.
