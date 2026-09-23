@@ -818,3 +818,41 @@ synthetic service authority and remains separate from model-generated output,
 business MCP effects, external TLS, process-death injection, native subscriber
 mediation and artifact-specific media release. No whole capability or proof
 profile is accepted from these passes.
+
+## All-table provider restore comparison
+
+Commit `6cc7bde` extends the isolated backup recipe to capture a SHA-256 and
+row count for every public provider PostgreSQL table, without writing row
+contents into the report. The fresh-restore recipe compares that complete
+inventory after loading the database. This is local recovery qualification;
+it does not replace an encrypted production key-backup and restore design.
+
+With the selected Docker 29.8.1 socket, `python3 scripts/local-stack.py
+backup-storage` exited 0 after quiescing and restarting only the owned
+provider, relay and SeaweedFS containers. The private backup manifest SHA-256
+is `32bbc7f8ed2eddbf05c49d513f8640823b047a12cd207911c8659fb79e434467`.
+It records 28 provider tables, 14 containing rows, including 16 observation
+rows and seven publication deliveries. Three PostgreSQL dumps, the retained
+media/relay volumes, synthetic identities, publication comparison and table
+inventory are covered by the manifest's file hashes. The backup command log
+SHA-256 is
+`bb9fb779fcbe9a5f8a1bd4ca23a8ad82f1a61c56ebef8e6a845c3bb98d1f7c81`.
+
+`python3 scripts/local-stack.py up-storage --state
+artifacts/completion/restore-6cc7bde`, followed by `restore-storage --state
+artifacts/completion/restore-6cc7bde --backup
+artifacts/completion/backups/10de9c7fb8b744d984dc65fec528eb10`, both
+exited 0 in a separately owned namespace. The restore matched all 28 table
+contents, seven publication rows, original native event and media-byte digests,
+and a revoked-channel read denial. Its log SHA-256 is
+`2f887ef8baa13a1602af42bb6bbf6c8cf6884b6be65017f4582a108e585ec54e`.
+An attempted direct change to an immutable publication row failed at its
+database trigger. A subsequent one-row change to the disposable restore's
+observation counter was detected as a difference in exactly that table
+(negative check log SHA-256
+`a5d43f63a67e709203fbd72cb5fc154bd93bee0edcdd70e0bbeb2bda98bd8518`).
+The restore namespace was then removed by its exact owner label; zero of its
+containers, volumes and networks remain. The source provider's health check
+still exited 0 with its `a395617` image. Protected-key restoration, a
+production backup schedule, operator encryption and a clean independent
+provider build remain open.

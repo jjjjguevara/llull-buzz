@@ -328,3 +328,16 @@ The provider image includes 221 selected Rust license records and OS copyright
 evidence; it still used an exact-ID cached dependency builder. Model/native/
 media gateways, full publisher handoff and clean independent distribution
 qualification remain open. See [completion evidence](../../../docs/implementation/COMPLETION.md).
+
+2026-09-23 — Item 04.6: committed backup tooling at `6cc7bde` hashed every
+row of every public provider table before an isolated backup. A fresh
+separately owned restore matched all 28 table digests, including 16
+observations and seven publication deliveries, plus the retained native
+event/media bytes and revoked-channel denial. The restored database's
+immutable publication trigger rejected a direct tamper; one intentional
+counter change in that disposable namespace was detected by the table
+comparison. The restore namespace was removed by exact owner label, while
+the source provider stayed healthy. Protected-key backup/restore, production
+scheduling/encryption and a clean independent provider image remain open;
+the test does not accept whole BZ-PF05 or BZ-C08. Exact commands, identities
+and log hashes are in [completion evidence](../../../docs/implementation/COMPLETION.md).
