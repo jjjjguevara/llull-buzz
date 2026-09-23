@@ -31,7 +31,7 @@ RUN mkdir -p /image/opt/llull/upstream /image/usr/share/doc/buzz-upstream && \
     find . -maxdepth 1 -type f \( -iname 'LICENSE*' -o -iname 'NOTICE*' \) \
        -exec cp {} /image/usr/share/doc/buzz-upstream/ \; && \
     (cd /image && sha256sum opt/llull/upstream/*) > /image/usr/share/doc/buzz-upstream/SHA256SUMS && \
-    cargo metadata --locked --format-version 1 \
+    cargo +1.98.1 metadata --locked --format-version 1 \
       --features tokio-tungstenite/rustls-tls-native-roots \
       > /image/usr/share/doc/buzz-upstream/cargo-metadata.json && \
     python3 /inventory/scripts/distribution-inventory.py --workspace /upstream \
