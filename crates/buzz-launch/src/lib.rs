@@ -1,9 +1,7 @@
 //! Credential-free launch/configuration boundary, not an agent harness or OS
 //! sandbox. Actual containment and native compatibility require the local probes.
 #![forbid(unsafe_code)]
-use llull_buzz_wire::{canonical, parse, Fault, Result};
-#[cfg(target_os = "linux")]
-use llull_buzz_wire::{hash, sha256};
+use llull_buzz_wire::{canonical, hash, parse, sha256, Fault, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -41,7 +39,7 @@ impl Program {
 }
 /// These values are fixed in source; no inherited key, path, proxy, shell, loader,
 /// credential directory or wire declaration participates. The dummy string is NOT
-/// a provider credential. Model requests cannot pass the ACP guard in this slice.
+/// a provider credential. Probe mode has no reserved prompt and cannot call a model.
 pub fn environment() -> BTreeMap<&'static str, &'static str> {
     BTreeMap::from([
         ("PATH", "/nonexistent"),
@@ -209,13 +207,49 @@ struct SessionNew {
 struct SessionCancel {
     session_id: String,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SessionPrompt {
+    session_id: String,
+    prompt: Value,
+}
 #[derive(Default)]
 pub struct AcpGuard {
     initialized: bool,
     created: bool,
     session: Option<String>,
+    reserved_prompt: Option<Value>,
+    prompted: bool,
 }
 impl AcpGuard {
+    /// An exact protocol filter for a prompt whose canonical digest was
+    /// reserved by the trusted supervisor. This does not itself validate
+    /// task authority, token counts, pricing or the model proxy.
+    pub fn with_reserved_prompt(prompt: Value, expected_sha256: &str) -> Result<Self> {
+        hash(expected_sha256)?;
+        let parts = prompt.as_array().ok_or(Fault::Invalid)?;
+        if parts.len() != 1 {
+            return Err(Fault::Invalid);
+        }
+        let text = parts[0].as_object().ok_or(Fault::Invalid)?;
+        if text.len() != 2 || text.get("type") != Some(&json!("text")) {
+            return Err(Fault::Invalid);
+        }
+        let content = text
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or(Fault::Invalid)?;
+        if content.is_empty() || content.len() > 131_072 {
+            return Err(Fault::TooLarge);
+        }
+        if sha256(&canonical(&prompt)?) != expected_sha256 {
+            return Err(Fault::Conflict);
+        }
+        Ok(Self {
+            reserved_prompt: Some(prompt),
+            ..Self::default()
+        })
+    }
     pub fn admit(&mut self, bytes: &[u8]) -> Result<Vec<u8>> {
         let frame: Frame = parse(bytes)?;
         if frame.jsonrpc != "2.0" || !(frame.id.is_string() || frame.id.is_u64()) {
@@ -253,8 +287,21 @@ impl AcpGuard {
                 }
                 json!({"sessionId":requested.session_id})
             }
-            // No prompts, steer, set_model, arbitrary child commands, hooks,
-            // permission responses, MCP tools/call or opaque extension forwarding.
+            "session/prompt" => {
+                let expected = self.reserved_prompt.as_ref().ok_or(Fault::Unavailable)?;
+                let requested: SessionPrompt =
+                    serde_json::from_value(frame.params).map_err(|_| Fault::Invalid)?;
+                if self.session.as_deref() != Some(requested.session_id.as_str())
+                    || self.prompted
+                    || &requested.prompt != expected
+                {
+                    return Err(Fault::Denied);
+                }
+                self.prompted = true;
+                json!({"sessionId":requested.session_id,"prompt":expected})
+            }
+            // No unreserved prompt, steer, set_model, arbitrary child commands,
+            // hooks, permission responses, MCP tools/call or opaque forwarding.
             _ => return Err(Fault::Unavailable),
         };
         canonical(&json!({"jsonrpc":"2.0","id":frame.id,"method":frame.method,"params":params}))
@@ -299,6 +346,53 @@ mod tests {
         assert_eq!(
             guard.admit(&frame("session/prompt", json!({}))),
             Err(Fault::Unavailable)
+        );
+    }
+    #[test]
+    fn reserved_prompt_is_exact_one_use_and_session_bound() {
+        let prompt = json!([{"type":"text","text":"Synthetic authorized task"}]);
+        let digest = llull_buzz_wire::sha256(&canonical(&prompt).unwrap());
+        let mut guard = AcpGuard::with_reserved_prompt(prompt.clone(), &digest).unwrap();
+        guard
+            .admit(&frame("initialize",json!({"protocolVersion":2,"clientCapabilities":{},"clientInfo":{"name":"llull-foundation-probe","version":"0.1.0"}})))
+            .unwrap();
+        guard
+            .admit(&frame(
+                "session/new",
+                json!({"cwd":WORK,"mcpServers":[admitted_mcp()]}),
+            ))
+            .unwrap();
+        guard.record_session("synthetic-session").unwrap();
+        assert_eq!(
+            guard.admit(&frame(
+                "session/prompt",
+                json!({"sessionId":"another-session","prompt":prompt})
+            )),
+            Err(Fault::Denied)
+        );
+        assert_eq!(
+            guard.admit(&frame(
+                "session/prompt",
+                json!({"sessionId":"synthetic-session","prompt":[{"type":"text","text":"changed"}]})
+            )),
+            Err(Fault::Denied)
+        );
+        guard
+            .admit(&frame(
+                "session/prompt",
+                json!({"sessionId":"synthetic-session","prompt":prompt}),
+            ))
+            .unwrap();
+        assert_eq!(
+            guard.admit(&frame(
+                "session/prompt",
+                json!({"sessionId":"synthetic-session","prompt":prompt})
+            )),
+            Err(Fault::Denied)
+        );
+        assert_eq!(
+            AcpGuard::with_reserved_prompt(prompt, &"0".repeat(64)).err(),
+            Some(Fault::Conflict)
         );
     }
     #[test]
