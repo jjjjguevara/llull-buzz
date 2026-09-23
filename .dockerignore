@@ -1,0 +1,12 @@
+.git
+.scratch
+artifacts
+target
+node_modules
+.env
+.env.*
+*.pem
+*.key
+.venv
+__pycache__
+.DS_Store

@@ -1,0 +1,5 @@
+# Task-local backup-key envelope; tested with CPython 3.12 on macOS arm64.
+# Keep this operator-only environment outside the provider/agent containers.
+cryptography==50.0.1
+cffi==2.1.1
+pycparser==3.0

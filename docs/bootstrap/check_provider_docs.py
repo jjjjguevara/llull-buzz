@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tomllib
 from urllib.parse import unquote, urlsplit
 import yaml
 
@@ -84,6 +85,7 @@ def main():
     parser.add_argument("--subject")
     parser.add_argument("--output", default="docs-check/report.json")
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--stage", choices=("bootstrap", "implementation"), default="bootstrap")
     args = parser.parse_args()
     if args.self_test:
         self_test()
@@ -98,7 +100,11 @@ def main():
         errors.append("checkout HEAD does not match stated subject")
     if git("status", "--porcelain", "--untracked-files=no"):
         errors.append("tracked checkout differs from subject")
-    paths = git("diff", "--name-only", "--diff-filter=ACMR", base, subject).splitlines()
+    changed = git("diff", "--name-only", "--diff-filter=ACMR", base, subject).splitlines()
+    # Contract validity is a property of the complete subject, not just its diff.
+    # In particular a source-only update still has the unchanged owning manifest,
+    # registry, ADRs and technical/human applicability documents.
+    paths = git("ls-tree", "-r", "--name-only", subject).splitlines()
     check = subprocess.run(["git", "diff", "--check", base, subject], text=True,
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if check.returncode:
@@ -107,14 +113,20 @@ def main():
     parsed = {}
     for name in paths:
         path = root / name
+        if path.is_symlink() or not path.resolve().is_relative_to(root) or not path.is_file():
+            errors.append(f"missing/unsafe tracked artifact: {name}")
+            continue
         data = path.read_bytes()
         files[name] = {"sha256": digest(data), "git_blob": git("hash-object", name),
                        "bytes": len(data)}
         allowed = (name.startswith(("docs/", ".scratch/", ".github/workflows/"))
                    or name in {"README.md", "AGENTS.md", ".gitignore", "LICENSE"})
-        if not allowed:
+        if args.stage == "implementation":
+            allowed = allowed or name.startswith(("crates/", "migrations/", "scripts/", "deploy/", "tests/")) or name in {
+                "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".dockerignore", ".gitattributes", "NOTICE", "THIRD-PARTY-NOTICES.md"}
+        if name in changed and not allowed:
             errors.append(f"out-of-scope changed artifact: {name}")
-        if path.suffix.lower() not in {".md", ".yaml", ".yml", ".json", ".py", ".txt"}:
+        if path.suffix.lower() not in {".md", ".yaml", ".yml", ".json", ".py", ".txt", ".rs", ".toml", ".sql", ".sh", ".lock"} and path.name not in {"Dockerfile", "NOTICE", "LICENSE"} and not path.name.startswith("Dockerfile."):
             continue
         try:
             text = data.decode("utf-8")
@@ -131,6 +143,8 @@ def main():
                 parsed[name] = parse_yaml(text)
             elif path.suffix == ".json":
                 parsed[name] = json.loads(text, object_pairs_hook=unique_pairs)
+            elif path.suffix == ".toml" or path.name == "Cargo.lock":
+                parsed[name] = tomllib.loads(text)
             elif path.suffix == ".md" and text.startswith("---\n"):
                 front = parse_yaml(text.split("---\n", 2)[1])
                 if isinstance(front, dict) and front.get("subtype") == "adr":
@@ -198,6 +212,7 @@ def main():
                   {"argv": ["git", "diff", "--check", base, subject], "exit": check.returncode,
                    "stdout": check.stdout, "stderr": check.stderr},
                   {"argv": sys.argv, "exit": int(bool(errors))}],
+              "stage": args.stage, "changed_files": changed,
               "files": files, "errors": errors, "documentation_checks_passed": not errors,
               "owner_decisions_pending": manifest.get("owner_decisions_pending", []),
               "bootstrap_complete": not errors and not manifest.get("owner_decisions_pending"),
