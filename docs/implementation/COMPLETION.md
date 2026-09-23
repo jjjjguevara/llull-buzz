@@ -1550,6 +1550,20 @@ Afterward `check-provider` still exited 0 on the separately running private
 The Docker partition had 1.1 GB free after the clean containment build;
 further image builds require another task-scoped capacity audit.
 
+At committed source `3c7bdbd964a6a1ee0c0548c95b6478ef86aae0f2`, a
+cancellation regression exposed that the new ACP guard accepted a second
+`session/cancel` and could still forward an unused reserved prompt after the
+first cancel. The focused test exited 101 before the fix and 0 after it.
+Cancellation now fences both a repeated cancel and every later prompt for
+that session. The full locked workspace library suite exited 0 with fifteen
+tests (ignored log SHA-256
+`aaa9d0115ef2d4f39e52e29f9f485bae222e81625607f5c557e1eb3d635215e1`);
+Rustfmt and strict all-target Clippy exited 0 (Clippy log SHA-256
+`5fdefedf6fce0c56c2234bd5bd2e153ad128136b87775ce290ff339ebe1921a8`).
+The last exact-source Linux containment run is still the earlier `2968100`
+result. It is not attributed to this revised cancellation code; the selected
+VM had only 1.1 GB free, and a repeated clean image build was deferred.
+
 Before that build, the selected task-only Docker VM had 193 MB free. Of 84
 detached volumes, 73 anonymous volumes contained PostgreSQL 16 data and one
 anonymous volume from a failed test start was empty. Their creation dates

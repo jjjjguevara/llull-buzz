@@ -554,3 +554,12 @@ the ten named local-stack volumes and every mounted volume remained. The
 Docker partition rose from 193 MB to 3.8 GB available. No global prune or
 shared resource cleanup occurred. The ignored identity-manifest SHA-256 is
 recorded in [completion evidence](../../../docs/implementation/COMPLETION.md).
+
+2026-09-23 — Item 04.3: `3c7bdbd` closes a cancellation hole in the new ACP
+prompt filter. Source inspection found that the old guard allowed a reserved
+prompt and repeated cancel after the first cancel; the focused regression
+failed at the repeated-cancel assertion before the change and passed both
+denials afterward. Fifteen locked library tests, formatting and strict Clippy passed.
+The Linux containment pass remains bound to `2968100`, not this revision;
+the selected VM had 1.1 GB free after that clean build. Durable supervisor,
+token-counting proxy and actual task-bound agent work remain unfinished.
