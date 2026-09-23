@@ -767,6 +767,21 @@ enableUpsert = true
         save(self.directory / "live-publication-check.json", report)
         print(json.dumps(report, indent=2))
 
+    def publication_rows(self):
+        query = """SELECT COALESCE(json_agg(json_build_object(
+    'publication_id', publication_id,
+    'native_event_id', native_event_id,
+    'event_sha256', event_sha256,
+    'signed_sha256', encode(sha256(signed_event), 'hex'),
+    'state', state) ORDER BY publication_id), '[]'::json)
+FROM publication_deliveries"""
+        rows = json.loads(docker("exec", self.name("postgres"), "psql", "-X", "-At",
+                                 "-U", "bz_provider", "-d", "bz_foundation_test",
+                                 "-c", query).stdout)
+        require(all(row["event_sha256"] == row["signed_sha256"] for row in rows),
+                "Retained signed publication bytes differ from their digest")
+        return rows
+
     def backup_storage(self):
         require(self.state["stage"] in {"native-started", "provider-started"},
                 "Start native storage before backup")
@@ -790,6 +805,10 @@ enableUpsert = true
                 with open(path, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
                     out.write(content)
                 files[path.name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
+            snapshot = backup / "publication-check.json"
+            save(snapshot, {"rows": self.publication_rows()})
+            content = snapshot.read_bytes()
+            files[snapshot.name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
             for suffix in ["media", "relay-data"]:
                 volume = self.name(suffix)
                 require(self.inspect("volume", volume) is not None, "Owned data volume is missing")
@@ -820,7 +839,7 @@ enableUpsert = true
                     self.wait_relay()
         report = {"owner": self.state["owner"], "docker_engine": "29.8.1", "files": files,
                   "quiesced_owned_services": stopped,
-                  "scope": "quiesced synthetic DB/volume and test-identity copies; Valkey excluded; production key protection and restore separate"}
+                  "scope": "quiesced synthetic DB/volume and test-identity copies including publication identity; Valkey excluded; production key protection and restore separate"}
         save(backup / "manifest.json", report)
         print(json.dumps({"backup_directory": str(backup), **report}, indent=2))
 
@@ -870,9 +889,10 @@ enableUpsert = true
         manifest = json.loads(manifest_bytes)
         require(manifest["owner"] != self.state["owner"], "Refusing to restore over source stack")
         expected = set(manifest["files"])
-        require(expected == {"bz_foundation_test.dump", "bz_native.dump", "bz_filer.dump",
-                             "media.tar", "relay-data.tar", "native-identities.json",
-                             "native-check.json", "media-probe.json", "storage-check.json"},
+        historical = {"bz_foundation_test.dump", "bz_native.dump", "bz_filer.dump",
+                      "media.tar", "relay-data.tar", "native-identities.json",
+                      "native-check.json", "media-probe.json", "storage-check.json"}
+        require(expected in (historical, historical | {"publication-check.json"}),
                 "Backup file set differs")
         for name, record in manifest["files"].items():
             data = (backup / name).read_bytes()
@@ -912,12 +932,24 @@ enableUpsert = true
         denied = self.native_client("bot", "messages", "get", "--channel", checked["channel_id"], check=False)
         require(denied.returncode == 0 and json.loads(denied.stdout) == [],
                 "Restored private-channel revocation was lost")
+        publications = None
+        if "publication-check.json" in expected:
+            publications = json.loads((backup / "publication-check.json").read_text())["rows"]
+            require(self.publication_rows() == publications,
+                    "Restored publication ledger differs from source snapshot")
+            events = json.loads(self.native_client("owner", "messages", "get", "--channel",
+                                                   checked["channel_id"]).stdout)
+            native_ids = {event.get("id") for event in events}
+            require(all(row["native_event_id"] in native_ids for row in publications
+                        if row["state"] == "completed"),
+                    "Completed publication missing from restored native relay")
         report = {"backup_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
                   "source_owner": manifest["owner"], "restored_owner": self.state["owner"],
                   "original_native_event_id": checked["message_event_id"],
                   "original_media_sha256": media["blob_sha256"],
                   "exact_event_and_media_recovered": True, "revoked_channel_read_denied": True,
-                  "scope": "fresh isolated PostgreSQL/Seaweed/relay restore; provider operations and protected key backup separate"}
+                  "publication_rows_recovered": None if publications is None else len(publications),
+                  "scope": "fresh isolated PostgreSQL/Seaweed/relay restore; protected key backup separate"}
         save(self.directory / "restore-check.json", report)
         print(json.dumps(report, indent=2))
 
