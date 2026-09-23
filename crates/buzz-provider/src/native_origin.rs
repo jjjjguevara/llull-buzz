@@ -184,11 +184,8 @@ impl PublicationPort for HttpNativeOrigin {
                     for tag in event.tags.iter() {
                         let fields = tag.as_slice();
                         if fields.first().is_some_and(|f| f == "p") {
-                            if fields.len() != 4 {
-                                return Err(PortError);
-                            }
-                            llull_buzz_wire::hash(&fields[1]).map_err(|_| PortError)?;
-                            if !members.insert(fields[1].clone()) {
+                            let member = roster_member(fields)?;
+                            if !members.insert(member.to_owned()) {
                                 return Err(PortError);
                             }
                         }
@@ -205,6 +202,22 @@ impl PublicationPort for HttpNativeOrigin {
             members,
         })
     }
+}
+/// The pinned relay emits ["p", pubkey, "", role]. A future role or external
+/// relay address changes audience meaning and must fail closed at release.
+fn roster_member(fields: &[String]) -> std::result::Result<&str, PortError> {
+    if fields.len() != 4
+        || fields[0] != "p"
+        || !fields[2].is_empty()
+        || !matches!(
+            fields[3].as_str(),
+            "owner" | "admin" | "member" | "guest" | "bot"
+        )
+    {
+        return Err(PortError);
+    }
+    llull_buzz_wire::hash(&fields[1]).map_err(|_| PortError)?;
+    Ok(&fields[1])
 }
 #[async_trait]
 impl NativeEventSource for HttpNativeOrigin {
@@ -249,4 +262,37 @@ fn origin(value: &str, public: bool) -> std::result::Result<Url, PortError> {
         return Err(PortError);
     }
     Ok(url)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roster_member_requires_the_pinned_relay_shape() {
+        let key = "a".repeat(64);
+        for role in ["owner", "admin", "member", "guest", "bot"] {
+            let fields = vec!["p".into(), key.clone(), "".into(), role.into()];
+            assert_eq!(roster_member(&fields).unwrap(), key);
+        }
+        for fields in [
+            vec![
+                "p".into(),
+                key.clone(),
+                "https://elsewhere.invalid".into(),
+                "member".into(),
+            ],
+            vec!["p".into(), key.clone(), "".into(), "pending".into()],
+            vec![
+                "p".into(),
+                key.clone(),
+                "".into(),
+                "member".into(),
+                "extra".into(),
+            ],
+            vec!["p".into(), "not-a-key".into(), "".into(), "member".into()],
+        ] {
+            assert!(roster_member(&fields).is_err());
+        }
+    }
 }
