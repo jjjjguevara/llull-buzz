@@ -446,7 +446,12 @@ impl Rig {
             self.p
                 .worker_control(&task.task_id, renew, &body, h.headers())
                 .await
-                .unwrap()
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "worker control for task {} generation {} renew {}: {error:?}",
+                        task.task_id, generation, renew
+                    )
+                })
                 .result,
         )
         .unwrap()
@@ -813,11 +818,12 @@ async fn zz_postgres_foundation_contracts() {
     let revoke_task = rig.start(Some(&binding), "module-a", 600).await;
     rig.worker(&revoke_task, Some(&binding), "module-a", 1, false)
         .await;
-    let admitted = permit(
-        rig.admit(&rig.tool(&revoke_task, 1), Some(&binding), "module-a")
-            .await
-            .unwrap(),
-    );
+    let admission = rig
+        .admit(&rig.tool(&revoke_task, 1), Some(&binding), "module-a")
+        .await
+        .unwrap();
+    let fenced_attempt = admission.reference().attempt_id;
+    let admitted = permit(admission);
     let revoke = rig.command(
         "change-access",
         rig.resource(&binding.enrollment_id, 1),
@@ -830,6 +836,16 @@ async fn zz_postgres_foundation_contracts() {
     let claims = rig.claims(&revoke, "module-a", None, None);
     let (body, h) = rig.prepare("/integration/v1/access-changes", &revoke, &claims);
     rig.p.change_access(&body, h.headers()).await.unwrap();
+    let fenced_observations: Vec<sqlx::types::Json<Observation>> = sqlx::query_scalar(
+        "SELECT record FROM observations WHERE consumer_id=$1 AND record->>'operation_id'=$2 ORDER BY sequence",
+    )
+    .bind(&rig.registration.consumer_id)
+    .bind(fenced_attempt.to_string())
+    .fetch_all(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(fenced_observations.len(), 1);
+    assert_eq!(fenced_observations[0].0.execution, Execution::EffectUnknown);
     assert!(rig
         .p
         .dispatch(admitted, &Consumer::default())
@@ -980,10 +996,10 @@ async fn zz_postgres_foundation_contracts() {
     rig.cancel(&budget, Some(&other), "module-b", 2).await;
     // Leave room for an overloaded test host to complete the signed claim;
     // the real-clock denial is checked only after the full deadline passes.
-    let expired = rig.start(Some(&other), "module-b", 10).await;
+    let expired = rig.start(Some(&other), "module-b", 120).await;
     rig.worker(&expired, Some(&other), "module-b", 1, false)
         .await;
-    tokio::time::sleep(Duration::from_secs(11)).await;
+    tokio::time::sleep(Duration::from_secs(121)).await;
     assert!(rig
         .admit(&rig.tool(&expired, 1), Some(&other), "module-b")
         .await

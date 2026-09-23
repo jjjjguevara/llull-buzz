@@ -24,6 +24,12 @@ pub(crate) struct ScopeStamp {
     grant_revision: Option<String>,
 }
 impl ScopeStamp {
+    pub(crate) fn module(&self) -> &str {
+        &self.module
+    }
+    pub(crate) fn context_domain(&self) -> &str {
+        &self.context_domain
+    }
     pub(crate) fn from_claims(c: &Claims) -> Self {
         Self {
             module: c.module_id.clone(),
@@ -615,8 +621,23 @@ impl Provider {
         root: &str,
         state: &mut TaskState,
     ) -> Result<()> {
-        sqlx::query("UPDATE attempts SET state='effect-unknown' WHERE consumer_id=$1 AND root_task_id=$2 AND state='pending'")
-            .bind(consumer).bind(root).execute(&mut **tx).await?;
+        let fenced: Vec<uuid::Uuid> = sqlx::query_scalar("UPDATE attempts SET state='effect-unknown' WHERE consumer_id=$1 AND root_task_id=$2 AND state='pending' RETURNING attempt_id")
+            .bind(consumer).bind(root).fetch_all(&mut **tx).await?;
+        if !fenced.is_empty() {
+            let (record, _) = Self::root(tx, consumer, root).await?;
+            for attempt_id in fenced {
+                Self::journal_effect_transition(
+                    tx,
+                    consumer,
+                    record.scope.module(),
+                    record.scope.context_domain(),
+                    attempt_id,
+                    Execution::EffectUnknown,
+                    1,
+                )
+                .await?;
+            }
+        }
         let unknown:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attempts WHERE consumer_id=$1 AND root_task_id=$2 AND state='effect-unknown')")
             .bind(consumer).bind(root).fetch_one(&mut **tx).await?;
         let completed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attempts WHERE consumer_id=$1 AND root_task_id=$2 AND state='completed')")

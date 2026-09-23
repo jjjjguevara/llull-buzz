@@ -478,6 +478,29 @@ async fn https_owner_commits_once_recovers_lost_response_and_rechecks_revocation
         .await
         .unwrap();
     assert_eq!(result.state, "completed");
+    let transitions: Vec<Json<Observation>> = sqlx::query_scalar(
+        "SELECT record FROM observations WHERE consumer_id=$1 AND record->>'operation'='effect-outcome' ORDER BY sequence",
+    )
+    .bind(&call.consumer_id)
+    .fetch_all(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(transitions.len(), 2);
+    assert_eq!(
+        transitions[0].0.operation_id,
+        unknown.attempt_id.to_string()
+    );
+    assert_eq!(transitions[0].0.execution, Execution::EffectUnknown);
+    assert_eq!(
+        transitions[1].0.operation_id,
+        unknown.attempt_id.to_string()
+    );
+    assert_eq!(transitions[1].0.execution, Execution::Completed);
+    assert_eq!(
+        transitions[0].0.resource.reference,
+        unknown.attempt_id.to_string()
+    );
+    assert_eq!(transitions[1].0.sequence, transitions[0].0.sequence + 1);
     let row: (String, i64) = sqlx::query_as("SELECT label,revision FROM resources WHERE id=$1")
         .bind(&call.resource.reference)
         .fetch_one(&owner.state.pool)

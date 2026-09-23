@@ -90,6 +90,28 @@ struct CursorHeader {
 }
 
 impl Provider {
+    async fn insert_observation(
+        tx: &mut Tx,
+        consumer: &str,
+        module: &str,
+        context: &str,
+        mut event: Observation,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO observation_counters(consumer_id) VALUES($1) ON CONFLICT DO NOTHING",
+        )
+        .bind(consumer)
+        .execute(&mut **tx)
+        .await?;
+        let sequence:i64=sqlx::query_scalar("UPDATE observation_counters SET next_sequence=next_sequence+1 WHERE consumer_id=$1 RETURNING next_sequence")
+            .bind(consumer).fetch_one(&mut **tx).await?;
+        event.sequence = sequence as u64;
+        sqlx::query("INSERT INTO observations(consumer_id,sequence,module_id,context_domain,record) VALUES($1,$2,$3,$4,$5)")
+            .bind(consumer).bind(sequence).bind(module).bind(context)
+            .bind(Json(&event)).execute(&mut **tx).await?;
+        Ok(())
+    }
+
     pub(crate) async fn journal(
         tx: &mut Tx,
         c: &Command,
@@ -102,26 +124,48 @@ impl Provider {
         ) {
             return Ok(());
         }
-        sqlx::query(
-            "INSERT INTO observation_counters(consumer_id) VALUES($1) ON CONFLICT DO NOTHING",
-        )
-        .bind(&c.consumer_id)
-        .execute(&mut **tx)
-        .await?;
-        let sequence:i64=sqlx::query_scalar("UPDATE observation_counters SET next_sequence=next_sequence+1 WHERE consumer_id=$1 RETURNING next_sequence")
-            .bind(&c.consumer_id).fetch_one(&mut **tx).await?;
         let event = Observation {
-            sequence: sequence as u64,
+            sequence: 0,
             operation: c.operation.clone(),
             operation_id: response.receipt.operation_id.clone(),
             resource: c.resource.clone(),
             execution: response.receipt.execution,
             revision: response.receipt.revision,
         };
-        sqlx::query("INSERT INTO observations(consumer_id,sequence,module_id,context_domain,record) VALUES($1,$2,$3,$4,$5)")
-            .bind(&c.consumer_id).bind(sequence).bind(&claims.module_id).bind(&claims.context_domain)
-            .bind(Json(&event)).execute(&mut **tx).await?;
-        Ok(())
+        Self::insert_observation(
+            tx,
+            &c.consumer_id,
+            &claims.module_id,
+            &claims.context_domain,
+            event,
+        )
+        .await
+    }
+
+    /// System-side effect transitions use the original attempt identity and
+    /// root scope. They are inserted atomically with the attempt state change.
+    pub(crate) async fn journal_effect_transition(
+        tx: &mut Tx,
+        consumer: &str,
+        module: &str,
+        context: &str,
+        attempt_id: Uuid,
+        execution: Execution,
+        revision: u64,
+    ) -> Result<()> {
+        let event = Observation {
+            sequence: 0,
+            operation: "effect-outcome".into(),
+            operation_id: attempt_id.to_string(),
+            resource: Resource {
+                namespace: consumer.into(),
+                reference: attempt_id.to_string(),
+                revision: "1".into(),
+            },
+            execution,
+            revision,
+        };
+        Self::insert_observation(tx, consumer, module, context, event).await
     }
 
     async fn decode_cursor(

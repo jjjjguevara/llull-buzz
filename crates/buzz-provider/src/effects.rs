@@ -281,6 +281,16 @@ impl Provider {
         if updated.rows_affected() != 1 {
             return Err(Fault::Conflict.into());
         }
+        Self::journal_effect_transition(
+            &mut tx,
+            &attempt.consumer_id,
+            &permit.claims.module_id,
+            &permit.claims.context_domain,
+            attempt.attempt_id,
+            Execution::EffectUnknown,
+            1,
+        )
+        .await?;
         tx.commit().await?;
         let outcome = tokio::time::timeout(
             timeout,
@@ -305,7 +315,7 @@ impl Provider {
         outcome: Option<ConsumerResult>,
     ) -> Result<AttemptView> {
         let mut tx = self.begin().await?;
-        let (_, mut state) =
+        let (root, mut state) =
             Self::root(&mut tx, &expected.consumer_id, &expected.root_task_id).await?;
         let existing = Self::attempt(&mut tx, expected.attempt_id).await?;
         // An old worker cannot mutate a successor. Recovery with fresh authority
@@ -345,6 +355,23 @@ impl Provider {
             }
         }
         let result = Self::attempt(&mut tx, expected.attempt_id).await?;
+        if result.state != existing.state {
+            let execution = match result.state.as_str() {
+                "completed" => Execution::Completed,
+                "denied" => Execution::FailedBeforeEffect,
+                _ => return Err(Fault::Unknown.into()),
+            };
+            Self::journal_effect_transition(
+                &mut tx,
+                &result.consumer_id,
+                root.scope.module(),
+                root.scope.context_domain(),
+                result.attempt_id,
+                execution,
+                2,
+            )
+            .await?;
+        }
         if result.state == "effect-unknown" || state.phase == Execution::EffectUnknown {
             let unresolved:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attempts WHERE consumer_id=$1 AND root_task_id=$2 AND state IN ('pending','effect-unknown'))")
                 .bind(&expected.consumer_id).bind(&expected.root_task_id).fetch_one(&mut *tx).await?;
@@ -424,12 +451,24 @@ impl Provider {
         }
         // Pending can be a process crash before dispatch. Conservatively consume its
         // dispatch eligibility; lookup is the only action taken by this method.
-        sqlx::query(
+        let recovered_pending = sqlx::query(
             "UPDATE attempts SET state='effect-unknown' WHERE attempt_id=$1 AND state='pending'",
         )
         .bind(attempt_id)
         .execute(&mut *tx)
         .await?;
+        if recovered_pending.rows_affected() == 1 {
+            Self::journal_effect_transition(
+                &mut tx,
+                &attempt.consumer_id,
+                &claims.module_id,
+                &claims.context_domain,
+                attempt_id,
+                Execution::EffectUnknown,
+                1,
+            )
+            .await?;
+        }
         let remaining =
             (claims.exp * 1000 - Self::now(&mut tx).await?.timestamp_millis()).min(30_000);
         if remaining <= 0 {
