@@ -708,45 +708,58 @@ enableUpsert = true
         require(fetched.returncode == 0,
                 "Locked dependency fetch failed; inspect private log " + str(fetch_log))
         checked = json.loads((self.directory / "native-check.json").read_text())
-        name = self.name("live-publication-test")
+        compile_name = self.name("live-publication-compile")
+        test_name = self.name("live-publication-test")
         target = self.create("volume", "live-test-target")
-        self.remember("container", name)
+        self.remember("container", compile_name)
+        self.remember("container", test_name)
         self.inspect("volume", self.name("provider-secrets"))
-        require(not self.inspect("container", name), "A prior owned live-test container is still running")
+        require(not self.inspect("container", compile_name) and
+                not self.inspect("container", test_name),
+                "A prior owned live-test container is still running")
         compiled = None
         executed = None
         try:
-            docker(
-                "run", "-d", "--rm", "--name", name, "--label", self.label(),
-                "--network", self.name("storage"), "--cap-drop", "ALL",
+            compiled = docker(
+                "run", "--rm", "--name", compile_name, "--label", self.label(),
+                "--network", "none", "--cap-drop", "ALL",
                 "--security-opt", "no-new-privileges:true", "--pids-limit", "256",
-                "--memory", "2700m", "--env-file", str(self.directory / "provider.env"),
-                "--env", "BZ_TEST_CHANNEL=" + checked["channel_id"],
-                "--mount", f"type=volume,src={self.name('provider-secrets')},dst=/run/bz-provider,readonly",
+                "--memory", "2700m",
                 "--mount", f"type=volume,src={volume},dst=/next-source,readonly",
                 "--mount", f"type=volume,src={cache},dst=/usr/local/cargo",
                 "--mount", f"type=volume,src={target},dst=/source/target",
-                "--workdir", "/next-source", "--entrypoint", "sleep", builder, "infinity")
-            compiled = docker("exec", name, "sh", "-c",
-                              'export CARGO_TARGET_DIR=/source/target CARGO_BUILD_JOBS=1; '
-                              '/usr/local/cargo/bin/cargo +1.98.1 test --offline --release '
-                              '--locked -p llull-buzz-provider --test postgres --no-run',
-                              check=False, timeout=1800)
+                "--workdir", "/next-source", "--entrypoint", "sh", builder, "-c",
+                'export CARGO_TARGET_DIR=/source/target CARGO_BUILD_JOBS=1; '
+                '/usr/local/cargo/bin/cargo +1.98.1 test --offline --release '
+                '--locked -p llull-buzz-provider --test postgres --no-run',
+                check=False, timeout=1800)
             if compiled.returncode == 0:
-                found = docker("exec", name, "find", "/source/target/release/deps",
+                found = docker("run", "--rm", "--network", "none",
+                               "--label", self.label(),
+                               "--mount", f"type=volume,src={target},dst=/source/target,readonly",
+                               "--entrypoint", "find", builder, "/source/target/release/deps",
                                "-maxdepth", "1", "-type", "f", "-name", "postgres-*",
                                "-perm", "-111", "-print").stdout.decode().splitlines()
                 require(len(found) == 1, "Expected exactly one compiled PostgreSQL test executable")
                 executed = docker(
-                    "exec", "--user", "65532:65532", name, "sh", "-c",
+                    "run", "--rm", "--name", test_name, "--label", self.label(),
+                    "--network", self.name("storage"), "--user", "65532:65532",
+                    "--cap-drop", "ALL", "--read-only", "--pids-limit", "128",
+                    "--security-opt", "no-new-privileges:true", "--memory", "1g",
+                    "--env-file", str(self.directory / "provider.env"),
+                    "--env", "BZ_TEST_CHANNEL=" + checked["channel_id"],
+                    "--mount", f"type=volume,src={self.name('provider-secrets')},dst=/run/bz-provider,readonly",
+                    "--mount", f"type=volume,src={target},dst=/source/target,readonly",
+                    "--entrypoint", "sh", builder, "-c",
                     'export TEST_DATABASE_URL="$DATABASE_URL"; exec "$@"', "sh", found[0],
                     "live_provider_publishes_one_signed_event_to_pinned_relay",
                     "--ignored", "--test-threads=1", "--nocapture", check=False, timeout=120)
         except subprocess.TimeoutExpired as error:
             raise RuntimeError("Live publication test timed out") from error
         finally:
-            if self.inspect("container", name):
-                docker("rm", "-f", name)
+            for name in [test_name, compile_name]:
+                if self.inspect("container", name):
+                    docker("rm", "-f", name)
         data = compiled.stdout + compiled.stderr if compiled is not None else b""
         if executed is not None:
             data += executed.stdout + executed.stderr
