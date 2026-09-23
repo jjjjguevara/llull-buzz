@@ -604,6 +604,18 @@ async fn live_relay_response_loss_reconciles_original_event_without_resend() {
             .content,
         text
     );
+    let (retry_body, retry_signed) = signed_publication(&rig, &command);
+    let retry = rig
+        .p
+        .publish(&retry_body, retry_signed.headers(), &publisher)
+        .await
+        .unwrap();
+    assert_eq!(retry.publication.state, "unknown");
+    assert_eq!(
+        retry.publication.native_event_id.as_deref(),
+        Some(event_id.as_str())
+    );
+    assert_eq!(proxy.submissions.load(Ordering::SeqCst), 1);
 
     let recovery = rig.command(
         "reconcile-publication",
