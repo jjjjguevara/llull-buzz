@@ -678,7 +678,7 @@ enableUpsert = true
                 "Live publication test requires a clean committed source")
         source_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
                                     stdout=subprocess.PIPE, check=True).stdout.decode().strip()
-        builder = "sha256:08c2f56af32a725f92bc2cb0c6580b89c69bf639b7e24882eb3e59a9889333bb"
+        builder = "sha256:4e07bf3b101bb833cbe11eb67d165fb7592e56072697ba40345fa56a8b642b04"
         built = json.loads(docker("image", "inspect", builder).stdout)[0]
         require(built["Id"] == builder and built["Os"] == "linux" and built["Architecture"] == "arm64",
                 "Pinned offline test builder differs")
