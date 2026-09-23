@@ -187,3 +187,119 @@ async fn publication_freezes_signed_identity_and_recovers_without_duplicate_deli
     assert!(rig.p.publish(&body, h.headers(), &publisher).await.is_err());
     assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
 }
+
+/// This case targets the running provider and the unmodified pinned relay on
+/// an isolated task network. Ordinary library/DB suites keep the fixture above.
+#[tokio::test]
+#[ignore = "requires the task-owned live provider, relay and PostgreSQL stack"]
+async fn live_provider_publishes_one_signed_event_to_pinned_relay() {
+    let config: Value = serde_json::from_slice(
+        &std::fs::read(std::env::var("NATIVE_ORIGIN_CONFIG").unwrap()).unwrap(),
+    )
+    .unwrap();
+    let secret = std::fs::read_to_string(config["service_key_file"].as_str().unwrap()).unwrap();
+    let key = nostr::Keys::parse(secret.trim()).unwrap();
+    let origin = Arc::new(
+        HttpNativeOrigin::new(
+            config["community_id"].as_str().unwrap().into(),
+            config["private_origin"].as_str().unwrap(),
+            config["public_origin"].as_str().unwrap(),
+            key,
+            nostr::PublicKey::from_hex(config["relay_public_key"].as_str().unwrap()).unwrap(),
+        )
+        .unwrap(),
+    );
+    let channel = std::env::var("BZ_TEST_CHANNEL").unwrap();
+    let audience = origin
+        .audience("synthetic-community", &channel)
+        .await
+        .unwrap();
+    assert!(audience.members.contains(&origin.public_key().to_hex()));
+
+    let rig = Rig::new().await;
+    let text = format!("synthetic live provider publication {}", Uuid::new_v4());
+    let publication = Publication {
+        community_id: rig.registration.community_id.clone(),
+        channel_id: channel,
+        audience_policy: "synthetic-private".into(),
+        audience_revision: audience.revision,
+        release_ref: Uuid::new_v4().to_string(),
+        text_sha256: sha256(text.as_bytes()),
+        text: text.clone(),
+        copy_mode: CopyMode::ExplicitCopy,
+        attachments: vec![],
+    };
+    let command = rig.command(
+        "publish",
+        rig.resource("live-provider-result", 1),
+        &publication,
+    );
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .unwrap();
+    let deliver = |body: Vec<u8>, signed: Signed| {
+        client
+            .post("http://provider.synthetic.invalid:8080/integration/v1/publications")
+            .header("authorization", signed.resource)
+            .header("x-llull-invocation", signed.assertion)
+            .header("content-type", "application/json")
+            .body(body)
+    };
+    let (body, signed) = signed_publication(&rig, &command);
+    let response = deliver(body, signed).send().await.unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let delivered: PublishResult = response.json().await.unwrap();
+    assert_eq!(delivered.publication.state, "completed");
+    let event_id = delivered.publication.native_event_id.unwrap();
+    let native_bytes = origin
+        .event(
+            &publication.community_id,
+            &publication.channel_id,
+            &event_id,
+        )
+        .await
+        .unwrap();
+    let native_event = llull_buzz_provider::native::event(&native_bytes).unwrap();
+    assert_eq!(native_event.content, text);
+    let retained: Vec<u8> = sqlx::query_scalar(
+        "SELECT signed_event FROM publication_deliveries WHERE publication_id=$1",
+    )
+    .bind(delivered.publication.publication_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        llull_buzz_provider::native::event(&retained).unwrap(),
+        native_event
+    );
+
+    // A fresh signed retry of the exact command must return the original
+    // event identity without another publication ledger entry.
+    let (body, signed) = signed_publication(&rig, &command);
+    let response = deliver(body, signed).send().await.unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let recovered: PublishResult = response.json().await.unwrap();
+    assert_eq!(recovered.publication.state, "completed");
+    assert_eq!(
+        recovered.publication.native_event_id.as_deref(),
+        Some(event_id.as_str())
+    );
+    let identities: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM publication_deliveries WHERE publication_id=$1")
+            .bind(delivered.publication.publication_id)
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap();
+    assert_eq!(identities, 1);
+    println!(
+        "{}",
+        json!({
+            "publication_id": delivered.publication.publication_id,
+            "native_event_id": event_id,
+            "signed_event_recovered_from_relay": true,
+            "same_command_retry_reused_event": true,
+        })
+    );
+}

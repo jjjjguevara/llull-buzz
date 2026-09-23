@@ -37,9 +37,9 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
-def docker(*args, data=None, check=True):
+def docker(*args, data=None, check=True, timeout=180):
     p = subprocess.run(["docker", *args], input=data, stdout=subprocess.PIPE,
-                       stderr=subprocess.PIPE, timeout=180)
+                       stderr=subprocess.PIPE, timeout=timeout)
     if check and p.returncode:
         # Neither command arguments nor Docker stderr are safe to publish: a
         # failed initialization command could contain generated test credentials.
@@ -670,6 +670,62 @@ enableUpsert = true
         if emit:
             print(json.dumps(report, indent=2))
 
+    def check_publication_live(self):
+        require(self.state["stage"] == "provider-started" and self.state.get("native_public_wss"),
+                "Start the private provider and tenant-preserving WSS relay first")
+        require(not subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
+                                   stdout=subprocess.PIPE, check=True).stdout,
+                "Live publication test requires a clean committed source")
+        source_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                                    stdout=subprocess.PIPE, check=True).stdout.decode().strip()
+        builder = "sha256:08c2f56af32a725f92bc2cb0c6580b89c69bf639b7e24882eb3e59a9889333bb"
+        built = json.loads(docker("image", "inspect", builder).stdout)[0]
+        require(built["Id"] == builder and built["Os"] == "linux" and built["Architecture"] == "arm64",
+                "Pinned offline test builder differs")
+        volume = self.create("volume", "live-test-" + source_sha[:12])
+        archive = self.directory / ("live-test-" + source_sha[:12] + ".tar")
+        subprocess.run(["git", "archive", "--format=tar", "--output", str(archive), source_sha],
+                       cwd=ROOT, check=True)
+        docker("run", "--rm", "-i", "--network", "none", "--label", self.label(),
+               "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+               "--mount", f"type=volume,src={volume},dst=/next-source",
+               "--entrypoint", "tar", IMAGES["config"], "-xpf", "-", "--no-same-owner",
+               "-C", "/next-source", data=archive.read_bytes())
+        checked = json.loads((self.directory / "native-check.json").read_text())
+        name = self.name("live-publication-test")
+        self.remember("container", name)
+        self.inspect("volume", self.name("provider-secrets"))
+        try:
+            run = docker(
+                "run", "--rm", "--name", name, "--label", self.label(),
+                "--network", self.name("storage"), "--cap-drop", "ALL",
+                "--security-opt", "no-new-privileges:true", "--pids-limit", "256",
+                "--memory", "2700m", "--env-file", str(self.directory / "provider.env"),
+                "--env", "BZ_TEST_CHANNEL=" + checked["channel_id"],
+                "--mount", f"type=volume,src={self.name('provider-secrets')},dst=/run/bz-provider,readonly",
+                "--mount", f"type=volume,src={volume},dst=/next-source,readonly",
+                "--workdir", "/next-source", "--entrypoint", "bash", builder,
+                "-lc", 'export TEST_DATABASE_URL="$DATABASE_URL" CARGO_TARGET_DIR=/source/target CARGO_BUILD_JOBS=1; cargo +1.98.1 test --offline --locked -p llull-buzz-provider --test postgres live_provider_publishes_one_signed_event_to_pinned_relay -- --ignored --test-threads=1 --nocapture',
+                check=False, timeout=1800)
+        except subprocess.TimeoutExpired as error:
+            if self.inspect("container", name):
+                docker("rm", "-f", name)
+            raise RuntimeError("Live publication test timed out") from error
+        data = run.stdout + run.stderr
+        log = self.directory / ("live-publication-" + source_sha[:12] + ".log")
+        with open(log, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
+            out.write(data)
+        require(run.returncode == 0, "Live publication test failed; inspect private log " + str(log))
+        report = {"test_source_sha": source_sha,
+                  "provider_source_sha": self.state["provider_source_sha"],
+                  "provider_image_id": self.state["provider_image_id"],
+                  "offline_builder_image_id": builder,
+                  "log_sha256": hashlib.sha256(data).hexdigest(),
+                  "live_http_publication_and_same_command_retry": True,
+                  "scope": "real provider, PostgreSQL and relay; external TLS and lost native response separate"}
+        save(self.directory / "live-publication-check.json", report)
+        print(json.dumps(report, indent=2))
+
     def backup_storage(self):
         require(self.state["stage"] in {"native-started", "provider-started"},
                 "Start native storage before backup")
@@ -902,7 +958,7 @@ enableUpsert = true
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["up-storage", "check-storage", "up-native", "check-native", "probe-media", "restart-native", "up-provider", "check-provider", "probe-provider-origin", "switch-native-wss", "backup-storage", "restore-storage", "status", "down"])
+    parser.add_argument("action", choices=["up-storage", "check-storage", "up-native", "check-native", "probe-media", "restart-native", "up-provider", "check-provider", "probe-provider-origin", "check-publication-live", "switch-native-wss", "backup-storage", "restore-storage", "status", "down"])
     parser.add_argument("--state", type=Path, default=ROOT / "artifacts/completion/stack")
     parser.add_argument("--provider-source", help="Exact committed 40-hex provider image source")
     parser.add_argument("--backup", type=Path, help="Task-owned backup directory for restore-storage")
@@ -915,6 +971,7 @@ def main():
      "up-provider": lambda: stack.up_provider(args.provider_source),
      "check-provider": stack.check_provider,
      "probe-provider-origin": stack.probe_provider_origin,
+     "check-publication-live": stack.check_publication_live,
      "switch-native-wss": stack.switch_native_wss,
      "backup-storage": stack.backup_storage,
      "restore-storage": lambda: stack.restore_storage(args.backup),
