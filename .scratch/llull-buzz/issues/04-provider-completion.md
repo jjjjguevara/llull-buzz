@@ -493,3 +493,31 @@ were used because the VM Docker partition was nearly full; only positively
 identified unused task images were removed. Full distribution, protected
 restore, production model/native/media gateway, composed Akita and human UAT
 qualification remain claimed work.
+
+2026-09-23 — Item 04.2: `5f65e5b` binds each declared attachment to a
+different signed native `imeta` tag. A PostgreSQL/signature regression first
+showed that two declarations could match one tag and leave another
+unaccounted for; it then passed after the bijection check. The same case
+admits two exact, distinct signed attachments and retains their metadata and
+original event, while reporting that attachment bytes are not durable.
+`e4ecc59` rejects a single signed tag with duplicate required fields; the
+duplicate-hash case was red before the check and green afterward. These
+are attribution guards, not media-byte registration, gateway delivery,
+client download or acceptance of BZ-C03/07/08. Exact logs and limits are in
+[completion evidence](../../../docs/implementation/COMPLETION.md).
+
+2026-09-23 — Item 04.6: the first full suite after the intake change stopped
+before its first assertion when Docker had 14 MB free. The task's disposable
+PostgreSQL runner had left anonymous image-declared data volumes after
+removing containers. `510ae1a` now removes each invocation's container and
+its anonymous volume. Fifteen detached volumes from this task's recent test
+window were verified as PostgreSQL 16 data or the failed empty directory and
+removed by exact name; no global prune or shared VM/daemon stop occurred.
+The count remained 74 before and after the later ten-case suite. At committed
+`e4ecc59`, all ten PostgreSQL/signature cases and ten strengthened restart
+digests, twelve library tests, formatting and strict Clippy passed. A cached
+exact-source Linux arm64 image was built and booted privately; health and
+fixed native-origin probes passed, with the profile inactive and no host
+port. The last independent clean build is still `742dd78`. Production
+model/native/media gateway, complete restore/distribution, composed Akita
+results and named human UAT remain open.

@@ -1378,3 +1378,94 @@ SHA-256 `976202da3120aeeaa2cb4e44632b15ca9e331f83d46401e4e6b67a54b63448e9`).
 Only that focused case was rerun with the strengthened digest; the preceding
 ten-case run used the earlier digest and is not evidence that all ten used
 the strengthened runner.
+
+## Signed native attachment mapping and disposable database cleanup
+
+The pinned `buzz` CLI emits one `url`, `m`, `x` and `size` field per
+[attachment `imeta` tag](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-cli/src/client.rs).
+At `5f65e5b`, native intake now requires a bijection between declared
+attachment evidence and the original event's signed `imeta` tags. Previously,
+two declarations could each match the first of two tags while the second tag
+remained unaccounted for. A real PostgreSQL/signature case with a signed
+two-tag event was red before the fix (exit 101, ignored log SHA-256
+`1a966e7ebd009f9df1a92ad842c2a5c327af8af673227a8b8932e64f1da25725`)
+and green afterward (exit 0, ignored log SHA-256
+`3321cdfb87e302daad003eab6e992b56b6526a5081aca459aa046bec39cfbb47`).
+The positive counterpart admitted two distinct signed tags, retained their
+original event and evidence under scope, and truthfully reported
+`attachment_bytes_durable: false` (exit 0, ignored log SHA-256
+`a6a8f393edc6a6b559a3ed5f8c0c3155376e0bbb8f667bc146e4b8a30a9080b0`).
+No attachment bytes were fetched or released.
+
+At `e4ecc59`, intake also rejects an `imeta` tag with duplicate required
+fields (`url`, `x`, `m` or `size`), since a single signed tag with two hashes
+cannot identify one artifact. A signed duplicate-`x` case was red before
+that check (exit 101, ignored log SHA-256
+`5a6b1cd12c7e1a5d1a1ba6c303cc9f11eab459448b1fa4c43434936115a73a81`)
+and green afterward with the valid two-attachment path intact (exit 0,
+ignored log SHA-256
+`f5e53e5cd313086ca07d32968fdcafa61be518d6ff0a88c9f08617dae5a48906`).
+Both focused green runs used a disposable PostgreSQL 16.15 database and
+matched the strengthened signed-delivery restart digest. Formatting and
+strict locked all-target Clippy passed (ignored Clippy log SHA-256
+`b3f5e76e988035480f2792e847174fe62de70b1d2e18cc35582c44d4508a3928`).
+This checks metadata attribution, not artifact-specific access or native
+client download.
+
+The first full-suite attempt after `5f65e5b` exited 1 before its first
+assertion because its disposable PostgreSQL container stopped (ignored log
+SHA-256 `d0f61c69faed664fe3c31a3934e439b5451a09f74357e7a46078ed908ab9585a`).
+The VM Docker partition had 14 MB free. Investigation found that the
+disposable runner removed containers but retained PostgreSQL's automatically
+created anonymous data volume. The runner at `510ae1a` now uses
+`docker rm -fv` on only its uniquely named container, removing that
+invocation's anonymous volume. Fifteen detached anonymous volumes whose
+creation times matched this task's recent test runs were each verified as
+PostgreSQL 16 data (or, for the failed start, an empty data directory) and
+removed by exact name. The ignored local identity record SHA-256 is
+`22e45d4a2b16399dcf6bf19244ac156383061a5d814fe68bd86dbe34ce215696`.
+No shared daemon, VM, active container, unrelated volume or global prune was
+used. Available Docker partition space rose to 690 MB.
+
+`bash -n scripts/test-postgres.sh` and a focused intake case passed after
+the cleanup change (exit 0, ignored log SHA-256
+`1f8b1b7142a8cf823a5911def8fd8bf6eb93b97da50d30e149be463737c13aa2`).
+The anonymous-volume count was 74 before and after that case and remained
+74 across the later red/green intake runs. The full exact-source suite result
+is recorded separately below; the failed startup remains historical evidence.
+
+At committed source `e4ecc59855198ed72410b3608600e63d3a75141d`,
+`bash scripts/test-postgres.sh` exited 0 for all ten non-live scenarios and
+ten matching real PostgreSQL restart digests, now including publication
+admission, scope and signed-delivery rows (ignored log SHA-256
+`e25430ae369450c675390bd3a215ecd2e7ab9ca1e9ced36bb62492cf8b279a53`).
+The anonymous-volume count was 74 before and after the full run; the VM
+Docker partition returned to 690 MB free. `cargo test --locked --workspace
+--lib` exited 0 with twelve tests (ignored log SHA-256
+`509ecb104a880e7bb0ccc1381ab13a39aa4b3d10573f36de652d73d8459bc0c5`).
+These checks do not exercise a media-byte gateway or native client download.
+
+The selected Docker Engine 29.8.1 also built a cached iteration image from
+the exact `e4ecc59855198ed72410b3608600e63d3a75141d` Git archive
+with `bash scripts/build-provider-image.sh` (exit 0, ignored log SHA-256
+`9e786ff6f414c21da0349b1c6d5637ff6ac791960b1c6292be8e8b0dbb4062a1`).
+The Linux arm64 image ID and source label are
+`sha256:d905fdc8f50ebedea52ba32c806df18f80e50c7bf30ad36c8c99510897779d2e`
+and `e4ecc59855198ed72410b3608600e63d3a75141d`. Its provider binary
+SHA-256 is `d9e0bf16a6e1a7f66934c560e55d488fefc06a16ea528303a79f6a2893f76c7b`;
+the Rust notice manifest remains
+`d59fddc4978a97045979c56da293edfbb40354af2128081d3131258aea47d4f8`,
+with 91 OS package rows and 90 copyright-file hashes. The last independent
+clean image build remains `742dd78`; this was not a new clean dependency
+build. `python3 scripts/local-stack.py up-provider --provider-source
+e4ecc59855198ed72410b3608600e63d3a75141d` replaced only the task-owned
+private provider container (exit 0, ignored log SHA-256
+`a081330e19b21c31add9340fcf36871c517ebabd9df1bfd52de57c0ba7a80240`).
+`check-provider` exited 0 at that image with no host port and the restricted
+profile inactive (ignored log SHA-256
+`edd6e148d2ce0d6744733bf0955505b2edbb63f0ab80649135a576cf924f6931`).
+The fixed native-origin probe also exited 0 and recovered its original
+signed event and audience (ignored log SHA-256
+`e76b97e55e5fcbf1b5f527a1d1db140ffe35c0afff165f2099625b8cef38b8e5`).
+The model, native and media gateway health flags remain false; no complete
+native/client/media journey or live agent reply is claimed from this boot.
