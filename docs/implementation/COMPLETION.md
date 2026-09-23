@@ -641,3 +641,60 @@ f3fe82e94e878eba7173aaf326085b77b9c9bc51 --subject HEAD --output
 artifacts/completion/docs-check-86d7ac4` also exited 0 in all five stages.
 These checks do not activate the restricted profile or qualify the still
 missing model, MCP, native/media gateway, and attachment paths.
+
+## Effect-transition observation and restart evidence
+
+An admitted tool attempt now emits a scoped, content-minimal `effect-outcome`
+observation when its state becomes uncertain before dispatch, including a
+pending attempt fenced by revocation/restart or reconciled after process loss.
+An exact original-owner completion or denial emits a second transition only
+when the retained attempt actually changes state. Each event uses the stable
+attempt UUID and is inserted in the same PostgreSQL transaction as its state
+change. It does not expose the command bytes, result value or invocation proof.
+The normal observation cursor, module/context scope and durable ACK rules apply.
+
+The real HTTPS-owner test first failed at an assertion of two transitions:
+zero existed after a committed `SetLabel` write and lost-response recovery.
+That working-tree red run exited 101; six other cases passed and the long
+foundation case also hit an exhausted worker claim. Its log SHA-256 is
+`f56451857998e7543110fa86d78981d15688486b01bac383de36eea558ebaa12`.
+After the journal change, the HTTPS scenario passed in a full working-tree
+run, including its revocation-fence assertion; the foundation case still
+failed at the shared worker helper. That run exited 101, with seven passes;
+its log SHA-256 is
+`811c2503d1808f0831ee2851ad6ceab2b6b4e7454994c9ca502dec72c41331fa`.
+The common helper now reports the task and generation on failure. A filtered
+real-PostgreSQL foundation run with the then 60-second pre-claim fixture
+passed and preserved its restart digest (log SHA-256
+`bd49dd8d08a92a86028a94505ffb379be8abe517e2b7eed223c5bc0a16229aa3`).
+That isolated pass does not identify the prior exhausted claim. The fixture
+now allows 120 seconds before the signed claim and still waits beyond the
+absolute expiry for its denial assertion.
+
+At committed source `35e23aadc5b3ecce503a716c6870df1259fdda0a`, the
+default `scripts/test-postgres.sh` exited 0: eight cases passed, the two
+separately qualified live-relay cases were filtered, and a real PostgreSQL
+restart preserved the existing root/effect/publication digest. The log
+SHA-256 is
+`cb060e7e0de2822884172a17ef1c94b33522cc99bf32eb065cd7bb1a231db753`.
+The full command, with the selected task-owned Docker socket, was:
+
+```sh
+DOCKER_HOST="unix://$HOME/.colima/llull-buzz-completion/docker.sock" DOCKER_CONTEXT= DOCKER_CONFIG="$PWD/artifacts/local-validation/docker-config" CARGO_BUILD_JOBS=1 RUST_BACKTRACE=1 bash scripts/test-postgres.sh
+```
+
+The optional case filter initially failed only on the default macOS Bash
+path because an empty array expanded under `set -u`; that invocation reached
+no test and its disposable database was removed. Commit
+`35e23aadc5b3ecce503a716c6870df1259fdda0a` corrected the runner.
+
+The restart digest was then extended to observation counters, records,
+offsets and durable receipts. At committed source
+`56582c40708979bd46ce1053409db91feaee1aab`, the filtered HTTPS-owner
+case and its real PostgreSQL restart both exited 0; the log SHA-256 is
+`aa7f010e23eff51858723c3352e91d9225fd316d0eafdc341683cc81553baa92`.
+It used the same Docker selection and `CARGO_BUILD_JOBS=1`, then
+`bash scripts/test-postgres.sh --case
+https_consumer::https_owner_commits_once_recovers_lost_response_and_rechecks_revocation`.
+The changed code still does not mediate an actual MCP/model request, native
+subscriber, attachment byte release or composed consumer application.

@@ -284,3 +284,19 @@ again at `86d7ac4e85039dbdd9f4173d5f318c00db3ef311`. Rust formatting,
 12 workspace library tests, strict all-target Clippy and the five-stage local
 documentation check exited 0. This remains partial technical evidence, not
 a whole proof-profile or human UAT acceptance.
+
+2026-09-22 — Items 04.2/04.5/04.6: background effect transitions now enter
+the scoped, content-minimal observation journal with their original attempt
+identity, atomically with the durable state change. The HTTPS owner test first
+failed with zero of two expected transition records after a committed write
+and lost-response lookup, then passed after the change. Revocation fencing
+also emits an uncertain transition. Earlier full PostgreSQL reruns still had
+an unidentified exhausted worker claim in the long foundation case; the
+case-specific real database run passed, and the pre-claim fixture was widened
+while preserving a real-clock expiry denial. At `35e23aa`, all eight disposable
+PostgreSQL scenarios and the original restart digest passed. At `56582c4`,
+the HTTPS scenario plus a PostgreSQL restart digest expanded to observations
+passed. Exact command/log hashes and limits are in
+[completion evidence](../../../docs/implementation/COMPLETION.md). This does
+not accept BZ-C08 or substitute for the missing live agent, business MCP,
+native/media gateway, composed consumer or human UAT evidence.
