@@ -189,3 +189,12 @@ is `96c56e0a775a350602c911ff89ad1f31ea41b39320edc8e652b4bc1166520a52`.
 The revised Dockerfile records OS package versions and copyright-file hashes
 and requires every installed package's copyright file. This source has not yet
 produced a revised image, so distribution closure stays open.
+
+The corrected credential-separated `check-publication-live` command later
+exited 0 at archived committed test source
+`b8399e74db3795852ae4d011e0ccaf0045840ab1`. One Linux arm64 release
+integration test passed in the read-only UID 65532 container after an offline,
+credential-free build; its log SHA-256 is
+`b9f85c3ba5bf5383a9284ef188e53b503d734320089db5e2cb84bfe6e0d0ddc4`.
+The original provider image remained healthy after the run. This upgrades the
+scripted live publication evidence, not the media/client/model claims.

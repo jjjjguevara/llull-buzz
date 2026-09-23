@@ -357,9 +357,18 @@ The first scripted container attempt failed on compiler-image selection, then
 missing offline dev dependencies, then a root/UID 65532 key-file permission
 boundary. A later script compiled the test executable but hit its 30-minute
 window while Cargo also compiled the provider CLI; its target artifacts were
-retained. The current runner separates public dependency fetch, no-network and
+retained. The corrected runner separates public dependency fetch, no-network and
 credential-free compilation, and UID 65532 execution with synthetic secrets on
-the private network. Its full scripted result is reported separately when run.
+the private network. `check-publication-live` exited 0 at committed test source
+`b8399e74db3795852ae4d011e0ccaf0045840ab1`; its compiler and test log
+SHA-256 is `b9f85c3ba5bf5383a9284ef188e53b503d734320089db5e2cb84bfe6e0d0ddc4`.
+The Linux release build finished in 33 minutes 56 seconds; one named test
+passed with native event ID
+`0dedff134b9fc8b8c1308785850bdb5c53a985e2883c223a6f489e9095ba08fb`.
+The compile container had no network, provider environment or service-key
+mount; the separate read-only UID 65532 container received only synthetic
+test credentials on the owned private network. Subsequent source-stack
+`check-provider` also exited 0.
 
 The source stack's subsequent `backup-storage` and fresh `restore-storage`
 into owner `6369e174a9194176b500cf99151878eb` both exited 0. The source
