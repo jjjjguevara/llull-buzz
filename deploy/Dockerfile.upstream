@@ -26,7 +26,7 @@ RUN mkdir -p /image/opt/llull/upstream /image/usr/share/doc/buzz-upstream && \
     cp Cargo.lock /image/usr/share/doc/buzz-upstream/ && \
     find . -maxdepth 1 -type f \( -iname 'LICENSE*' -o -iname 'NOTICE*' \) \
        -exec cp {} /image/usr/share/doc/buzz-upstream/ \; && \
-    sha256sum /image/opt/llull/upstream/* > /image/usr/share/doc/buzz-upstream/SHA256SUMS && \
+    (cd /image && sha256sum opt/llull/upstream/*) > /image/usr/share/doc/buzz-upstream/SHA256SUMS && \
     cargo metadata --locked --format-version 1 > /image/usr/share/doc/buzz-upstream/cargo-metadata.json && \
     python3 /inventory/scripts/distribution-inventory.py --workspace /upstream \
       --package buzz-agent,buzz-acp,buzz-relay,buzz-cli,buzz-admin \
@@ -47,6 +47,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     find /usr/share/doc -name copyright -type f -print0 | sort -z | \
       xargs -0 sha256sum > /usr/share/doc/buzz-upstream/OS-COPYRIGHT-SHA256SUMS
 COPY --from=build /image/ /
+RUN cd / && sha256sum --check /usr/share/doc/buzz-upstream/SHA256SUMS && \
+    sha256sum --check /usr/share/doc/buzz-upstream/OS-COPYRIGHT-SHA256SUMS
 ARG SOURCE_SHA
 LABEL org.opencontainers.image.source="https://github.com/jjjjguevara/llull-buzz" \
     org.opencontainers.image.revision="${SOURCE_SHA}" \

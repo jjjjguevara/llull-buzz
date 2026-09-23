@@ -14,7 +14,7 @@ RUN test -f Cargo.lock && cargo +1.98.1 build --locked --release \
 RUN mkdir -p /image/opt/llull/bin /image/usr/share/doc/llull-buzz && \
     cp target/release/llull-buzz-provider /image/opt/llull/bin/ && \
     cp LICENSE Cargo.lock /image/usr/share/doc/llull-buzz/ && \
-    sha256sum /image/opt/llull/bin/llull-buzz-provider > /image/usr/share/doc/llull-buzz/SHA256SUMS && \
+    (cd /image && sha256sum opt/llull/bin/llull-buzz-provider) > /image/usr/share/doc/llull-buzz/SHA256SUMS && \
     cargo metadata --locked --format-version 1 > /image/usr/share/doc/llull-buzz/cargo-metadata.json && \
     python3 scripts/distribution-inventory.py --package llull-buzz-provider \
       --target aarch64-unknown-linux-gnu \
@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
       xargs -0 sha256sum > /usr/share/doc/llull-buzz/OS-COPYRIGHT-SHA256SUMS
 ARG SOURCE_SHA
 COPY --from=build /image/ /
+RUN cd / && sha256sum --check /usr/share/doc/llull-buzz/SHA256SUMS && \
+    sha256sum --check /usr/share/doc/llull-buzz/OS-COPYRIGHT-SHA256SUMS
 LABEL org.opencontainers.image.source="https://github.com/jjjjguevara/llull-buzz" \
     org.opencontainers.image.revision="${SOURCE_SHA}"
 USER 65532:65532
