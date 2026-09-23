@@ -315,3 +315,16 @@ but no signed bot reply. The provider still lacks the separate governed
 publisher tool and production model/task supervisor. Details and hashes are
 in [completion evidence](../../../docs/implementation/COMPLETION.md); neither
 ACP journey nor the selected production model profile is qualified.
+
+2026-09-23 — Items 04.4/04.6: committed source `a395617` built a selected
+Linux arm64 provider image and replaced only the owned provider in the private
+test stack. Its native-origin probe and before/after health checks passed.
+An offline release integration test from that same clean source ran two real
+PostgreSQL/relay publication cases: signed delivery with same-command retry,
+and lost native response reconciled from the original event without resend.
+The log SHA-256 is
+`ff3ad9a97b01642856169ddde0b47d2a1b1cd15b20790fac33d45ed0f366cfea`.
+The provider image includes 221 selected Rust license records and OS copyright
+evidence; it still used an exact-ID cached dependency builder. Model/native/
+media gateways, full publisher handoff and clean independent distribution
+qualification remain open. See [completion evidence](../../../docs/implementation/COMPLETION.md).

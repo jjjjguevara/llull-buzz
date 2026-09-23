@@ -746,6 +746,9 @@ The `gemini-3.6-flash` model service then returned HTTP 503 `UNAVAILABLE`
 after three attempts; no signed reply was produced. The corrected failed
 runner log SHA-256 is
 `aea83a966e3b5577c0cc41bdb3195ec55e6ae1c418d7b5548fbe3a147afc7b76`.
+The runner retained only its timeout summary. The detailed ACP log containing
+the 503 was observed during the run but overwritten by the later free-model
+retry, so that raw error is no longer available for independent inspection.
 
 The [published Google free-tier schedule](https://ai.google.dev/gemini-api/docs/pricing)
 lists `gemini-3.5-flash-lite` as free for standard input and output. The
@@ -776,3 +779,42 @@ a proven diagnosis of this pinned executable. The accepted profile therefore
 still needs its separate governed publisher tool, actual supervised task/model
 and MCP dispatch, and mediation of every native content surface. No ACP success,
 production model amendment or native-reply qualification is claimed.
+
+## Current committed provider image and live publication
+
+At committed source `a395617c8e9fb211d9959eaba8c2965874134c8e`, the
+selected Docker 29.8.1 cached-dependency build exited 0 and produced the
+Linux arm64 provider image
+`sha256:528f533d05117667f6d349deb7bc7027c1386abfe9d28885aafb4da2d7b6ec18`.
+Its build log SHA-256 is
+`4ae2f8bad9f308ffb76dfba8e0011222725e436d98a4c06467ed99877260d942`;
+the verified provider executable SHA-256 is
+`11cfb160ca6eec39c6b7e8aee0e4767fd2f5b9ccc90b4028e7f220d345a8adc3`.
+The image contains 221 selected Rust packages with zero missing local license
+texts (manifest SHA-256
+`d59fddc4978a97045979c56da293edfbb40354af2128081d3131258aea47d4f8`)
+and 91 OS package/version rows with copyright-file hashes. This is a
+cached-builder local iteration, not the still-required clean independent
+provider distribution build.
+
+`python3 scripts/local-stack.py up-provider --provider-source
+a395617c8e9fb211d9959eaba8c2965874134c8e` switched only the
+task-owned provider in the private stack and exited 0. `check-provider`
+then confirmed the matching image label, running service, no host ports,
+inactive restricted profile, and configured native intake/publication
+delivery. It continued to report model/native/media gateways as unconfigured.
+`probe-provider-origin` retrieved the retained signed native event and
+current two-member audience through the fixed private relay; it exited 0.
+
+At that same clean test source, `check-publication-live` exited 0 after an
+offline, credential-free Linux arm64 release test build. Two integration
+cases used the actual provider, PostgreSQL and pinned relay: a signed
+publication completed with same-command retry, and an accepted event whose
+native response was lost reconciled by original event lookup without another
+send. The private combined compile/test log SHA-256 is
+`ff3ad9a97b01642856169ddde0b47d2a1b1cd15b20790fac33d45ed0f366cfea`.
+The provider health check still exited 0 afterward. The test runner uses
+synthetic service authority and remains separate from model-generated output,
+business MCP effects, external TLS, process-death injection, native subscriber
+mediation and artifact-specific media release. No whole capability or proof
+profile is accepted from these passes.
