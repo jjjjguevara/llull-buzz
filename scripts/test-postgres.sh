@@ -13,6 +13,21 @@ fi
 command -v docker >/dev/null
 command -v cargo >/dev/null
 test -f Cargo.lock || { echo 'Resolve and commit Cargo.lock first; see docs/implementation/LOCAL-REVIEW.md' >&2; exit 2; }
+# Each scenario registers a new synthetic consumer, but the provider's four-root
+# capacity and recovery floor are deployment-wide. Give every scenario its own
+# disposable database so retained state from one cannot change another's result.
+# The two live-relay cases have a separate credential-separated stack runner.
+if [[ -z "$test_filter" ]]; then
+  cases=$(cargo test --locked -p llull-buzz-provider --test postgres -- --list --ignored \
+    | sed -n 's/: test$//p' \
+    | sed '/^publication::live_provider_publishes_one_signed_event_to_pinned_relay$/d; /^publication::live_relay_response_loss_reconciles_original_event_without_resend$/d')
+  test -n "$cases" || { echo 'No disposable PostgreSQL cases found' >&2; exit 2; }
+  while IFS= read -r case_name; do
+    printf 'Running isolated PostgreSQL case: %s\n' "$case_name"
+    "$0" --case "$case_name"
+  done <<< "$cases"
+  exit 0
+fi
 name="llull-buzz-pg-$(date +%s)-$$-${RANDOM}"
 postgres_image='postgres@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67'
 password="synthetic-$(date +%s)-${RANDOM}-${RANDOM}"
@@ -37,19 +52,20 @@ export TEST_DATABASE_URL="postgresql://buzz_test:${password}@${address}/bz_found
 printf 'candidate=%s\n' "$(git rev-parse HEAD)"
 docker image inspect "$postgres_image" --format '{{.Id}} {{json .RepoDigests}}'
 # The live relay cases require the separate task-owned stack and are run by
-# scripts/local-stack.py check-publication-live. Keep this disposable-DB suite
-# focused on the eight cases it can furnish; do not turn absent stack secrets
-# into apparent product failures.
+# scripts/local-stack.py check-publication-live. Do not turn absent stack
+# secrets into apparent product failures.
 run_tests() {
-  cargo test --locked -p llull-buzz-provider --test postgres "$@" -- --ignored --test-threads=1 \
-    --skip publication::live_provider_publishes_one_signed_event_to_pinned_relay \
-    --skip publication::live_relay_response_loss_reconciles_original_event_without_resend
+  local cargo_filter=()
+  local test_args=(--ignored --test-threads=1
+    --skip publication::live_provider_publishes_one_signed_event_to_pinned_relay
+    --skip publication::live_relay_response_loss_reconciles_original_event_without_resend)
+  if [[ -n "$test_filter" ]]; then
+    cargo_filter=("$test_filter")
+    test_args+=(--exact)
+  fi
+  cargo test --locked -p llull-buzz-provider --test postgres "${cargo_filter[@]}" -- "${test_args[@]}"
 }
-if [[ -n "$test_filter" ]]; then
-  run_tests "$test_filter"
-else
-  run_tests
-fi
+run_tests
 # A real server restart, not a mock repository re-instantiation. Compare durable
 # provider records without printing authentication evidence or synthetic keys.
 snapshot() {
