@@ -289,8 +289,8 @@ The successful build log SHA-256 is
 `0a7898bf2ceb4e4516f25d0296d685066da101a0664f189a403ce14f358be38d`.
 The preceding full legacy-builder run compiled the release binary but was
 interrupted during a long image-layer commit; the successful image reused that
-builder layer. A clean independent final image build and complete OS notices
-remain open.
+builder layer. At this source, a clean independent image and complete OS notices
+were still open; the later distribution result is recorded below.
 
 `scripts/local-stack.py up-provider --provider-source eae913c6e4c9a9d4cfcf25bbd2c59be648aba438`
 enrolled a synthetic service in the original private channel, migrated the
@@ -454,15 +454,15 @@ host inventory's extra entry. The image's bundled manifest SHA-256 is
 `5be1b47d2064e15ed8ba244967a0369a1f901f1e4def4387f97fce18cb793484`.
 The task-owned provider was switched to this image; `up-provider`,
 `check-provider` and `probe-provider-origin` exited 0. This image still uses an
-inspected cached dependency builder, so a clean independent distribution build
-remains unqualified.
+inspected cached dependency builder; an independent build was still unqualified
+at that source.
 
 Inside the deployed image, 91 installed Debian packages each had a readable
 `/usr/share/doc/<package>/copyright` after architecture suffix normalization.
 It bundles a sorted 91-row package/version/architecture manifest and hashes
 for 90 distinct copyright files. The extra package shares a copyright file;
-the build checks each package's readable path. A clean independent build and
-final source/image applicability checks remain before distribution closure.
+the build checks each package's readable path. A later independent build is
+recorded below; final source/image applicability still governs distribution closure.
 
 The pinned unmodified Buzz executable graph has a preliminary host target
 inventory of 500 packages. Eighteen registry archives omit local license
@@ -780,7 +780,7 @@ still needs its separate governed publisher tool, actual supervised task/model
 and MCP dispatch, and mediation of every native content surface. No ACP success,
 production model amendment or native-reply qualification is claimed.
 
-## Current committed provider image and live publication
+## Earlier committed provider image and live publication
 
 At committed source `a395617c8e9fb211d9959eaba8c2965874134c8e`, the
 selected Docker 29.8.1 cached-dependency build exited 0 and produced the
@@ -794,8 +794,8 @@ The image contains 221 selected Rust packages with zero missing local license
 texts (manifest SHA-256
 `d59fddc4978a97045979c56da293edfbb40354af2128081d3131258aea47d4f8`)
 and 91 OS package/version rows with copyright-file hashes. This is a
-cached-builder local iteration, not the still-required clean independent
-provider distribution build.
+cached-builder local iteration. Its later clean independent build is recorded
+below.
 
 `python3 scripts/local-stack.py up-provider --provider-source
 a395617c8e9fb211d9959eaba8c2965874134c8e` switched only the
@@ -854,8 +854,8 @@ observation counter was detected as a difference in exactly that table
 The restore namespace was then removed by its exact owner label; zero of its
 containers, volumes and networks remain. The source provider's health check
 still exited 0 with its `a395617` image. Protected-key restoration, a
-production backup schedule, operator encryption and a clean independent
-provider build remain open.
+production backup schedule and operator encryption remain open. The later
+independent provider build is recorded below.
 
 ## Retained effect-result lookup
 
@@ -914,3 +914,89 @@ durable records through a real PostgreSQL restart (log SHA-256
 `8a219d54acf7f429e4472e8e858c18aad7d83a0b22033a64f99795b825b09d7a`).
 This validates the effect-result read's lock behavior; it does not establish
 deadlock freedom for every provider command or close the full PostgreSQL suite.
+
+## Independent provider build and current-source image
+
+On the selected Ubuntu 24.04.4 arm64 / Docker Engine 29.8.1 VM, the committed
+`7794f927d9444ce0511f6032bbf17c6904be9bf5` source completed
+`bash scripts/build-provider-image.sh` **without** `PROVIDER_BUILD_CACHE_IMAGE`.
+The command exited 0; its ignored local log SHA-256 is
+`4d0bec01932320b9c31ffa812a878346256769f25c981b977ed77588d26faba8`.
+The resulting Linux arm64 image is
+`sha256:48c56ad21fd25ae1389d5d93b6858e36ed1186a28854f1fac6d0397b1606aff0`,
+with an exact full-source revision label. Its provider binary SHA-256 is
+`11cfb160ca6eec39c6b7e8aee0e4767fd2f5b9ccc90b4028e7f220d345a8adc3`,
+equal to the previously deployed `a395617` image's binary. The selected Rust
+notice manifest has SHA-256
+`d59fddc4978a97045979c56da293edfbb40354af2128081d3131258aea47d4f8`
+and 221 applicable packages with no missing local text. The runtime has 91 OS
+package/version rows (SHA-256
+`968e0acdf5a76221a45f127b936c1b0632bed1ed011fa0d8aad09119e237693d`)
+and 90 copyright-file hash rows (SHA-256
+`af78b6069eabc5dfacbf27858290b1b84e3520a09cac5fec37026c6b9da5a570`).
+This is a clean distribution build at that source, not a clean build of the
+later effect-result route.
+
+`python3 scripts/local-stack.py up-provider --provider-source
+7794f927d9444ce0511f6032bbf17c6904be9bf5` switched only the owned private
+provider and exited 0 (log SHA-256
+`feb298b1a4d4026cdbc6c319d1e9e7a6f31f25fe15aee58f68ef7ab16e1dace4`).
+`check-provider` exited 0, found no host ports and reported the restricted profile
+inactive (log SHA-256
+`9b7ff8b754ee309049ab69917d84cb2816389d91abe2386dc663c0efae10458a`).
+`probe-provider-origin` recovered the original native event and two-member audience
+through the fixed relay (log SHA-256
+`e76b97e55e5fcbf1b5f527a1d1db140ffe35c0afff165f2099625b8cef38b8e5`).
+
+The later `db20d17da2c572bad4d1886728d86b050b0a0362` source built through the
+inspected, exact-ID cached dependency builder
+`sha256:4e07bf3b101bb833cbe11eb67d165fb7592e56072697ba40345fa56a8b642b04`.
+`PROVIDER_BUILD_CACHE_IMAGE=llull-buzz-completion-provider-cache:dabf683
+PROVIDER_BUILD_CACHE_ID=sha256:4e07bf3b101bb833cbe11eb67d165fb7592e56072697ba40345fa56a8b642b04
+bash scripts/build-provider-image.sh` exited 0 (ignored log SHA-256
+`6fc5f44576180a21c11c7449ae727d2bae867a2625832a9afb283eef64cab8b9`).
+Its image ID is
+`sha256:78e32fdb5a44d13b9515f120c309e70e6c5b03bd60c429809fab570fd12137c1`,
+its binary SHA-256 is
+`e0652b188ffe5efeb38d54df6fb489fd14936246743a10467c2f2471d75f005c`,
+and its Rust/OS notice digests match the independent build above. This is a
+current-route integration image, not a second clean dependency build.
+
+`up-provider --provider-source db20d17da2c572bad4d1886728d86b050b0a0362`
+replaced only the owned provider container and exited 0 (ignored log SHA-256
+`2e39569e1bab9a3937ce6e509c102a932bc6140fe786a274f645e5f3a7331652`).
+The same image ID and source label were present in `check-provider`, which
+exited 0 with no host ports and `restricted_profile_active: false` (log SHA-256
+`d72b2fec1bbac43846f164cf5d4ba36b32381406fd708b07aa38cc1581c08a50`).
+`probe-provider-origin` exited 0 and recovered the original signed native
+event and two-member audience (log SHA-256
+`e76b97e55e5fcbf1b5f527a1d1db140ffe35c0afff165f2099625b8cef38b8e5`).
+The health response continues to mark model dispatch, native gateway and
+media gateway unconfigured. The deployed probe does not call the new effect
+read; the mounted HTTP route is covered by the separate signed PostgreSQL test.
+
+## Isolated PostgreSQL contract suite
+
+Adding the effect-read case exposed instability in the old `test-postgres.sh`
+runner, which accumulated independent scenarios in one disposable database.
+An early combined run failed four of nine cases (ignored log SHA-256
+`1a4c0928df97016cc1ea25f0b64183dd2ecadd72de843d14762a19edb05242d2`);
+a repeat failed two different late assertions (log SHA-256
+`21b875511e75920dd1ae04eec922b4488f51c9f19f827f078ea5b2d5f5ca5790`).
+Those runs are failures, not validation passes. The provider's four-root cap
+and retained recovery state are global to a database, and test order can affect
+later cases. The varied failures do not by themselves prove a single cause.
+
+Committed runner source `6b19ce377a23445e3672e89ee7f1143980493c96`
+discovers the ignored cases, excludes only the two separately executed live
+relay cases, and gives each remaining case a uniquely named PostgreSQL 16.15
+container/database. Each case still runs its real signatures, SQL transactions
+and denial assertions; each then restarts its own server and compares durable
+root/effect/binding/publication/observation/epoch records. The command
+`bash scripts/test-postgres.sh` exited 0: **nine cases passed, nine restart
+comparisons matched**, including the final real-clock budget/lease case.
+Its ignored local log SHA-256 is
+`942de66b0b250b1895bf30cb16df26c39b1c7d15afc794ab78e62ea8a95260e5`.
+This removes unintended inter-case state dependence; the foundation case
+continues to exercise four-root concurrent admission within one database.
+Neither runner shape supplies the live relay cases or a human UAT verdict.

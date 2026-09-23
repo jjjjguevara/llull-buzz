@@ -363,3 +363,31 @@ checks fresh consumer/scope authority, and rereads the current effect outcome.
 The focused working-tree PostgreSQL/signature scenario passed both concurrency
 cases and a real database restart. The full suite and other command lock
 orders remain separately unqualified; no proof profile is accepted.
+
+2026-09-23 — Item 04.6: an independent selected-engine release image build
+from committed `7794f927d9444ce0511f6032bbf17c6904be9bf5` exited 0 without
+the cached dependency builder. Its provider binary equals the previously
+live-tested `a395617` binary; 221 selected Rust package notices had no missing
+local texts, and all 91 installed OS packages had readable copyright texts.
+The image was deployed privately; health and fixed native-origin probes passed.
+This closes the earlier *build execution* gap at that source, not final-source
+distribution or the separate security findings. See
+[exact identities and log hashes](../../../docs/implementation/COMPLETION.md).
+
+The new effect-read route built in a second Linux arm64 image from committed
+`db20d17da2c572bad4d1886728d86b050b0a0362` using an inspected exact-ID
+cached builder. The task-owned provider now runs that image; health and native
+origin checks passed with no host-published port. Its source has not received
+the same clean independent build, and the deployed check does not yet send a
+signed effect GET.
+
+2026-09-23 — Item 04.6: two broad PostgreSQL runs on one shared disposable
+database failed with varying inter-case assertions; failure logs are retained.
+Commit `6b19ce377a23445e3672e89ee7f1143980493c96` gives each discovered
+non-live scenario a fresh selected PostgreSQL container and real restart
+comparison. All nine isolated cases and nine restart comparisons passed at
+that committed source, including the new effect-read lock tests and the long
+foundation capacity/budget/lease case. This is local real-database evidence;
+the two live-relay cases remain covered by their separate runner, and model,
+MCP, media/client, protected-key restore, composed Akita and named human UAT
+qualification remain open. No entire capability or proof profile is accepted.
