@@ -407,17 +407,39 @@ script and recorded in [the source register](../../deploy/licenses/README.md).
 The host inventory command exited 0 with 222 declared licenses and zero missing
 texts. Its private manifest SHA-256 is
 `96c56e0a775a350602c911ff89ad1f31ea41b39320edc8e652b4bc1166520a52`.
-The revised provider Dockerfile now runs that check during its build and also
-records installed OS package names, versions, architectures and copyright-file
-hashes. **The revised image has not yet been built**, so the current deployed
-image still has only four provider-document files and distribution closure is
-not qualified by the host inventory.
+The revised provider Dockerfiles now run that check during their builds and
+record installed OS package names, versions, architectures and copyright-file
+hashes. The cached-builder image from committed source
+`e87d1b87571e28bf99531cba670e5ecba889b575` built with ID
+`sha256:daba1b7d778e8f17140ef2d41568a1683046c621a88eda2aab7a7bdafebcf50c`.
+Its executable SHA-256 is the same
+`5e11d861d2cb28be4d5ffc69d46ab1bcaf8fb4366b1908c3891e1f755daa34d4`
+as the prior live-tested image. The build log SHA-256 is
+`0cbefb75f364aab6478f95b925ccd021fc46cb3039a1eb57c8bb9c5bef3fe870`.
+Inside the Linux image the applicable graph has **221** packages with zero
+missing license texts; the host-only `core-foundation-sys` accounts for the
+host inventory's extra entry. The image's bundled manifest SHA-256 is
+`5be1b47d2064e15ed8ba244967a0369a1f901f1e4def4387f97fce18cb793484`.
+The task-owned provider was switched to this image; `up-provider`,
+`check-provider` and `probe-provider-origin` exited 0. This image still uses an
+inspected cached dependency builder, so a clean independent distribution build
+remains unqualified.
 
-Inside the currently deployed image, 91 installed Debian packages each had a readable
+Inside the deployed image, 91 installed Debian packages each had a readable
 `/usr/share/doc/<package>/copyright` after architecture suffix normalization.
-The updated manifest/check command passed against that prior image, but its
-output was not yet packaged there. A clean independent build and final
-source/image applicability checks remain before distribution closure.
+It bundles a sorted 91-row package/version/architecture manifest and hashes
+for 90 distinct copyright files. The extra package shares a copyright file;
+the build checks each package's readable path. A clean independent build and
+final source/image applicability checks remain before distribution closure.
+
+The pinned unmodified Buzz executable graph has a preliminary host target
+inventory of 500 packages. Eighteen registry archives omit local license
+texts; the inventory maps them to checked upstream files or, for one declared
+`MIT OR Apache-2.0` package, the selected standard Apache-2.0 option. The host
+command exited 0 with zero missing texts, manifest SHA-256
+`a28c861da05626d5350ad2e26509b07dc36bd152821b46b4224829cc09ebc219`.
+The updated upstream image recipe has not yet been built; its Linux-applicable
+package graph and OS notices require image inspection before closure.
 
 ## Requested OAuth model amendment
 

@@ -18,6 +18,8 @@ RUN cargo +1.98.1 build --locked --release \
     -p buzz-agent --bin buzz-agent -p buzz-acp --bin buzz-acp \
     -p buzz-relay --bin buzz-relay -p buzz-cli --bin buzz \
     -p buzz-admin --bin buzz-admin
+COPY scripts/distribution-inventory.py /inventory/scripts/distribution-inventory.py
+COPY deploy/licenses/ /inventory/deploy/licenses/
 RUN mkdir -p /image/opt/llull/upstream /image/usr/share/doc/buzz-upstream && \
     cp target/release/buzz-agent target/release/buzz-acp target/release/buzz-relay \
        target/release/buzz target/release/buzz-admin /image/opt/llull/upstream/ && \
@@ -25,15 +27,29 @@ RUN mkdir -p /image/opt/llull/upstream /image/usr/share/doc/buzz-upstream && \
     find . -maxdepth 1 -type f \( -iname 'LICENSE*' -o -iname 'NOTICE*' \) \
        -exec cp {} /image/usr/share/doc/buzz-upstream/ \; && \
     sha256sum /image/opt/llull/upstream/* > /image/usr/share/doc/buzz-upstream/SHA256SUMS && \
-    cargo metadata --locked --format-version 1 > /image/usr/share/doc/buzz-upstream/cargo-metadata.json
+    cargo metadata --locked --format-version 1 > /image/usr/share/doc/buzz-upstream/cargo-metadata.json && \
+    python3 /inventory/scripts/distribution-inventory.py --workspace /upstream \
+      --package buzz-agent,buzz-acp,buzz-relay,buzz-cli,buzz-admin \
+      --target aarch64-unknown-linux-gnu \
+      --output /image/usr/share/doc/buzz-upstream/third-party
 FROM ${RUNTIME_IMAGE}
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git openssl && rm -rf /var/lib/apt/lists/* && \
     groupadd --gid 65532 buzz && \
     useradd --uid 65532 --gid 65532 --no-create-home --home-dir /work/task/home buzz && \
-    mkdir -p /work/task && chown 65532:65532 /work/task && chmod 700 /work/task
+    mkdir -p /work/task /usr/share/doc/buzz-upstream && \
+    chown 65532:65532 /work/task && chmod 700 /work/task && \
+    dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' | \
+      LC_ALL=C sort > /usr/share/doc/buzz-upstream/OS-PACKAGES.tsv && \
+    dpkg-query -W -f='${binary:Package}\n' | while read package; do \
+      test -r "/usr/share/doc/${package%%:*}/copyright" || exit 1; \
+    done && \
+    find /usr/share/doc -name copyright -type f -print0 | sort -z | \
+      xargs -0 sha256sum > /usr/share/doc/buzz-upstream/OS-COPYRIGHT-SHA256SUMS
 COPY --from=build /image/ /
+ARG SOURCE_SHA
 LABEL org.opencontainers.image.source="https://github.com/jjjjguevara/llull-buzz" \
+    org.opencontainers.image.revision="${SOURCE_SHA}" \
     org.llull.buzz.upstream="01b6174a1cbad249e93f31df97d4b2ed1d0e8638"
 USER 65532:65532
 WORKDIR /work/task

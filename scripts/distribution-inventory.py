@@ -17,6 +17,21 @@ import subprocess
 LICENSE_NAMES = ("license", "licence", "copying", "copyright", "notice")
 TREE_PACKAGE = re.compile(r"^([^ ]+) v([^ ]+)")
 PINNED_LICENSES = {
+    ("aws-creds", "0.39.1"): (
+        "upstream/rust-s3-MIT.txt",
+        "fd7003282055eb957f6ba61fc0d2c1d299506b323332eb3bccc531edc7d53833",
+        "https://github.com/durch/rust-s3/blob/b584ce7d53825705332c13136769546166622ad1/LICENSE.md",
+    ),
+    ("aws-region", "0.28.1"): (
+        "upstream/rust-s3-MIT.txt",
+        "fd7003282055eb957f6ba61fc0d2c1d299506b323332eb3bccc531edc7d53833",
+        "https://github.com/durch/rust-s3/blob/aad5f6e24a98e4a415b3022e308d636e7d81b8c9/LICENSE.md",
+    ),
+    ("bitcoin-io", "0.1.4"): (
+        "rust-bitcoin-CC0-1.0.txt",
+        "7179683e8000e6bdc9bbc60d85edf0a4ac8e76f951857f54fcb775d5886f1309",
+        "https://github.com/rust-bitcoin/rust-bitcoin/blob/29a07abb2f1cf91ba7aa4820216ea091ee8b91e8/LICENSE",
+    ),
     ("bitcoin-io", "0.1.101"): (
         "rust-bitcoin-CC0-1.0.txt",
         "7179683e8000e6bdc9bbc60d85edf0a4ac8e76f951857f54fcb775d5886f1309",
@@ -27,25 +42,105 @@ PINNED_LICENSES = {
         "7179683e8000e6bdc9bbc60d85edf0a4ac8e76f951857f54fcb775d5886f1309",
         "https://github.com/rust-bitcoin/rust-bitcoin/blob/a010f1e9fd7752ee5e7ca60a909d32a58e0d3297/LICENSE",
     ),
+    ("bitcoin_hashes", "0.14.1"): (
+        "rust-bitcoin-CC0-1.0.txt",
+        "7179683e8000e6bdc9bbc60d85edf0a4ac8e76f951857f54fcb775d5886f1309",
+        "https://github.com/rust-bitcoin/rust-bitcoin/blob/76690fc2a3b2f092ec2151e51adc4d91b91fc760/LICENSE",
+    ),
+    ("enum-assoc", "1.3.0"): (
+        "upstream/enum-assoc-Apache-2.0.txt",
+        "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "https://www.apache.org/licenses/LICENSE-2.0",
+    ),
+    ("iroh-base", "1.0.3"): (
+        "upstream/iroh-Apache-2.0.txt",
+        "903131e2786f073a942fbf8fae122d9e576e4dad758c6da7f9f2ba58fd8611ab",
+        "https://github.com/n0-computer/iroh/blob/e5c710a29fbd06bdce35fd23ad94d04a62acf15a/LICENSE-APACHE",
+    ),
+    ("iroh-dns", "1.0.3"): (
+        "upstream/iroh-Apache-2.0.txt",
+        "903131e2786f073a942fbf8fae122d9e576e4dad758c6da7f9f2ba58fd8611ab",
+        "https://github.com/n0-computer/iroh/blob/e5c710a29fbd06bdce35fd23ad94d04a62acf15a/LICENSE-APACHE",
+    ),
+    ("iroh-metrics-derive", "1.0.1"): (
+        "upstream/iroh-metrics-Apache-2.0.txt",
+        "7953ad8cebf4e01199521a5faa221ef59bec5cee0a9856b179590613a8560cbc",
+        "https://github.com/n0-computer/iroh-metrics/blob/a9afb7cd49bb3804fffefec61647993851f9b8c8/LICENSE-APACHE",
+    ),
+    ("n0-error-macros", "1.0.0"): (
+        "upstream/iroh-metrics-Apache-2.0.txt",
+        "7953ad8cebf4e01199521a5faa221ef59bec5cee0a9856b179590613a8560cbc",
+        "https://github.com/n0-computer/n0-error/blob/56019f01cd4c838edccd9f9b074953a45d87b6ef/LICENSE-APACHE",
+    ),
+    ("netwatch", "0.19.1"): (
+        "upstream/net-tools-Apache-2.0.txt",
+        "7986218ec4ea89de3511a843ae27fea2584a525036c220ff7b26589179f07888",
+        "https://github.com/n0-computer/net-tools/blob/051ab8761006d7f2155e34a49f6bb881b582d5ab/LICENSE-APACHE",
+    ),
+    ("nostr", "0.44.7"): (
+        "nostr-MIT.txt",
+        "a333d394b9f31b6ca64d08f3048a8a38125c181d68d3d376c4ddf988cffd12d2",
+        "https://github.com/nostrdevkit/nostr/blob/94dac28e9a718d853170308aeb551b1ebf89a0d0/LICENSE",
+    ),
     ("nostr", "0.44.8"): (
         "nostr-MIT.txt",
         "a333d394b9f31b6ca64d08f3048a8a38125c181d68d3d376c4ddf988cffd12d2",
         "https://github.com/nostrdevkit/nostr/blob/a86ce27c3b4d0dcab186a707336237653a01b114/LICENSE",
     ),
+    ("opentelemetry", "0.32.0"): (
+        "upstream/opentelemetry-Apache-2.0.txt",
+        "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "https://github.com/open-telemetry/opentelemetry-rust/blob/ec289cb3c6f8260951699c51df968560943c1451/LICENSE",
+    ),
+    ("opentelemetry-otlp", "0.32.0"): (
+        "upstream/opentelemetry-Apache-2.0.txt",
+        "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "https://github.com/open-telemetry/opentelemetry-rust/blob/ec289cb3c6f8260951699c51df968560943c1451/LICENSE",
+    ),
+    ("opentelemetry-proto", "0.32.0"): (
+        "upstream/opentelemetry-Apache-2.0.txt",
+        "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "https://github.com/open-telemetry/opentelemetry-rust/blob/ec289cb3c6f8260951699c51df968560943c1451/LICENSE",
+    ),
+    ("opentelemetry_sdk", "0.32.1"): (
+        "upstream/opentelemetry-Apache-2.0.txt",
+        "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "https://github.com/open-telemetry/opentelemetry-rust/blob/284a37d93b3856e1975c2807ba3af1421ebd9b52/LICENSE",
+    ),
+    ("rmcp", "1.8.0"): (
+        "upstream/rmcp-Apache-2.0.txt",
+        "0382b0057770ca05e9c350a50aa3b1c1fea84da0bc81d723bf00b9aa841be58a",
+        "https://github.com/modelcontextprotocol/rust-sdk/blob/25220361d5540715294c501c289d79de4bec2bfc/LICENSE",
+    ),
+    ("rust-s3", "0.37.2"): (
+        "upstream/rust-s3-MIT.txt",
+        "fd7003282055eb957f6ba61fc0d2c1d299506b323332eb3bccc531edc7d53833",
+        "https://github.com/durch/rust-s3/blob/b584ce7d53825705332c13136769546166622ad1/LICENSE.md",
+    ),
+    ("tonic-prost", "0.14.6"): (
+        "upstream/tonic-MIT.txt",
+        "e24a56698aa6feaf3a02272b3624f9dc255d982970c5ed97ac4525a95056a5b3",
+        "https://github.com/hyperium/tonic/blob/6cb6056b5a748bc5a29bd48f4602dbc4e552bb7d/LICENSE",
+    ),
 }
 
 
-def cargo(*arguments):
-    return subprocess.check_output(["cargo", "+1.98.1", *arguments], text=True)
+def cargo(workspace, *arguments):
+    return subprocess.check_output(
+        ["cargo", "+1.98.1", *arguments], cwd=workspace, text=True
+    )
 
 
-def selected_packages(package, target):
+def selected_packages(packages, target, workspace):
+    roots = [argument for package in packages for argument in ("-p", package)]
     lines = cargo(
-        "tree", "--locked", "--offline", "--target", target, "-p", package,
+        workspace, "tree", "--locked", "--offline", "--target", target, *roots,
         "-e", "normal,build", "--prefix", "none", "--format", "{p}",
     ).splitlines()
     selected = set()
     for line in lines:
+        if not line:
+            continue
         match = TREE_PACKAGE.match(line.removesuffix(" (*)"))
         if not match:
             raise ValueError(f"unrecognized Cargo tree package: {line!r}")
@@ -73,14 +168,17 @@ def workspace_license(package_root, source):
     return None
 
 
-def build(package, target, output):
+def build(package, target, output, workspace):
     output.mkdir(parents=True, exist_ok=False)
-    metadata = json.loads(cargo("metadata", "--locked", "--offline", "--format-version", "1"))
+    packages = package.split(",")
+    if not packages or any(not item for item in packages):
+        raise ValueError("at least one nonempty package is required")
+    metadata = json.loads(cargo(workspace, "metadata", "--locked", "--offline", "--format-version", "1"))
     candidates = {}
     for entry in metadata["packages"]:
         candidates.setdefault((entry["name"], entry["version"]), []).append(entry)
     records = []
-    for name, version in sorted(selected_packages(package, target)):
+    for name, version in sorted(selected_packages(packages, target, workspace)):
         matches = candidates.get((name, version), [])
         if len(matches) != 1:
             raise ValueError(f"expected exactly one resolved source for {name} {version}: {len(matches)}")
@@ -126,7 +224,7 @@ def build(package, target, output):
         "target": target,
         "dependency_edges": "normal,build",
         "cargo_lock_sha256": hashlib.sha256(
-            (Path(__file__).resolve().parents[1] / "Cargo.lock").read_bytes()
+            (workspace / "Cargo.lock").read_bytes()
         ).hexdigest(),
         "package_count": len(records),
         "missing_local_license_text_count": sum(item["missing_local_license_text"] for item in records),
@@ -147,5 +245,6 @@ if __name__ == "__main__":
     parser.add_argument("--package", required=True)
     parser.add_argument("--target", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--workspace", type=Path, default=Path.cwd())
     args = parser.parse_args()
-    build(args.package, args.target, args.output)
+    build(args.package, args.target, args.output, args.workspace.resolve(strict=True))

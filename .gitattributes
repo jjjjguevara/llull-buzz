@@ -1,2 +1,3 @@
 # Preserve the upstream CC0 legal text byte for byte, including its final blank line.
 deploy/licenses/rust-bitcoin-CC0-1.0.txt whitespace=-blank-at-eof
+deploy/licenses/upstream/*.txt whitespace=-blank-at-eof

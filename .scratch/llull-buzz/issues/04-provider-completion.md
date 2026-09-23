@@ -198,3 +198,17 @@ credential-free build; its log SHA-256 is
 `b9f85c3ba5bf5383a9284ef188e53b503d734320089db5e2cb84bfe6e0d0ddc4`.
 The original provider image remained healthy after the run. This upgrades the
 scripted live publication evidence, not the media/client/model claims.
+
+The cached-builder provider image from source
+`e87d1b87571e28bf99531cba670e5ecba889b575` built with ID
+`sha256:daba1b7d778e8f17140ef2d41568a1683046c621a88eda2aab7a7bdafebcf50c`.
+Its binary hash equals the prior live-tested image. The Linux image includes
+221 applicable Rust package licenses (zero missing) and 91 OS package/version
+rows with 90 distinct copyright-file hashes. The host-only
+`core-foundation-sys` caused the earlier 222 count. The owned test provider
+was switched to this image; health and fixed native-origin probes passed.
+This is still a cached-builder build, not a clean independent distribution
+qualification. The pinned upstream graph has a host-preliminary 500-package
+inventory with zero missing texts after 18 absent crate-archive licenses were
+resolved to pinned upstream texts or the declared Apache option. Its updated
+image is not yet built.
