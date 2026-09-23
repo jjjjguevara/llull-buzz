@@ -261,3 +261,26 @@ WebSocket because the relay's public WSS URL differed from the dialed WS URL.
 Item 04.3 remains open. A build-feature amendment for native TLS roots is being
 qualified against a task-local CA and exact WSS origin; it changes no pinned
 upstream source.
+
+2026-09-22 — Items 04.3/04.6: a task-only TLS terminator on an internal network
+now serves the relay's exact advertised WSS host and port. The synthetic CA
+and hostname passed TLS verification, while wrong-host and untrusted-root
+clients were denied. The real `buzz` CLI performed an authenticated HTTPS
+channel search and created a separate bot test channel. The old WebPKI-only
+`buzz-acp` initialized the credential-separated agent but exited 1 on unknown
+issuer, establishing the need for the native-roots build feature. The amended
+binary/mention journey is still pending. Exact image/log identities and limits
+are in [completion evidence](../../../docs/implementation/COMPLETION.md).
+
+2026-09-22 — Item 04.6: the initial broad disposable PostgreSQL run exited 101
+because it included two live-relay cases without their separate stack inputs;
+the long foundation case also hit an unidentified exhausted worker claim.
+The runner now filters only those two independently run live cases and pins
+the selected PostgreSQL image. Eight real database cases and a restart digest
+comparison passed at `b4f3cc5da493bb19653be9350b8c7020e3f2ba51`.
+After widening the test fixture's two-second claim window while preserving its
+absolute-expiry denial, the same eight cases and restart comparison passed
+again at `86d7ac4e85039dbdd9f4173d5f318c00db3ef311`. Rust formatting,
+12 workspace library tests, strict all-target Clippy and the five-stage local
+documentation check exited 0. This remains partial technical evidence, not
+a whole proof-profile or human UAT acceptance.

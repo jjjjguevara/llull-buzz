@@ -582,5 +582,62 @@ The pinned build currently trusts only WebPKI roots for WebSocket TLS. The
 distribution recipe now additionally enables Cargo's
 `tokio-tungstenite/rustls-tls-native-roots` feature without changing upstream
 source, so a task-local CA can qualify the selected WSS origin. The amended
-image and TLS/native journey remain unexecuted; operator CA distribution and
-the agent's separation from the bot key must be checked at runtime.
+executable and complete ACP/native journey remain unexecuted; operator CA
+distribution and the agent's separation from the bot key must be checked at runtime.
+
+The task-owned TLS terminator subsequently served the exact advertised WSS
+host and port on a second internal Docker network, forwarding to the original
+relay without publishing a host port. A short-lived synthetic CA signed a
+leaf with the exact DNS SAN. `openssl verify` exited 0. A TLS client trusting
+that CA reached the relay and received HTTP 200; a wrong hostname and a client
+without the CA each failed certificate verification. The terminator image ID
+was `sha256:83b5982891746e067748c169c05ed51b5611b2d260c004183e3ec072b3f4d692`.
+The real `buzz` CLI then completed a signed channel search over the verified
+HTTPS endpoint. A separate synthetic channel was created and the test bot
+enrolled there; the provider service channel was left untouched.
+
+With that CA installed in the test image, the original WebPKI-only `buzz-acp`
+still initialized the separate `buzz-agent` but exited 1 on an unknown TLS
+issuer. Its private log SHA-256 is
+`a7dd3d0a3e4c5cc7b7d8d8e8062b2f05f684e8fefce8cd8bf17edaee548149e8`.
+This red test isolates the missing native-root feature from the previously
+observed NIP-42 URL mismatch. The amended executable build and a real
+mention-to-response ACP journey remain to be tested. These task-only TLS
+fixtures are not a production certificate or credential-delivery design.
+
+## Selected PostgreSQL runner and current source checks
+
+The first `scripts/test-postgres.sh` run at `24afe6f15eab19c246faf745dd1b4d0809122af5`
+exited 101: seven cases passed, the two live-relay cases failed because the
+disposable database runner did not supply their separate live-stack inputs,
+and the long foundation case hit `Admission(Exhausted)` on a worker claim.
+The private log SHA-256 is
+`dea276c9350d043c74d18a69dae94b55581b69bf0ab61676c343e235cfb297d2`.
+The later pass does not erase this failure or establish which foundation
+worker claim exhausted; its two-second expiry fixture was susceptible to a
+loaded host between root start and claim.
+
+Commit `b4f3cc5da493bb19653be9350b8c7020e3f2ba51` separated the two
+live-relay cases, which `scripts/local-stack.py check-publication-live` runs,
+and pinned the disposable suite to the selected PostgreSQL 16.15 image digest
+`efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67`.
+The corrected runner exited 0 with eight passes, two filtered live cases, and
+an unchanged durable-record digest after a real PostgreSQL restart; its log
+SHA-256 is `6bc4db7c3da9589655660b381ebbcca2bcf14102a17136400a26700ab4f35557`.
+Commit `86d7ac4e85039dbdd9f4173d5f318c00db3ef311` widened only the
+test's pre-claim lifetime to ten seconds and waited eleven seconds before
+checking absolute-expiry denial. The same disposable suite again exited 0:
+eight passes, two filtered live cases, and an unchanged restart digest. Its
+log SHA-256 is `a1320f263a1195c626768314e3960cf9821543b72ff9599c380443ef7c0ea630`.
+Both runs used the selected task-owned Docker Engine 29.8.1 and an isolated
+loopback-only disposable database. The restore-only namespace was then
+removed using its exact owner label; the source test deployment stayed up.
+
+At `86d7ac4e85039dbdd9f4173d5f318c00db3ef311`, `cargo +1.98.1 fmt --check`,
+`cargo +1.98.1 test --locked --workspace --lib` (12 passed), and
+`cargo +1.98.1 clippy --locked --workspace --all-targets -- -D warnings`
+exited 0. The portable `scripts/check-docs.py --base
+f3fe82e94e878eba7173aaf326085b77b9c9bc51 --subject HEAD --output
+artifacts/completion/docs-check-86d7ac4` also exited 0 in all five stages.
+These checks do not activate the restricted profile or qualify the still
+missing model, MCP, native/media gateway, and attachment paths.
