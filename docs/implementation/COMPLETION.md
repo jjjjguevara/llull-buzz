@@ -893,3 +893,24 @@ working-tree run exited 0 with a real PostgreSQL restart (private log SHA-256
 `ee6b745e024ebbd4e9abb8aba49fbe0fe338296c2e5238a0640cc5fdcaae8fca`).
 The full suite, retained consumer result-byte access and a deployed image
 containing this new route remain unqualified.
+
+### Effect-result read lock ordering
+
+The first `observe-effect` implementation locked the attempt before consumer
+authority. A real PostgreSQL test held the consumer registry row, waited for a
+signed read to reach that lock, then tried to lock the attempt in the opposite
+transaction. PostgreSQL reported deadlock `40P01` (red-run log SHA-256
+`a90305818752d985dfc852d410c1399919f33fd20635eb091d66cf4f9d9909b9`).
+The implementation now reads immutable attempt identity without a row lock,
+authenticates, and rereads current outcome without blocking an effect update.
+
+A second red test held the task root row while reading a completed effect.
+The read timed out with PostgreSQL `55P03` (log SHA-256
+`12c676c953fc48522bdc2d253e13d74e297936cc78fd51ac539affc4d512611c`).
+The root's scope record is immutable under migration `0001_foundation.sql`, so
+the read now checks it without a root row lock. The focused working-tree test
+then exited 0, passed the signed HTTP/scope and both lock cases, and preserved
+durable records through a real PostgreSQL restart (log SHA-256
+`8a219d54acf7f429e4472e8e858c18aad7d83a0b22033a64f99795b825b09d7a`).
+This validates the effect-result read's lock behavior; it does not establish
+deadlock freedom for every provider command or close the full PostgreSQL suite.

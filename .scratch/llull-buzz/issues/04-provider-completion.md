@@ -354,3 +354,12 @@ restart, alongside strict Clippy, 12 library tests and all five document
 stages. A subsequent working-tree test passed through the mounted HTTP route
 and required a cross-module HTTP 403. The full suite, retained business-result
 bytes and gateway integration remain open.
+
+2026-09-23 — Item 04.5: the new effect-result read first deadlocked with a
+concurrent consumer/attempt lock order (`40P01`), then blocked on a held root
+row (`55P03`). Red runs are retained. The implementation now reads the
+database-protected immutable attempt and root identities without row locks,
+checks fresh consumer/scope authority, and rereads the current effect outcome.
+The focused working-tree PostgreSQL/signature scenario passed both concurrency
+cases and a real database restart. The full suite and other command lock
+orders remain separately unqualified; no proof profile is accepted.

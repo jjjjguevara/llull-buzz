@@ -712,6 +712,83 @@ async fn effect_result_reference_is_recoverable_only_in_its_original_scope() {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
     server.abort();
+
+    // A read waiting for consumer authority must not retain the attempt row
+    // lock. Effect admission can take those locks in the opposite order.
+    let mut blocker = rig.pool.begin().await.unwrap();
+    sqlx::query("SELECT consumer_id FROM consumer_registry WHERE consumer_id=$1 FOR UPDATE")
+        .bind(&read.consumer_id)
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    let mut read_claims = rig.claims(&read, "module-a", Some(&task.root_task_id), Some(&binding));
+    read_claims.payload_sha256 = sha256(b"");
+    let signed = rig.sign(&read_path, "GET", b"", &read_claims, INVOCATION);
+    let provider = rig.p.clone();
+    let consumer_id = read.consumer_id.clone();
+    let attempt_id = attempt.attempt_id;
+    let observed = tokio::spawn(async move {
+        provider
+            .observe_effect(&consumer_id, attempt_id, signed.headers())
+            .await
+    });
+    let waiting = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let count: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() \
+                 AND wait_event_type='Lock' AND query LIKE '%consumer_registry%' \
+                 AND pid<>pg_backend_pid()",
+            )
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap();
+            if count > 0 {
+                break true;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(waiting);
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        sqlx::query("SELECT attempt_id FROM attempts WHERE attempt_id=$1 FOR UPDATE")
+            .bind(attempt_id)
+            .fetch_one(&mut *blocker),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    blocker.commit().await.unwrap();
+    assert_eq!(observed.await.unwrap().unwrap().state, "completed");
+
+    // The root's scope record is immutable; reading a finished result must
+    // remain possible while a task transition holds the root row lock.
+    let mut root_blocker = rig.pool.begin().await.unwrap();
+    sqlx::query(
+        "SELECT root_task_id FROM task_roots WHERE consumer_id=$1 AND root_task_id=$2 FOR UPDATE",
+    )
+    .bind(&read.consumer_id)
+    .bind(&task.root_task_id)
+    .fetch_one(&mut *root_blocker)
+    .await
+    .unwrap();
+    let mut read_claims = rig.claims(&read, "module-a", Some(&task.root_task_id), Some(&binding));
+    read_claims.payload_sha256 = sha256(b"");
+    let signed = rig.sign(&read_path, "GET", b"", &read_claims, INVOCATION);
+    let provider = rig.p.clone();
+    let consumer_id = read.consumer_id.clone();
+    let observed = tokio::time::timeout(Duration::from_secs(15), async move {
+        provider
+            .observe_effect(&consumer_id, attempt_id, signed.headers())
+            .await
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(observed.state, "completed");
+    root_blocker.commit().await.unwrap();
 }
 
 #[tokio::test]

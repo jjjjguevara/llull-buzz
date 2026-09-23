@@ -70,16 +70,24 @@ impl Provider {
         headers: Headers<'_>,
     ) -> Result<AttemptView> {
         let mut tx = self.begin().await?;
-        let attempt = Self::attempt(&mut tx, attempt_id).await?;
-        if attempt.consumer_id != consumer {
+        // Identity fields are immutable in PostgreSQL. Do not hold the attempt
+        // row while waiting for consumer authority: admission can lock them in
+        // the opposite order.
+        let (recorded_consumer, root_task_id, generation): (String, String, i64) = sqlx::query_as(
+            "SELECT consumer_id,root_task_id,generation FROM attempts WHERE attempt_id=$1",
+        )
+        .bind(attempt_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Fault::Denied)?;
+        if recorded_consumer != consumer {
             return Err(Fault::Denied.into());
         }
-        let (root, _) = Self::root(&mut tx, consumer, &attempt.root_task_id).await?;
         let id = attempt_id.to_string();
         let resource = Resource {
             namespace: consumer.into(),
             reference: id.clone(),
-            revision: u64::try_from(attempt.generation)
+            revision: u64::try_from(generation)
                 .map_err(|_| Fault::Unknown)?
                 .to_string(),
         };
@@ -99,12 +107,36 @@ impl Provider {
                     operation: "observe-effect",
                     resource: &resource,
                     fingerprint: &sha256(b""),
-                    root: Some(&attempt.root_task_id),
+                    root: Some(&root_task_id),
                 },
             )
             .await?;
         self.scope(&mut tx, &registration, &claims).await?;
-        root.scope.recovery(&claims)?;
+        // The root record is immutable; observing its scope must not wait for
+        // a worker transition holding the root row lock.
+        let root: Json<crate::tasks::RootRecord> = sqlx::query_scalar(
+            "SELECT record FROM task_roots WHERE consumer_id=$1 AND root_task_id=$2",
+        )
+        .bind(consumer)
+        .bind(&root_task_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Fault::Denied)?;
+        root.0.scope.recovery(&claims)?;
+        // A terminal outcome may have committed while authentication was in
+        // progress. Read its latest committed state without blocking its owner.
+        let attempt: AttemptView = sqlx::query_as(
+            "SELECT attempt_id,consumer_id,root_task_id,task_id,generation,effect_owner,\
+             effect_intent_id,action,request_sha256,state,result_ref FROM attempts \
+             WHERE attempt_id=$1 AND consumer_id=$2 AND root_task_id=$3 AND generation=$4",
+        )
+        .bind(attempt_id)
+        .bind(consumer)
+        .bind(&root_task_id)
+        .bind(generation)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Fault::Denied)?;
         claims.fresh(Self::now(&mut tx).await?.timestamp())?;
         tx.commit().await?;
         Ok(attempt)
