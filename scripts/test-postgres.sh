@@ -2,13 +2,13 @@
 # Creates and deletes only this invocation's disposable PostgreSQL container.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-test_filter=()
+test_filter=''
 if (( $# != 0 )); then
   if (( $# != 2 )) || [[ "$1" != --case || "$2" == *[!a-zA-Z0-9_:]* ]]; then
     echo 'Usage: scripts/test-postgres.sh [--case module::case_name]' >&2
     exit 2
   fi
-  test_filter=("$2")
+  test_filter="$2"
 fi
 command -v docker >/dev/null
 command -v cargo >/dev/null
@@ -40,9 +40,16 @@ docker image inspect "$postgres_image" --format '{{.Id}} {{json .RepoDigests}}'
 # scripts/local-stack.py check-publication-live. Keep this disposable-DB suite
 # focused on the eight cases it can furnish; do not turn absent stack secrets
 # into apparent product failures.
-cargo test --locked -p llull-buzz-provider --test postgres "${test_filter[@]}" -- --ignored --test-threads=1 \
-  --skip publication::live_provider_publishes_one_signed_event_to_pinned_relay \
-  --skip publication::live_relay_response_loss_reconciles_original_event_without_resend
+run_tests() {
+  cargo test --locked -p llull-buzz-provider --test postgres "$@" -- --ignored --test-threads=1 \
+    --skip publication::live_provider_publishes_one_signed_event_to_pinned_relay \
+    --skip publication::live_relay_response_loss_reconciles_original_event_without_resend
+}
+if [[ -n "$test_filter" ]]; then
+  run_tests "$test_filter"
+else
+  run_tests
+fi
 # A real server restart, not a mock repository re-instantiation. Compare durable
 # provider records without printing authentication evidence or synthetic keys.
 snapshot() {
