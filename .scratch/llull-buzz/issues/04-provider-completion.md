@@ -300,3 +300,18 @@ passed. Exact command/log hashes and limits are in
 [completion evidence](../../../docs/implementation/COMPLETION.md). This does
 not accept BZ-C08 or substitute for the missing live agent, business MCP,
 native/media gateway, composed consumer or human UAT evidence.
+
+2026-09-22 — Items 04.3/04.6: the native-roots `buzz-acp` and all four other
+pinned upstream executables built on selected Docker 29.8.1. The corrected
+distribution build at `221d4e8` packaged a target-specific inventory of 499
+Rust packages with zero missing local license texts, plus OS package/copyright
+evidence. The task-only synthetic CA let the amended ACP initialize its
+separate agent and subscribe to the authenticated WSS channel. The first
+journey runner had a Docker stdout/stderr bug; after correction,
+`gemini-3.6-flash` returned 503 and no native reply. The authorized free-tier
+`gemini-3.5-flash-lite` then returned `OK`/`end_turn` in a direct unchanged
+`buzz-agent` ACP session. A full ACP mention caused a completed model call
+but no signed bot reply. The provider still lacks the separate governed
+publisher tool and production model/task supervisor. Details and hashes are
+in [completion evidence](../../../docs/implementation/COMPLETION.md); neither
+ACP journey nor the selected production model profile is qualified.

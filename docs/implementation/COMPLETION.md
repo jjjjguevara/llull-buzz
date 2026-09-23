@@ -581,9 +581,10 @@ This is a real transport/configuration failure, not a model or agent pass.
 The pinned build currently trusts only WebPKI roots for WebSocket TLS. The
 distribution recipe now additionally enables Cargo's
 `tokio-tungstenite/rustls-tls-native-roots` feature without changing upstream
-source, so a task-local CA can qualify the selected WSS origin. The amended
-executable and complete ACP/native journey remain unexecuted; operator CA
-distribution and the agent's separation from the bot key must be checked at runtime.
+source, so a task-local CA can qualify the selected WSS origin. At that point
+the amended executable and complete ACP/native journey were unexecuted.
+Operator CA distribution and the agent's separation from the bot key require
+runtime checks.
 
 The task-owned TLS terminator subsequently served the exact advertised WSS
 host and port on a second internal Docker network, forwarding to the original
@@ -601,9 +602,9 @@ still initialized the separate `buzz-agent` but exited 1 on an unknown TLS
 issuer. Its private log SHA-256 is
 `a7dd3d0a3e4c5cc7b7d8d8e8062b2f05f684e8fefce8cd8bf17edaee548149e8`.
 This red test isolates the missing native-root feature from the previously
-observed NIP-42 URL mismatch. The amended executable build and a real
-mention-to-response ACP journey remain to be tested. These task-only TLS
-fixtures are not a production certificate or credential-delivery design.
+observed NIP-42 URL mismatch. The later amended build and journey results are
+recorded below. These task-only TLS fixtures are not a production certificate
+or credential-delivery design.
 
 ## Selected PostgreSQL runner and current source checks
 
@@ -698,3 +699,80 @@ It used the same Docker selection and `CARGO_BUILD_JOBS=1`, then
 https_consumer::https_owner_commits_once_recovers_lost_response_and_rechecks_revocation`.
 The changed code still does not mediate an actual MCP/model request, native
 subscriber, attachment byte release or composed consumer application.
+
+## Native-root upstream image and actual agent-turn boundary
+
+The selected Docker Engine 29.8.1 built all five unmodified pinned upstream
+executables at `block/buzz@01b6174a1cbad249e93f31df97d4b2ed1d0e8638`.
+The additional `buzz-acp` build enabled
+`tokio-tungstenite/rustls-tls-native-roots`; the source itself was unchanged.
+At provider source `01cdf3eca45601e8d35b7b0b31b4c6eed5e58fc8`,
+`bash scripts/build-upstream-image.sh` exited 0 with image ID
+`sha256:2825e586e8b22de794243baac27f9691cf43da128ba845b24368d960756994b3`;
+the local build log SHA-256 is
+`bc80457097ccb711106577f8b0c697ca14841f380a6541fe6ae5e167761ee3e0`.
+The Linux arm64 inventory has 499 selected Rust packages, zero missing local
+license texts and manifest SHA-256
+`60b473a0b34b7cf7e1fd141c17490fb5df5792c850fcfb8655c48aa8156c309c`.
+The runtime image records 114 OS package rows and verifies installed copyright
+file hashes. The `buzz-acp` executable SHA-256 is
+`f270faf5ae00f4d6c533f4f53bdfb4c217a1a34e466a3c0ebc48ac463b858f8e`.
+
+The first image's inventory step unnecessarily invoked the upstream default
+Rust toolchain for `cargo metadata`, even though the binaries and inventory
+script used 1.98.1. Commit `221d4e8ad1ebd477ef0d385d7134ed6321328725`
+pins metadata to 1.98.1 as well. A second selected-engine build from that
+committed source exited 0 with image ID
+`sha256:4a568ca4afebb23cda22ae1f803cea4ddf160af758968bdc0953dea9c3a6f174`.
+Its build log SHA-256 is
+`529a2783cee6f8e80caf433d243e723d2fb6b89647e6bdb759b1d14897de5048`;
+its inventory again reported 499 selected packages and zero missing texts,
+with the same manifest digest.
+The first image remains the exact base used for the following native-root test
+image; the second image is the corrected distribution artifact. This is
+target-specific inventory evidence, not a resolution of the previously
+recorded pinned-upstream `quick-xml` advisories or a production CA rollout.
+
+The task-only test image containing the amended ACP and synthetic CA built with
+image ID `sha256:77b603b39a8c25b2da10183bf671684b0e39242889f2c01b7f9b11cf512d14c4`
+(build log SHA-256
+`cd898f602d72f5bfafc30d4f33bece325b6de43df562f9876b2bf229b49efe56`).
+The first mention journey timed out because its runner read only Docker's
+stderr stream while ACP logged readiness to stdout; its log SHA-256 is
+`c4c95c42b5192b92e0a987e6c242fd52d21aae60960d06cbc298382a06d47eeb`.
+After correcting that harness error, ACP initialized the separate pinned agent,
+verified the synthetic WSS relay and subscribed to the authorized channel.
+The `gemini-3.6-flash` model service then returned HTTP 503 `UNAVAILABLE`
+after three attempts; no signed reply was produced. The corrected failed
+runner log SHA-256 is
+`aea83a966e3b5577c0cc41bdb3195ec55e6ae1c418d7b5548fbe3a147afc7b76`.
+
+The [published Google free-tier schedule](https://ai.google.dev/gemini-api/docs/pricing)
+lists `gemini-3.5-flash-lite` as free for standard input and output. The
+existing synthetic project listed that model, and one bounded direct
+Chat Completions request returned HTTP 200 and `OK`. The task-owned test proxy
+and separate agent bridge were switched to that model without placing its API
+key in the agent container. The proxy image ID is
+`sha256:8dc8d633db8514ba51b98a17b246b5c8b88d9131a2a05c5e0947a3ddec0b67bd`.
+A direct ACP `initialize` → `session/new` → `session/prompt` using the unchanged
+`buzz-agent` and a 512-token output bound exited 0: `agent_message_chunk`
+contained `OK`, followed by `end_turn` (log SHA-256
+`1fd68012f62e5d1a43272904fa515b4d12a63dac72b4cfe4f0f4a319b3b3302c`).
+The request-count cap in this disposable proxy is process-local; it is not
+the required durable root/task budget or production model gateway.
+
+The full ACP mention journey with the same free model still exited 1: agent
+stderr recorded a completed model call (677 input, 89 output tokens), but the
+private channel retained only the two synthetic owner mentions and no signed
+bot reply. The runner and ACP log SHA-256 values are respectively
+`d6766b532db9562fac4a94f2381e92d0eb8b5f95abab648a66a2515fb51d728e`
+and `3fb8a0768bedf4ac66e93f53357fa594fd32c51a7fe28b5bab060484acbdfbc2`.
+The completed agent call's private stderr log SHA-256 is
+`cf5b9987a70fae4b7561d2f7d6268079af9141202000f68eb5a6572f78e8e1ee`.
+An [upstream report](https://github.com/block/buzz/issues/6160) describes
+plain-text agent turns that finish without posting to the channel unless the
+agent uses an explicit send path. That is a plausible explanation here, not
+a proven diagnosis of this pinned executable. The accepted profile therefore
+still needs its separate governed publisher tool, actual supervised task/model
+and MCP dispatch, and mediation of every native content surface. No ACP success,
+production model amendment or native-reply qualification is claimed.
