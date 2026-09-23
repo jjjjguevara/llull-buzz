@@ -752,7 +752,7 @@ enableUpsert = true
                     "--mount", f"type=volume,src={target},dst=/source/target,readonly",
                     "--entrypoint", "sh", builder, "-c",
                     'export TEST_DATABASE_URL="$DATABASE_URL"; exec "$@"', "sh", found[0],
-                    "live_provider_publishes_one_signed_event_to_pinned_relay",
+                    "publication::live_",
                     "--ignored", "--test-threads=1", "--nocapture", check=False, timeout=120)
         except subprocess.TimeoutExpired as error:
             raise RuntimeError("Live publication test timed out") from error
@@ -767,7 +767,8 @@ enableUpsert = true
         with open(log, "wb", opener=lambda p, f: os.open(p, f, 0o600)) as out:
             out.write(data)
         require(compiled is not None and compiled.returncode == 0 and
-                executed is not None and executed.returncode == 0,
+                executed is not None and executed.returncode == 0 and
+                b"test result: ok. 2 passed; 0 failed" in executed.stdout,
                 "Live publication test failed; inspect private log " + str(log))
         report = {"test_source_sha": source_sha,
                   "provider_source_sha": self.state["provider_source_sha"],
@@ -776,7 +777,8 @@ enableUpsert = true
                   "task_owned_target_cache": target,
                   "log_sha256": hashlib.sha256(data).hexdigest(),
                   "live_http_publication_and_same_command_retry": True,
-                  "scope": "real provider, PostgreSQL and relay; external TLS and lost native response separate"}
+                  "lost_native_response_reconciled_without_resend": True,
+                  "scope": "real provider, PostgreSQL and relay; external TLS and process-death fault separate"}
         save(self.directory / "live-publication-check.json", report)
         print(json.dumps(report, indent=2))
 

@@ -2,7 +2,7 @@
 //! separate from the pinned relay/client integration scenario.
 use super::*;
 use llull_buzz_provider::{Audience, NativeEventSource, PublicationPort, Publisher};
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 
 struct Sink {
     key: nostr::PublicKey,
@@ -301,5 +301,180 @@ async fn live_provider_publishes_one_signed_event_to_pinned_relay() {
             "signed_event_recovered_from_relay": true,
             "same_command_retry_reused_event": true,
         })
+    );
+}
+
+struct RelayFaultProxy {
+    client: reqwest::Client,
+    lose_committed_response: AtomicBool,
+    submissions: AtomicUsize,
+}
+
+async fn relay_fault_proxy(
+    axum::extract::State(proxy): axum::extract::State<Arc<RelayFaultProxy>>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let target = format!(
+        "http://buzz-relay.synthetic.invalid:3000{}",
+        uri.path_and_query()
+            .map_or(uri.path(), |value| value.as_str())
+    );
+    let mut request = proxy.client.post(target).body(body);
+    for name in ["host", "authorization", "content-type"] {
+        if let Some(value) = headers.get(name) {
+            request = request.header(name, value);
+        }
+    }
+    let Ok(response) = request.send().await else {
+        return axum::http::StatusCode::BAD_GATEWAY.into_response();
+    };
+    let status = response.status();
+    let Ok(bytes) = response.bytes().await else {
+        return axum::http::StatusCode::BAD_GATEWAY.into_response();
+    };
+    if uri.path() == "/events" {
+        proxy.submissions.fetch_add(1, Ordering::SeqCst);
+        let committed = status.is_success()
+            && serde_json::from_slice::<Value>(&bytes)
+                .is_ok_and(|receipt| receipt["accepted"] == true);
+        if committed && proxy.lose_committed_response.swap(false, Ordering::SeqCst) {
+            return axum::http::StatusCode::BAD_GATEWAY.into_response();
+        }
+    }
+    (
+        axum::http::StatusCode::from_u16(status.as_u16()).unwrap(),
+        bytes,
+    )
+        .into_response()
+}
+
+/// The relay commits the original event, but the provider sees only a failed
+/// transport response. Recovery must query that original owner and never send
+/// another event, even though the publication was durably marked unknown.
+#[tokio::test]
+#[ignore = "requires the task-owned pinned relay and PostgreSQL stack"]
+async fn live_relay_response_loss_reconciles_original_event_without_resend() {
+    let config: Value = serde_json::from_slice(
+        &std::fs::read(std::env::var("NATIVE_ORIGIN_CONFIG").unwrap()).unwrap(),
+    )
+    .unwrap();
+    let secret = std::fs::read_to_string(config["service_key_file"].as_str().unwrap()).unwrap();
+    let key = nostr::Keys::parse(secret.trim()).unwrap();
+    let community = config["community_id"].as_str().unwrap();
+    let public_origin = config["public_origin"].as_str().unwrap();
+    let relay_key =
+        nostr::PublicKey::from_hex(config["relay_public_key"].as_str().unwrap()).unwrap();
+    let direct = HttpNativeOrigin::new(
+        community.into(),
+        config["private_origin"].as_str().unwrap(),
+        public_origin,
+        key.clone(),
+        relay_key,
+    )
+    .unwrap();
+    let channel = std::env::var("BZ_TEST_CHANNEL").unwrap();
+    let audience = direct.audience(community, &channel).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let proxy = Arc::new(RelayFaultProxy {
+        client: reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap(),
+        lose_committed_response: AtomicBool::new(true),
+        submissions: AtomicUsize::new(0),
+    });
+    let server_proxy = proxy.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            axum::Router::new()
+                .fallback(relay_fault_proxy)
+                .with_state(server_proxy),
+        )
+        .await
+        .unwrap();
+    });
+    let proxied = Arc::new(
+        HttpNativeOrigin::new(
+            community.into(),
+            &format!("http://127.0.0.1:{port}"),
+            public_origin,
+            key.clone(),
+            relay_key,
+        )
+        .unwrap(),
+    );
+    let publisher = Publisher::new(proxied, key, "https://provider.synthetic.invalid").unwrap();
+    let rig = Rig::new().await;
+    let text = format!("synthetic lost native response {}", Uuid::new_v4());
+    let publication = Publication {
+        community_id: rig.registration.community_id.clone(),
+        channel_id: channel,
+        audience_policy: "synthetic-private".into(),
+        audience_revision: audience.revision,
+        release_ref: Uuid::new_v4().to_string(),
+        text_sha256: sha256(text.as_bytes()),
+        text: text.clone(),
+        copy_mode: CopyMode::ExplicitCopy,
+        attachments: vec![],
+    };
+    let command = rig.command(
+        "publish",
+        rig.resource("live-lost-response-result", 1),
+        &publication,
+    );
+    let (body, signed) = signed_publication(&rig, &command);
+    let unknown = rig
+        .p
+        .publish(&body, signed.headers(), &publisher)
+        .await
+        .unwrap();
+    assert_eq!(unknown.publication.state, "unknown");
+    let id = unknown.publication.publication_id;
+    let event_id = unknown.publication.native_event_id.unwrap();
+    assert_eq!(proxy.submissions.load(Ordering::SeqCst), 1);
+    let original = direct
+        .event(
+            &publication.community_id,
+            &publication.channel_id,
+            &event_id,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        llull_buzz_provider::native::event(&original)
+            .unwrap()
+            .content,
+        text
+    );
+
+    let recovery = rig.command(
+        "reconcile-publication",
+        rig.resource(&id.to_string(), 1),
+        json!({"publication_id":id}),
+    );
+    let claims = rig.claims(&recovery, "module-a", None, None);
+    let (body, signed) = rig.prepare(
+        &format!("/integration/v1/publications/{id}/reconcile"),
+        &recovery,
+        &claims,
+    );
+    let complete = rig
+        .p
+        .reconcile_publication(id, &body, signed.headers(), &publisher)
+        .await
+        .unwrap();
+    assert_eq!(complete.state, "completed");
+    assert_eq!(complete.native_event_id.as_deref(), Some(event_id.as_str()));
+    assert_eq!(proxy.submissions.load(Ordering::SeqCst), 1);
+    server.abort();
+    println!(
+        "{}",
+        json!({"native_event_id":event_id,"original_owner_lookup":true,"relay_submissions":1})
     );
 }
