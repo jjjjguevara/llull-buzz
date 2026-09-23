@@ -1140,7 +1140,7 @@ or BZ-PF03 profile is accepted.
 The signer check alone did not cover a retained `unknown` attachment delivery:
 a retry could use its already signed bytes without calling `Publisher::sign`.
 At committed source `adced75cae5253b44f24f5e76cf1ea577c575934`, `publish`
-now fences every attachment before it loads an existing delivery row. The new
+began fencing every attachment before pending/unknown delivery. The new
 regression constructs a valid signed legacy attachment event, retains it in
 `unknown`, and retries the same authenticated publication. With only the signer
 check, the test failed (ignored red log SHA-256
@@ -1158,3 +1158,119 @@ These red/green cases used the working tree immediately before the exact code
 commit. Retained unknown attachments are deliberately not reconciled into a
 claim of safe delivery; the artifact gateway and source-byte ownership remain
 unfinished.
+
+The clean-source live runner at test source `65f227495afac123c1717a88562d41df3697ebda`
+exited 0 against the deployed `10491be` provider image, real PostgreSQL and
+unmodified pinned relay. Both Linux arm64 integration cases passed: same-command
+text publication reused the original signed event, and a relay response lost
+after commit reconciled that event through its original owner after one
+submission. The runner's private test log SHA-256 is
+`b04151393856f385d870c5c826a3e5e5d51a8f184feceb1e84314c37f9e5e649`;
+its operator log SHA-256 is
+`107e48a3ff9cc5c46fa9dc07543f0973e045ac71959bfe2d5b4f0a3f0a364c54`.
+These cases use text-only publications; they do not qualify attachment
+disclosure or the later retry guard.
+
+The exact committed `d6757eb6a61a6b4d4aec825994e454143884a275` image
+build with the inspected tagged cached builder exited 0 (log SHA-256
+`ab2bc41ca06616708d84f90dd3e312d268fecbc1d87f4b532d0068123f61e65d`).
+Image ID:
+`sha256:28eaa144d2ddc41bad8c65fbf0ce0e9904a626fcb8a2400d038f68631bffb864`;
+Linux arm64 provider binary SHA-256:
+`a287d244dce7356c8b2fd5c1a99b9541a90cdd9e881d3d2d6c83a95c1681dd3a`.
+The Rust notice manifest SHA-256 remained
+`d59fddc4978a97045979c56da293edfbb40354af2128081d3131258aea47d4f8`,
+with 91 OS package rows and 90 copyright-file hashes. Deployment switched
+only the task-owned provider container (log SHA-256
+`1548b57208555d9a2739187f86da4e61de902b789fc426de5850102ff5395a2a`).
+Health exited 0 on the private network without host ports and still reported
+model/native/media gateways unconfigured (log SHA-256
+`9f1b537edb706686a5211b8cf929d32f525d1f4a895beec3424707651a0feb49`).
+The native-origin probe exited 0 with the original event and audience (log
+SHA-256 `e76b97e55e5fcbf1b5f527a1d1db140ffe35c0afff165f2099625b8cef38b8e5`).
+This is an exact-source local image and boot check, not a clean dependency build
+of the latest source or a live attachment test.
+
+At committed `d6757eb`, `bash scripts/test-postgres.sh` exited 0 on the
+selected Docker 29.8.1 VM (ignored log SHA-256
+`dd10f5ffa779f0a6fd2cc82317d6ec93a9f866beaf0e3027fbf1e98b3aaaa2b1`).
+The runner discovered and passed all **ten** non-live real PostgreSQL 16.15
+scenarios, including the first-dispatch and retained-unknown attachment guard,
+real HTTPS synthetic owner, native intake, scoped observations, snapshots,
+and the 161-second foundation concurrency/budget/lease case. Every case used
+its own disposable database, restarted that PostgreSQL server, and matched
+the before/after provider-record digest. No task-owned disposable test database
+container remained. The two separately executed live relay cases above are
+not counted among these ten. This is local qualification, not a hosted Actions
+run, whole media proof, or human UAT acceptance.
+
+At `d6757eb`, the attachment fence also rejected an authenticated retry of a
+legacy delivery already marked completed. That hid truthful terminal status
+from the same command, although `observe-publication` remained available.
+The added real PostgreSQL regression failed before remediation (ignored red
+log SHA-256 `0a94454d695834b5825c2a73d427ef22ea58cd5eb24bbe2074d98e09adde2de2`).
+Committed source `742dd78e5e9ec6e546a9d9c9b811e116ccccad2c` now checks the
+original owner and terminal state first. Completed/denied deliveries return
+their retained identity without another send; pending/unknown attached
+deliveries remain unavailable before signing or dispatch. The strengthened
+case passed after this change, including one unknown and one completed legacy
+retry, zero native submits, and a matching PostgreSQL restart digest (working
+tree green log SHA-256
+`a5f4742a108cc4ab4cc51d1912fcc7de46223cffedc517e6b37182af3d412d20`).
+The text-only publication positive/recovery case also passed with a real
+restart (log SHA-256
+`37b900e6f92f7c71d17cd0b24b42594c2ee157ad07202f3cdcab66210f89ddea`).
+Formatting and strict locked all-target Clippy exited 0 (Clippy log SHA-256
+`b4cef1aa72d39bd93674d5c1dd6fd11d01defed22a7c0688155bd9c8a4bf783f`).
+
+The clean dependency build archived the earlier `d6757eb` source. It was
+cancelled at exit 130 after the terminal-replay fix made that archive stale;
+its incomplete log SHA-256 is
+`5fa7c05d6f58d2e51e2dde03db56fa80800486407829f2e3dd80355783ff99f5`.
+It is not a successful clean build. A new clean build of committed `742dd78`
+completed separately with the selected Docker 29.8.1 engine (log SHA-256
+`6eb0838e9e353f0cd4ed34a32b24c84a04f0856a25cf82f4984cae7e293d15ca`).
+The Git-archive source label exactly matches
+`742dd78e5e9ec6e546a9d9c9b811e116ccccad2c`; image ID is
+`sha256:688923870823626392c70851412f364cd79eccefca1023834d9fb3055d777607`,
+Linux arm64 provider binary SHA-256 is
+`7203453c44946619138e8bc09db3c570ff169f5219200725b84d73e449bec29e`,
+and the included Rust notice manifest SHA-256 is
+`d59fddc4978a97045979c56da293edfbb40354af2128081d3131258aea47d4f8`.
+The build reported 221 applicable Rust packages and zero missing local license
+texts; the image includes 91 OS package rows and 90 copyright-file hashes.
+The Dockerfile checked both binary and OS copyright checksums before export.
+
+Only the task-owned provider container was switched to this image (deployment
+log SHA-256 `e04f5b49519192ccd20542bd2ccd954a270adff90e939cc81566a3bbd20515ac`).
+`check-provider` exited 0 with private networking, no host ports, inactive
+profile, and model/native/media gateways still unconfigured (log SHA-256
+`dcd9488cda0b358bdcd0fb5d1a721a575b031cb1a9b9ab286069f485ff989063`).
+The fixed native-origin probe recovered the same original signed event and
+audience (log SHA-256
+`e76b97e55e5fcbf1b5f527a1d1db140ffe35c0afff165f2099625b8cef38b8e5`).
+This is a local clean distribution build and private boot check, not a complete
+native/media/agent UAT or production deployment.
+
+The first post-build full PostgreSQL command at `742dd78` exited 1 before its
+first test assertion: Docker reported that the disposable PostgreSQL container
+was not running (ignored failure log SHA-256
+`11a0b55d9c957d13d61ec44d9808518f72cc3948ecc5d1cd7a6350390dfa33a7`).
+The selected VM had 27 MB free on its 32 GB Docker partition and healthy
+available memory. The runner removed the failed disposable container before
+its logs were captured, so disk pressure is the supported explanation, not a
+proven PostgreSQL error code. Two zero-attachment cache volumes labeled with
+the exact task owner, `bz-completion-1866114f818d-live-test-target` (975 MB)
+and `bz-completion-1866114f818d-live-test-cargo-cache` (602.5 MB), were removed
+by exact name. No shared Docker daemon, VM, network or unrelated volume was
+stopped or pruned. Available Docker partition space rose to 1.6 GB.
+
+The same `bash scripts/test-postgres.sh` command then exited 0 at committed
+`742dd78` (ignored retry log SHA-256
+`34e70b6bb842be90370d33e7050cc2341713f50ecdbe4479139784f141e08242`).
+All ten non-live real PostgreSQL/signature scenarios passed in separate
+disposable databases, each followed by a matching real server-restart digest.
+The final foundation case took 169 seconds. No `llull-buzz-pg-*` container
+remained after the run; the Docker partition had 1.1 GB free. The two earlier
+live relay cases retain their own image/test-source identities and are not
+counted as final-source attachment or native-client qualification.

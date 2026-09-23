@@ -176,7 +176,7 @@ resolve the reviewer's findings as the implementation agent.
 
 Use [completion evidence](COMPLETION.md) for current command results and exact
 tested revisions. HTTPS consumer commit fencing, signed text publication,
-selected-engine builds, nine isolated PostgreSQL cases and a protected synthetic
+selected-engine builds, ten isolated PostgreSQL cases and a protected synthetic
 native-key restore have local passes at their recorded sources. Model dispatch,
 consequential MCP bridging, native/media gateway coverage, production backup
 escrow and complete distribution applicability remain open. BZ-UAT01..05 are
@@ -202,3 +202,12 @@ The exact passing command inputs, image IDs and limits are in
 require the explicit `--allow-legacy-plaintext-keys` flag; they are historical
 evidence, not the new backup format. Full production key escrow and whole-archive
 protection remain to be implemented.
+
+Before running another disposable PostgreSQL suite after an image build,
+check free space on the selected VM's Docker partition. One local invocation
+failed during database container startup with only 27 MB free; after removing
+two verified, unattached task-owned live-test cache volumes by exact name, the
+same suite passed with 1.6 GB available. Preserve failed logs. Remove only
+resources whose owner label and lack of active mounts are verified; never
+globally prune or stop a shared daemon/VM. The exact failure, retry and cleanup
+are in [completion evidence](COMPLETION.md).

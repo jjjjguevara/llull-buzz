@@ -428,3 +428,39 @@ retry before the top-level check and passed after it. The original unknown row
 and event ID remained intact, with zero native submit calls after the guard;
 restart digests matched. This remains an interim boundary while actual
 artifact-specific media delivery and native-client qualification are open.
+
+2026-09-23 — Item 04.6: all ten discovered non-live PostgreSQL/signature
+scenarios passed at committed `d6757eb`, each with its own selected PostgreSQL
+16.15 container and matching real server-restart digest. This includes both
+attachment first-dispatch/retained-unknown denial and text publication's
+positive/recovery path. The earlier clean-source live runner passed its two
+actual relay text-publication cases against image source `10491be`; the
+`d6757eb` image booted privately with health/origin checks. Full native/media,
+model/MCP, composed Akita and human UAT remain open.
+
+2026-09-23 — Item 04.4 follow-up: `742dd78` restores truthful terminal
+publication retry behavior for legacy attached events. The focused
+PostgreSQL/signature case first failed because the earlier fence hid completed
+status, then passed after the guard moved behind original-owner/terminal-state
+lookup but ahead of pending/unknown dispatch. A text-only positive/recovery
+case and strict Clippy also passed. This does not authorize attached media
+delivery or accept a full native/media proof profile.
+
+2026-09-23 — Item 04.6: the first clean build after the terminal fix was
+cancelled at exit 130 because it archived superseded source `d6757eb`.
+A new clean independent build of committed `742dd78` exited 0 on selected
+Docker 29.8.1 with 221 applicable Rust notices (zero missing), 91 OS package
+rows and 90 copyright-file hashes. The exact-source image booted in the
+task-owned private stack; health and fixed native-origin checks passed.
+The model/native/media gateway flags remain false and no whole capability,
+proof profile or human UAT is accepted.
+
+2026-09-23 — Item 04.6: the first final-source ten-case suite invocation
+stopped before an assertion when its disposable PostgreSQL container exited.
+The selected VM Docker partition had only 27 MB free. Two unattached,
+exact-owner live-test cache volumes totaling about 1.6 GB were removed by
+name; no shared resource or global prune was used. The same command then
+passed all ten cases and ten real PostgreSQL restart comparisons at committed
+`742dd78`, including the terminal-truth attachment regression. The original
+startup failure remains in the evidence; no entire BZ-C01..08 profile is
+accepted.
