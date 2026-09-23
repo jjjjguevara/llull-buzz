@@ -200,8 +200,12 @@ async fn attachment_publication_keeps_admission_without_unsafe_native_delivery()
         calls: AtomicUsize::new(0),
         lose: AtomicBool::new(false),
     });
-    let publisher =
-        Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap();
+    let publisher = Publisher::new(
+        sink.clone(),
+        key.clone(),
+        "https://provider.synthetic.invalid",
+    )
+    .unwrap();
     let text = "Synthetic attachment announcement";
     let publication = Publication {
         community_id: rig.registration.community_id.clone(),
@@ -241,6 +245,64 @@ async fn attachment_publication_keeps_admission_without_unsafe_native_delivery()
         .unwrap();
     assert_eq!(admission_count, 1);
     assert_eq!(delivery_count, 0);
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+
+    // Simulate an unknown signed attachment retained by a previous provider
+    // version. A retry must not bypass the gate merely because signing is done.
+    let (admit_body, admit_signed) = signed_publication(&rig, &command);
+    let admitted = rig
+        .p
+        .admit_publication(&admit_body, admit_signed.headers())
+        .await
+        .unwrap();
+    let publication_id = Uuid::parse_str(&admitted.receipt.operation_id).unwrap();
+    let channel = Uuid::parse_str(&publication.channel_id).unwrap();
+    let media = vec![vec![
+        "imeta".into(),
+        "url https://provider.synthetic.invalid/media/legacy".into(),
+        format!("x {}", publication.attachments[0].sha256),
+        "m image/png".into(),
+        "size 26".into(),
+    ]];
+    let original = buzz_sdk::build_message(channel, text, None, &[], false, &media, &[])
+        .unwrap()
+        .sign_with_keys(&key)
+        .unwrap();
+    let original_bytes = serde_json::to_vec(&original).unwrap();
+    let audience = Audience {
+        community_id: publication.community_id.clone(),
+        channel_id: publication.channel_id.clone(),
+        revision: publication.audience_revision.clone(),
+        members: BTreeSet::from([key.public_key().to_hex()]),
+    };
+    sqlx::query("INSERT INTO publication_deliveries(publication_id,consumer_id,module_id,context_domain,owner,native_event_id,signed_event,event_sha256,audience,state) VALUES($1,$2,'module-a','synthetic-domain','synthetic-native-origin',$3,$4,$5,$6,'unknown')")
+        .bind(publication_id)
+        .bind(&command.consumer_id)
+        .bind(original.id.to_hex())
+        .bind(&original_bytes)
+        .bind(sha256(&original_bytes))
+        .bind(sqlx::types::Json(&audience))
+        .execute(&rig.pool)
+        .await
+        .unwrap();
+    let (retry_body, retry_signed) = signed_publication(&rig, &command);
+    let retry = rig
+        .p
+        .publish(&retry_body, retry_signed.headers(), &publisher)
+        .await;
+    assert!(matches!(
+        retry,
+        Err(ProviderError::Admission(Fault::Unavailable))
+    ));
+    let retained_state: String = sqlx::query_scalar(
+        "SELECT state FROM publication_deliveries WHERE publication_id=$1 AND native_event_id=$2",
+    )
+    .bind(publication_id)
+    .bind(original.id.to_hex())
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(retained_state, "unknown");
     assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
 }
 

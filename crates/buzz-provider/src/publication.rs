@@ -195,6 +195,12 @@ impl Provider {
         publisher: &Publisher<P>,
     ) -> Result<PublishResult> {
         let (admission, permit) = self.prepare_publication(body, headers).await?;
+        // This check must precede loading an existing delivery: an unknown
+        // attachment event signed by an older process must not be resubmitted
+        // through the unmediated media route during a retry.
+        if !permit.publication.attachments.is_empty() {
+            return Err(Fault::Unavailable.into());
+        }
         let mut tx = self.begin().await?;
         let mut view = Self::publication_view(&mut tx, permit.publication_id).await?;
         if view
