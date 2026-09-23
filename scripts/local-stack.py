@@ -705,7 +705,7 @@ enableUpsert = true
                 "--mount", f"type=volume,src={self.name('provider-secrets')},dst=/run/bz-provider,readonly",
                 "--mount", f"type=volume,src={volume},dst=/next-source,readonly",
                 "--workdir", "/next-source", "--entrypoint", "bash", builder,
-                "-lc", 'export TEST_DATABASE_URL="$DATABASE_URL" CARGO_TARGET_DIR=/source/target CARGO_BUILD_JOBS=1; cargo +1.98.1 test --offline --locked -p llull-buzz-provider --test postgres live_provider_publishes_one_signed_event_to_pinned_relay -- --ignored --test-threads=1 --nocapture',
+                "-c", 'export TEST_DATABASE_URL="$DATABASE_URL" CARGO_TARGET_DIR=/source/target CARGO_BUILD_JOBS=1; /usr/local/cargo/bin/cargo +1.98.1 test --offline --locked -p llull-buzz-provider --test postgres live_provider_publishes_one_signed_event_to_pinned_relay -- --ignored --test-threads=1 --nocapture',
                 check=False, timeout=1800)
         except subprocess.TimeoutExpired as error:
             if self.inspect("container", name):
