@@ -124,6 +124,7 @@ impl Rig {
             "register-intake",
             "reconcile-publication",
             "observe-publication",
+            "observe-effect",
             "create-snapshot",
             "read-snapshot",
             "ack-snapshot",
@@ -611,6 +612,91 @@ fn permit(admission: ToolAdmission<SetLabel>) -> DispatchPermit<SetLabel> {
         ToolAdmission::Dispatch(p) => *p,
         _ => panic!("expected one new durable reservation"),
     }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn effect_result_reference_is_recoverable_only_in_its_original_scope() {
+    let rig = Rig::new().await;
+    let native = nostr::Keys::generate();
+    let (binding, _, _) = rig.enroll("module-a", &native).await;
+    let (other, _, _) = rig.enroll("module-b", &native).await;
+    let task = rig.start(Some(&binding), "module-a", 600).await;
+    rig.worker(&task, Some(&binding), "module-a", 1, false)
+        .await;
+    let call = rig.tool(&task, 1);
+    let attempt = rig
+        .p
+        .dispatch(
+            permit(rig.admit(&call, Some(&binding), "module-a").await.unwrap()),
+            &Consumer::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(attempt.state, "completed");
+    let completion = rig.command(
+        "complete-task",
+        rig.resource(&task.task_id, 1),
+        CompleteTask {
+            task_id: task.task_id.clone(),
+            expected_generation: 1,
+            completed_effects: vec![CompletedEffect {
+                attempt_id: attempt.attempt_id,
+                effect_owner: attempt.effect_owner.clone(),
+                effect_intent: attempt.effect_intent_id.clone(),
+                request_sha256: attempt.request_sha256.clone(),
+                result_ref: attempt.result_ref.clone().unwrap(),
+            }],
+        },
+    );
+    let claims = rig.claims(
+        &completion,
+        "module-a",
+        Some(&task.root_task_id),
+        Some(&binding),
+    );
+    let (body, h) = rig.prepare(
+        &format!("/integration/foundation/v1/tasks/{}/complete", task.task_id),
+        &completion,
+        &claims,
+    );
+    assert_eq!(
+        rig.p
+            .complete_task(&task.task_id, &body, h.headers())
+            .await
+            .unwrap()
+            .receipt
+            .execution,
+        Execution::Completed
+    );
+
+    let mut read = rig.command(
+        "observe-effect",
+        rig.resource(&attempt.attempt_id.to_string(), attempt.generation as u64),
+        json!({}),
+    );
+    read.intent_id = attempt.attempt_id.to_string();
+    let mut read_claims = rig.claims(&read, "module-a", Some(&task.root_task_id), Some(&binding));
+    read_claims.payload_sha256 = sha256(b"");
+    let read_path = format!("/integration/v1/effects/{}", attempt.attempt_id);
+    let h = rig.sign(&read_path, "GET", b"", &read_claims, INVOCATION);
+    let retained = rig
+        .p
+        .observe_effect(&read.consumer_id, attempt.attempt_id, h.headers())
+        .await
+        .unwrap();
+    assert_eq!(retained.state, "completed");
+    assert_eq!(retained.effect_owner, attempt.effect_owner);
+    assert_eq!(retained.result_ref, attempt.result_ref);
+
+    let mut other_scope = rig.claims(&read, "module-b", Some(&task.root_task_id), Some(&other));
+    other_scope.payload_sha256 = sha256(b"");
+    let h = rig.sign(&read_path, "GET", b"", &other_scope, INVOCATION);
+    assert!(rig
+        .p
+        .observe_effect(&read.consumer_id, attempt.attempt_id, h.headers())
+        .await
+        .is_err());
 }
 
 #[tokio::test]

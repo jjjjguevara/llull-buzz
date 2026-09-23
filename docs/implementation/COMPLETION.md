@@ -856,3 +856,29 @@ containers, volumes and networks remain. The source provider's health check
 still exited 0 with its `a395617` image. Protected-key restoration, a
 production backup schedule, operator encryption and a clean independent
 provider build remain open.
+
+## Retained effect-result lookup
+
+`GET /integration/v1/effects/{attempt_id}` is an owned read extension for the
+provider's durable effect ledger. Fresh service NIP-98 and ES256 invocation
+evidence must bind `observe-effect`, the exact attempt UUID, its recorded
+generation, the original root task, and the empty-body digest. Current consumer
+authority and module/context scope are checked before the provider returns
+the original owner, intent, request digest, state and result reference. The
+reference remains consumer-owned; this endpoint does not retrieve or invent
+business-result bytes. It works after task completion and denies a different
+module.
+
+The first targeted compile failed as expected because `observe_effect` did not
+exist (private log SHA-256
+`2fbbf5f97402a6f02b6234f2ad21f9615ba0d9b388af7eb1d52843f754447c39`).
+The focused real PostgreSQL/signature test then exited 0, passed one scenario,
+and verified durable provider records after a PostgreSQL restart (private log
+SHA-256
+`37e05002e7bded03c1d67883b22cd3d0c2fcd5a5ed0f013c73d2b02fd0ca97d7`).
+The earlier broad foundation test failed in its later budget stress loop with
+a worker-lease conflict while the selected VM was concurrently compiling; it
+did not fail at the new read assertion (private log SHA-256
+`e0f728de3c73466ea65412aa2bcaa09c5522e76b4af66634ca426477580e4f35`).
+The focused pass is working-tree evidence until committed-source validation;
+it does not close the full suite or retained consumer result-byte access.

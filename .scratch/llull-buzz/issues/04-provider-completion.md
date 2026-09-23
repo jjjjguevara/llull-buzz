@@ -341,3 +341,13 @@ the source provider stayed healthy. Protected-key backup/restore, production
 scheduling/encryption and a clean independent provider image remain open;
 the test does not accept whole BZ-PF05 or BZ-C08. Exact commands, identities
 and log hashes are in [completion evidence](../../../docs/implementation/COMPLETION.md).
+
+2026-09-23 — Item 04.2/04.5: a fresh signed `observe-effect` GET now returns
+the retained original owner, request identity, state and consumer result
+reference after task completion, scoped to the original root and current
+module/context authority. A focused real PostgreSQL/signature scenario passed
+and a different module was denied; the script's PostgreSQL restart preserved
+durable records. The broader foundation case hit a worker-lease conflict in
+its later budget loop while the selected VM built dependencies. The focused
+result is working-tree evidence pending committed-source checks; retained
+business-result bytes and full gateway integration remain open.

@@ -1,11 +1,11 @@
 use crate::{
-    auth::{self, Claims, Headers, Target},
+    auth::{self, Claims, Headers, SignedRequest, Target},
     db::{CommandResult, Provider, Result, Tx},
     ports::{ConsumerCommand, ConsumerPort, ConsumerResult, ConsumerStatus},
 };
 use llull_buzz_wire::{
-    canonical, digest, parse, Charge, Command, Execution, Fault, Publication, TaskManifest,
-    ToolCall,
+    canonical, digest, parse, sha256, Charge, Command, Execution, Fault, Publication, Resource,
+    TaskManifest, ToolCall,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{types::Json, Row};
@@ -60,6 +60,56 @@ pub struct RecoverEffect {
 }
 
 impl Provider {
+    /// Read the retained original-owner outcome after completion or uncertainty.
+    /// A result reference is still owned by the consumer; this endpoint never
+    /// fetches or fabricates business-result bytes.
+    pub async fn observe_effect(
+        &self,
+        consumer: &str,
+        attempt_id: Uuid,
+        headers: Headers<'_>,
+    ) -> Result<AttemptView> {
+        let mut tx = self.begin().await?;
+        let attempt = Self::attempt(&mut tx, attempt_id).await?;
+        if attempt.consumer_id != consumer {
+            return Err(Fault::Denied.into());
+        }
+        let (root, _) = Self::root(&mut tx, consumer, &attempt.root_task_id).await?;
+        let id = attempt_id.to_string();
+        let resource = Resource {
+            namespace: consumer.into(),
+            reference: id.clone(),
+            revision: u64::try_from(attempt.generation)
+                .map_err(|_| Fault::Unknown)?
+                .to_string(),
+        };
+        let (registration, claims) = self
+            .authorize(
+                &mut tx,
+                &SignedRequest {
+                    headers: &headers,
+                    body: b"",
+                },
+                auth::INVOCATION,
+                &format!("/integration/v1/effects/{id}"),
+                "GET",
+                &Target {
+                    consumer,
+                    intent: &id,
+                    operation: "observe-effect",
+                    resource: &resource,
+                    fingerprint: &sha256(b""),
+                    root: Some(&attempt.root_task_id),
+                },
+            )
+            .await?;
+        self.scope(&mut tx, &registration, &claims).await?;
+        root.scope.recovery(&claims)?;
+        claims.fresh(Self::now(&mut tx).await?.timestamp())?;
+        tx.commit().await?;
+        Ok(attempt)
+    }
+
     pub async fn admit_tool<C: ConsumerCommand>(
         &self,
         worker_id: &str,

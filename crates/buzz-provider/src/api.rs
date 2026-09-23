@@ -129,6 +129,16 @@ async fn publication_view(
             .await?,
     ))
 }
+async fn effect_view(
+    State(p): State<Provider>,
+    Path(id): Path<uuid::Uuid>,
+    h: HeaderMap,
+) -> crate::Result<Json<crate::AttemptView>> {
+    Ok(Json(
+        p.observe_effect(value(&h, "x-llull-consumer")?, id, credentials(&h)?)
+            .await?,
+    ))
+}
 async fn observations(
     State(p): State<Provider>,
     Query(query): Query<crate::ObservationQuery>,
@@ -251,6 +261,7 @@ pub fn router_with_surfaces(provider: Provider, surfaces: ConfiguredSurfaces) ->
         .route("/integration/v1/tasks/{id}/cancel", post(cancel))
         .route("/integration/v1/tasks/{id}/reconcile", post(reconcile))
         .route("/integration/v1/publications/{id}", get(publication_view))
+        .route("/integration/v1/effects/{id}", get(effect_view))
         .route("/integration/v1/evidence/{id}", get(evidence))
         .route(
             "/integration/v1/intake-registrations",
