@@ -175,7 +175,7 @@ Item 04.3: `codex exec` with ChatGPT login completed one synthetic
 SHA-256 is `49f6438698d2a939af60cd53499b7942da1d84d8d308604781c142aeee56bb69`.
 This does not cure the observed 400 for `max_output_tokens`, prove a bounded
 Buzz model proxy or execute the ACP agent loop. Pinned `buzz` CLI source also
-refuses to sign media GET for a non-relay origin; the current publisher emits
+refuses to sign media GET for a non-relay origin; the publisher at that source emitted
 provider-origin attachment URLs. Item 04.4 requires a relay-origin governed
 media gateway and actual artifact release before attachment UAT. No item or
 whole proof profile is accepted.
@@ -420,3 +420,11 @@ and a real server restart preserved the record. The existing text-only
 publication/recovery case and strict Clippy remained green. This is an interim
 fail-closed boundary, not an attachment or native-client pass; the gateway
 and full item 04.4 remain claimed.
+
+2026-09-23 — Item 04.4 follow-up: `adced75` closes the preexisting-unknown
+delivery retry path that bypassed the signer guard. A real PostgreSQL/signature
+regression retained a valid signed attachment event, then reproduced the unsafe
+retry before the top-level check and passed after it. The original unknown row
+and event ID remained intact, with zero native submit calls after the guard;
+restart digests matched. This remains an interim boundary while actual
+artifact-specific media delivery and native-client qualification are open.

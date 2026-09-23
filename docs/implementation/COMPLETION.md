@@ -384,9 +384,10 @@ mediation or a lost upstream publication response.
 Attachment compatibility is still open. The pinned
 [`buzz` CLI media URL validator](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-cli/src/client.rs#L270-L334)
 refuses to sign a media GET on an origin different from its configured relay.
-The current [publisher assembly](../../crates/buzz-provider/src/main.rs) gives
-`Publisher` the provider origin for attachment URLs, while the native client
-uses the relay origin. A governed gateway on that relay origin and actual
+At source `166702b`, publisher assembly gave `Publisher` the provider origin
+for attachment URLs, while the native client used the relay origin. Source
+`10491be` corrects that assembly and guards attachment dispatch, as recorded
+below. A governed gateway on the relay origin and actual
 artifact-specific authorization are required before attachments can work
 without bypassing release policy. This is pinned-source inspection, not a
 passing attachment test.
@@ -1085,9 +1086,9 @@ publisher assembly to derive its media URL origin from the fixed native relay
 configuration rather than the provider control origin. This is necessary for
 the pinned CLI's same-origin media URL rule, but it does **not** make media
 delivery authorized. Until a relay-origin gateway enforces artifact-specific
-release for native clients, `Publisher::sign` refuses any publication with
-attachments. The authenticated publication admission remains pending under
-its original intent; no signed event or native send is created. Text-only
+release for native clients, `Publisher::sign` refuses newly signed publications
+with attachments. The authenticated publication admission remains pending under
+its original intent; no new signed event or native send is created. Text-only
 publication is unaffected. The existing HTTP error mapping maps this guard
 to `501 unavailable`; the new regression calls the provider directly.
 
@@ -1135,3 +1136,25 @@ This is a cached-builder qualification, not a new clean independent dependency
 build. A relay-origin gateway, attachment-byte retention, native-client
 authorization, and full media disclosure proof remain open; no whole BZ-C06/07
 or BZ-PF03 profile is accepted.
+
+The signer check alone did not cover a retained `unknown` attachment delivery:
+a retry could use its already signed bytes without calling `Publisher::sign`.
+At committed source `adced75cae5253b44f24f5e76cf1ea577c575934`, `publish`
+now fences every attachment before it loads an existing delivery row. The new
+regression constructs a valid signed legacy attachment event, retains it in
+`unknown`, and retries the same authenticated publication. With only the signer
+check, the test failed (ignored red log SHA-256
+`97eaf4b9656a89c2284cba012eb1f18b3130d912dffe1c4932113c4232b769a7`).
+With the earlier `publish` check restored, it passed: the original unknown
+row and event identity stayed unchanged, no native submit was made, and the
+database snapshot matched across restart (working-tree green log SHA-256
+`f0a322b7477bcf93a6fe1dca09c13e85cc7eb97e03a7ed26cc02853de95b72dd`).
+`cargo fmt --all -- --check` and strict locked workspace/all-target Clippy
+exited 0 (Clippy log SHA-256
+`b63e8b371a5ceb134a4ced3dab46589e584cece80011b50a39f367aabf83105f`).
+The locked workspace library suite also exited 0 with twelve tests (log
+SHA-256 `655ac3b2208a36aba64df52e8477fe4927d104dbe07f9eba294342fe9556f9a6`).
+These red/green cases used the working tree immediately before the exact code
+commit. Retained unknown attachments are deliberately not reconciled into a
+claim of safe delivery; the artifact gateway and source-byte ownership remain
+unfinished.
