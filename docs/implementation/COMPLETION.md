@@ -1077,3 +1077,61 @@ power-loss/failover behavior. Earlier private test backups containing plaintext
 synthetic keys remain historical evidence and are not retroactively protected.
 The restored provider's model/native/media gateways still report unavailable;
 this result does not accept BZ-PF05 or the complete BZ-C08 capability.
+
+## Attachment publication admission guard
+
+Committed source `10491be6756953c73dd6f5a939eb0504511c8406` corrects the
+publisher assembly to derive its media URL origin from the fixed native relay
+configuration rather than the provider control origin. This is necessary for
+the pinned CLI's same-origin media URL rule, but it does **not** make media
+delivery authorized. Until a relay-origin gateway enforces artifact-specific
+release for native clients, `Publisher::sign` refuses any publication with
+attachments. The authenticated publication admission remains pending under
+its original intent; no signed event or native send is created. Text-only
+publication is unaffected. The existing HTTP error mapping maps this guard
+to `501 unavailable`; the new regression calls the provider directly.
+
+The real PostgreSQL/signature regression first failed before the guard at
+source `166702b` (ignored red log SHA-256
+`b719943cef3ae0e863b10e9bba175752e79657ea79c6363f68d67f6053fc6d19`).
+After the guard, the case passed: one retained admission, zero delivery rows,
+zero native submit calls, and identical provider-record digests across a real
+PostgreSQL restart (final working-tree log SHA-256
+`bde161069b3b4c2816b355f639e5251f556b86ea1745bfd858bd9968ce24f6a9`).
+The text-only publication positive/recovery case also passed with its real
+PostgreSQL restart (log SHA-256
+`5ce9cd1f2067657089e0f9936ebfaa662e4b8bd2c4b711949bb95b5bcee729b2`).
+`cargo fmt --all -- --check`, the provider library test, and strict locked
+workspace/all-target Clippy exited 0 on this source line (final Clippy log
+SHA-256 `a7e4e064c01db49e59d9039cc3677526447c42b8c4113ebc330f14f1d835e53e`).
+The PostgreSQL case logs were produced from the working tree immediately
+before committing these exact four changed code/test files; the image and
+live-relay checks below bind the committed tree separately.
+
+The initial cached-builder image command used a bare local image ID as the
+Dockerfile `FROM` value; BuildKit tried to resolve it as a registry reference
+and failed before source compilation (log SHA-256
+`e7d5feffb595df4a732687f90b8f2c069505733b8a8bcd8f5befd7701961e271`).
+The corrected command uses the local tagged builder after checking that its
+image ID is exactly `sha256:4e07bf3b101bb833cbe11eb67d165fb7592e56072697ba40345fa56a8b642b04`.
+`scripts/build-provider-image.sh` then exited 0 at the exact committed source
+`10491be` (log SHA-256
+`d8e8303e554f650194ad199c4b6e230a21a39952b704e01f435d178a6287b1bf`).
+The image ID is
+`sha256:cd0fbcae219245f275716697d77f38f4d06f4a000e9d6e0de114c7e48d2551ad`,
+its source label equals the full commit, and its Linux arm64 provider binary
+SHA-256 is `3556ff15b4ae17a842fd549f3677e7a22e2dbb368144471033b3b90f9b8fb01d`.
+The included Rust notice manifest SHA-256 is
+`d59fddc4978a97045979c56da293edfbb40354af2128081d3131258aea47d4f8`;
+91 OS package rows and 90 copyright-file hashes were included. The private
+deployment switched only its owned provider container to this image
+(log SHA-256 `da7292d856bb8685a0714d32a8774bec90bc28c77fe02abddfc57f31048b1866`).
+`check-provider` exited 0 with no host-published port, inactive profile and
+model/native/media gateway flags still false (log SHA-256
+`5e05fc5c2095411dd1b3f227e542f7f1044e679b21a02c701835db072fe68340`).
+The fixed native origin again recovered the original event and audience
+(log SHA-256 `e76b97e55e5fcbf1b5f527a1d1db140ffe35c0afff165f2099625b8cef38b8e5`).
+This is a cached-builder qualification, not a new clean independent dependency
+build. A relay-origin gateway, attachment-byte retention, native-client
+authorization, and full media disclosure proof remain open; no whole BZ-C06/07
+or BZ-PF03 profile is accepted.

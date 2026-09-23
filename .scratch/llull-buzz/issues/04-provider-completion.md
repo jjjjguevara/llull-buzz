@@ -410,3 +410,13 @@ Production key escrow, whole-archive encryption/authentication, backup schedulin
 failover, model/MCP/native/media gateways, composed Akita results and human UAT
 remain claimed work. Historical private plaintext-key backups are preserved as
 past test evidence and require an explicit legacy restore flag.
+
+2026-09-23 — Item 04.4: `10491be` binds prospective attachment URLs to the
+configured native relay origin and prevents signing/dispatch of attached
+publications until artifact-specific media release is installed. A new
+PostgreSQL/signature case was red before the guard and green afterward: its
+authenticated intent stayed pending, no delivery row or relay submit appeared,
+and a real server restart preserved the record. The existing text-only
+publication/recovery case and strict Clippy remained green. This is an interim
+fail-closed boundary, not an attachment or native-client pass; the gateway
+and full item 04.4 remain claimed.
