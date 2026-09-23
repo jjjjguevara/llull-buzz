@@ -978,10 +978,12 @@ async fn zz_postgres_foundation_contracts() {
         .await
         .is_err());
     rig.cancel(&budget, Some(&other), "module-b", 2).await;
-    let expired = rig.start(Some(&other), "module-b", 2).await;
+    // Leave room for an overloaded test host to complete the signed claim;
+    // the real-clock denial is checked only after the full deadline passes.
+    let expired = rig.start(Some(&other), "module-b", 10).await;
     rig.worker(&expired, Some(&other), "module-b", 1, false)
         .await;
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_secs(11)).await;
     assert!(rig
         .admit(&rig.tool(&expired, 1), Some(&other), "module-b")
         .await
