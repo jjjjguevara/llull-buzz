@@ -18,6 +18,10 @@ RUN cargo +1.98.1 build --locked --release \
     -p buzz-agent --bin buzz-agent -p buzz-acp --bin buzz-acp \
     -p buzz-relay --bin buzz-relay -p buzz-cli --bin buzz \
     -p buzz-admin --bin buzz-admin
+# Keep the accepted upstream source unchanged while allowing an operator CA
+# for the selected WSS endpoint and isolated TLS qualification.
+RUN cargo +1.98.1 build --locked --release -p buzz-acp --bin buzz-acp \
+    --features tokio-tungstenite/rustls-tls-native-roots
 COPY scripts/distribution-inventory.py /inventory/scripts/distribution-inventory.py
 COPY deploy/licenses/ /inventory/deploy/licenses/
 RUN mkdir -p /image/opt/llull/upstream /image/usr/share/doc/buzz-upstream && \
@@ -27,9 +31,12 @@ RUN mkdir -p /image/opt/llull/upstream /image/usr/share/doc/buzz-upstream && \
     find . -maxdepth 1 -type f \( -iname 'LICENSE*' -o -iname 'NOTICE*' \) \
        -exec cp {} /image/usr/share/doc/buzz-upstream/ \; && \
     (cd /image && sha256sum opt/llull/upstream/*) > /image/usr/share/doc/buzz-upstream/SHA256SUMS && \
-    cargo metadata --locked --format-version 1 > /image/usr/share/doc/buzz-upstream/cargo-metadata.json && \
+    cargo metadata --locked --format-version 1 \
+      --features tokio-tungstenite/rustls-tls-native-roots \
+      > /image/usr/share/doc/buzz-upstream/cargo-metadata.json && \
     python3 /inventory/scripts/distribution-inventory.py --workspace /upstream \
       --package buzz-agent,buzz-acp,buzz-relay,buzz-cli,buzz-admin \
+      --feature tokio-tungstenite/rustls-tls-native-roots \
       --target aarch64-unknown-linux-gnu \
       --output /image/usr/share/doc/buzz-upstream/third-party
 FROM ${RUNTIME_IMAGE}

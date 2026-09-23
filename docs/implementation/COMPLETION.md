@@ -391,6 +391,38 @@ artifact-specific authorization are required before attachments can work
 without bypassing release policy. This is pinned-source inspection, not a
 passing attachment test.
 
+The subsequent archived test source
+`68cc4d2498429c271341650b0e743da02644abb9` added a relay fault proxy
+that forwards a signed `/events` request to the real pinned relay, waits for
+its accepted receipt, then returns HTTP 502 to the provider. The provider
+recorded an unknown publication; reconciliation queried the original relay
+owner and completed the same signed native event. The test observed one relay
+submission. `check-publication-live` exited 0 in the selected Linux arm64
+runtime with **two passed, zero failed** tests, including the earlier positive
+publish/same-command retry. Its private combined log SHA-256 is
+`c527f91e5e7d6470d99b5fa218706512ac7977fbbd38ef6bee8bc19e5584c2ae`;
+the build took 23 minutes 49 seconds and test execution 9.04 seconds. The
+provider source/image remained
+`e87d1b87571e28bf99531cba670e5ecba889b575` /
+`sha256:daba1b7d778e8f17140ef2d41568a1683046c621a88eda2aab7a7bdafebcf50c`.
+`check-provider` exited 0 afterward, with model/native/media gateways still
+disabled and the restricted profile inactive. This qualifies relay response
+loss and original-owner lookup for text publication; process death after
+dispatch, changed audience, attachments and client-gateway delivery remain
+separate tests.
+
+A subsequent quiesced `backup-storage` from the source stack and fresh
+`restore-storage` into independently owned namespace
+`6b06c138d9864adf9b92018ce4f168d9` both exited 0. The backup manifest
+SHA-256 was `da8e9a74e54ea59b2f95d5594b2f1432da2e89e2f6cd1712636d9b2ea0fe92e6`.
+The restore compared all five completed publication rows, including the
+lost-response event identity and signed-byte digests, found the original native
+event and media bytes, and rechecked revoked-channel denial. Its private
+`restore-check.json` records `exact_event_and_media_recovered: true`,
+`revoked_channel_read_denied: true`, and `publication_rows_recovered: 5`.
+Protected production-key restoration and restoration of an unresolved in-flight
+effect remain unqualified.
+
 ## Distribution inventory in progress
 
 Host `cargo +1.98.1 metadata --locked --offline` resolved 338 workspace graph
@@ -466,3 +498,89 @@ or unlimited subscription capacity is inferred. Credential values are never reco
 The [official authentication documentation](https://learn.chatgpt.com/docs/auth)
 distinguishes ChatGPT subscription authentication from API-key billing. That distinction
 remains explicit in the amended configuration and eventual evidence.
+
+## Free-tier Gemini test route and upstream agent execution
+
+The owner subsequently authorized a new Google free-model test API in the existing
+`llull-buzz` Cloud project. Google AI Studio imported that project, but its first
+key-creation attempt returned “The request is suspicious.” The Google Cloud CLI
+then enabled `generativelanguage.googleapis.com`, `apikeys.googleapis.com`, and
+`iam.googleapis.com`; a dedicated service account and a service-account-bound,
+Generative-Language-only key were created. The first CLI creation unexpectedly
+printed key material despite an output-format restriction. That key was deleted
+immediately. The replacement was captured only to an ignored local file,
+`artifacts/completion/secrets/gemini-api-key` (mode 0600). An active-key listing
+showed one bound, API-restricted replacement and no deleted original. Cloud Billing
+reported `billingEnabled: false`; AI Studio showed this key's project as **Free
+tier**. No paid billing account or test-spend ceiling was added. Google documents
+the [auth-key requirement](https://ai.google.dev/gemini-api/docs/api-key),
+[OpenAI Chat Completions compatibility](https://ai.google.dev/gemini-api/docs/openai),
+and [Gemini 3.6 Flash free-tier pricing](https://ai.google.dev/gemini-api/docs/pricing).
+
+The currently available `gemini-3.6-flash` returned HTTP 200 for bounded Chat
+Completions. A 64-token request returned `finish_reason=length` without visible
+content; a 256-token request with `reasoning_effort=low` returned `OK` and
+`finish_reason=stop`. A synthetic `set_label` tool-call probe with a 512-token
+bound returned one structured call containing the requested item and label.
+`gemini-2.5-flash` returned HTTP 404 for this new project, with Google's model
+retirement message. These are transport probes, not business effects.
+
+The unmodified pinned `buzz-agent` executable from upstream image
+`sha256:a66ab3005e2a458772109b98233bf5a48c21315e80bf55d703381e94acefa5b4`
+also completed a real ACP `initialize` → `session/new` → `session/prompt` turn.
+It emitted an `OK` message chunk and `stopReason=end_turn`; the private result
+SHA-256 is `1fd68012f62e5d1a43272904fa515b4d12a63dac72b4cfe4f0f4a319b3b3302c`.
+The agent ran without the Google key on the task-owned internal Docker network.
+A task-owned, locally scripted test proxy held the key in a read-only secret
+volume, used a separate egress network, and enforced one model, low reasoning,
+a 1,024-token per-request maximum and a four-request process-local limit.
+Its image ID was
+`sha256:f0f9abb1515abf91dfd32b12d60347241731f5ace95f6d11a04e6da182230c1b`.
+The proxy was an ignored local test harness, not a durable model gateway: no
+task/generation reservation, live MCP business bridge, governed publication,
+selected Sonnet 5 profile, or complete `buzz-acp` supervision is qualified.
+
+## Dependency advisory findings
+
+Task-local `cargo-audit 0.22.2` fetched RustSec database revision
+`f7dc4b2860b29978f400fda0aab31cc4dbd21134`. Before remediation, the
+provider lock had one vulnerability,
+[RUSTSEC-2026-0189](https://rustsec.org/advisories/RUSTSEC-2026-0189.html)
+in `rmcp 1.1.0`, plus one unmaintained-package warning for `instant`.
+The affected rmcp transport is Streamable HTTP; the existing probe uses stdio.
+The direct dependency and lock were updated to `rmcp 1.4.0`, which contains the
+fix. The revised lock SHA-256 is
+`5f81524ddb7076a45690d189ca378d1b66d75e8cde6e00e04f209858c785e0b5`.
+`cargo +1.98.1 check --locked -p llull-buzz-launch` and its three library
+tests passed; the repeat provider audit reported zero vulnerabilities and one
+unmaintained warning. The revised Linux image and MCP process probe remain to
+be run against this lock.
+
+The immutable pinned upstream lock separately reported four vulnerability
+entries across `quick-xml 0.38.4` and `0.39.4` for
+[RUSTSEC-2026-0194](https://rustsec.org/advisories/RUSTSEC-2026-0194.html)
+and [RUSTSEC-2026-0195](https://rustsec.org/advisories/RUSTSEC-2026-0195.html),
+plus two unmaintained and two unsoundness warnings. This is a distribution
+security finding, not an accepted exception or evidence of exposure on every
+runtime path. Pinned-upstream revision and affected parser use require review
+before security qualification.
+
+The pinned `buzz-media` code uses a plain `Reader` for S3 version listings and
+does not iterate XML attributes. Version 0.38.4 also enters through `rust-s3`
+and its credential parser; 0.39.4 enters through `iroh`/`netdev` and Mesh LLM
+dependencies of `buzz-relay`. The advisories identify checked attribute
+iteration and `NsReader` as the vulnerable operations. The direct media parser
+does not establish reachability of either operation, while transitive parser
+paths and input provenance remain to be audited. No blanket waiver is claimed.
+
+The first actual `buzz-acp` launch initialized the pinned agent through a
+separate credential-free process container, then failed NIP-42 authentication
+with `relay url mismatch`. The relay advertises
+`wss://buzz-relay.synthetic.invalid:3000`, while that probe dialed `ws://`.
+This is a real transport/configuration failure, not a model or agent pass.
+The pinned build currently trusts only WebPKI roots for WebSocket TLS. The
+distribution recipe now additionally enables Cargo's
+`tokio-tungstenite/rustls-tls-native-roots` feature without changing upstream
+source, so a task-local CA can qualify the selected WSS origin. The amended
+image and TLS/native journey remain unexecuted; operator CA distribution and
+the agent's separation from the bot key must be checked at runtime.

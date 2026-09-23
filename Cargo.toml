@@ -28,7 +28,7 @@ buzz-auth = { git = "https://github.com/block/buzz", rev = "01b6174a1cbad249e93f
 buzz-core = { git = "https://github.com/block/buzz", rev = "01b6174a1cbad249e93f31df97d4b2ed1d0e8638" }
 # Reserved supported native transport seam; no private ACP/agent library is linked.
 buzz-sdk = { git = "https://github.com/block/buzz", rev = "01b6174a1cbad249e93f31df97d4b2ed1d0e8638" }
-rmcp = { version = "=1.1.0", features = ["server", "transport-io", "macros"] }
+rmcp = { version = "=1.4.0", features = ["server", "transport-io", "macros"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
 url = "2"
 futures-util = "0.3"

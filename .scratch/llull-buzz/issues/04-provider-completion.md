@@ -212,3 +212,52 @@ qualification. The pinned upstream graph has a host-preliminary 500-package
 inventory with zero missing texts after 18 absent crate-archive licenses were
 resolved to pinned upstream texts or the declared Apache option. Its updated
 image is not yet built.
+
+2026-09-22 — Item 04.3: the owner authorized a Google free-model test API in
+the existing `llull-buzz` project. AI Studio imported it but rejected its UI
+key-creation request as suspicious. The Cloud CLI created an auth-enabled key
+bound to a dedicated service account and restricted to the Generative Language
+API. The first CLI key was immediately deleted after its output unexpectedly
+contained the key value; the replacement is in an ignored mode-0600 local file
+and a task-owned read-only Docker secret volume. The old key is absent from the
+active list. Cloud Billing returned false and AI Studio labeled the project
+Free tier. `gemini-3.6-flash` completed bounded Chat Completions and returned
+one synthetic typed `set_label` tool call. The unchanged pinned `buzz-agent`
+completed a real ACP prompt through a credential-separated, internal-network
+test proxy and returned `OK`/`end_turn`. The private result hash and exact
+limits are in [completion evidence](../../../docs/implementation/COMPLETION.md).
+This proves the upstream model seam, not durable task-budget mediation or a
+business MCP bridge. The selected profile and human UAT remain unqualified.
+
+2026-09-22 — Item 04.6: task-local RustSec scan found the provider's direct
+`rmcp 1.1.0` dependency vulnerable in its optional Streamable HTTP server
+transport. The lock and manifest now select patched `rmcp 1.4.0`; host check,
+three launch-library tests and a repeat audit with zero vulnerabilities passed.
+The pinned upstream lock separately has two `quick-xml` versions affected by
+two denial-of-service advisories. These findings are recorded without a
+security-certification claim. Revised image/runtime verification is pending.
+
+2026-09-22 — Item 04.4: committed test source
+`68cc4d2498429c271341650b0e743da02644abb9` passed two Linux arm64
+publication integration cases. The new case made the pinned relay commit a
+signed event, hid its accepted response behind HTTP 502, and then reconciled
+the provider's unknown record by looking up that original relay event. Exactly
+one relay submission was observed. `check-publication-live` and subsequent
+`check-provider` both exited 0; the private test log SHA-256 is
+`c527f91e5e7d6470d99b5fa218706512ac7977fbbd38ef6bee8bc19e5584c2ae`.
+This covers one lost-response boundary, not process death or media/client
+delivery. The deployed provider health still marks model/native/media gateways
+false and restricted activation false.
+
+The next isolated backup/fresh restore exited 0 with five completed publication
+rows, including the lost-response event and exact signed bytes. The restored
+owner also recovered the retained native event and media bytes while a revoked
+channel read remained denied. The backup manifest and target owner are recorded
+in [completion evidence](../../../docs/implementation/COMPLETION.md).
+
+The first actual `buzz-acp` launch initialized the pinned `buzz-agent` through
+a credential-separated process container, but NIP-42 rejected the native
+WebSocket because the relay's public WSS URL differed from the dialed WS URL.
+Item 04.3 remains open. A build-feature amendment for native TLS roots is being
+qualified against a task-local CA and exact WSS origin; it changes no pinned
+upstream source.

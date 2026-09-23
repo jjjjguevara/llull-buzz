@@ -131,10 +131,12 @@ def cargo(workspace, *arguments):
     )
 
 
-def selected_packages(packages, target, workspace):
+def selected_packages(packages, target, workspace, features):
     roots = [argument for package in packages for argument in ("-p", package)]
+    feature_args = ["--features", ",".join(features)] if features else []
     lines = cargo(
         workspace, "tree", "--locked", "--offline", "--target", target, *roots,
+        *feature_args,
         "-e", "normal,build", "--prefix", "none", "--format", "{p}",
     ).splitlines()
     selected = set()
@@ -168,17 +170,18 @@ def workspace_license(package_root, source):
     return None
 
 
-def build(package, target, output, workspace):
+def build(package, target, output, workspace, features):
     output.mkdir(parents=True, exist_ok=False)
     packages = package.split(",")
     if not packages or any(not item for item in packages):
         raise ValueError("at least one nonempty package is required")
-    metadata = json.loads(cargo(workspace, "metadata", "--locked", "--offline", "--format-version", "1"))
+    feature_args = ["--features", ",".join(features)] if features else []
+    metadata = json.loads(cargo(workspace, "metadata", "--locked", "--offline", "--format-version", "1", *feature_args))
     candidates = {}
     for entry in metadata["packages"]:
         candidates.setdefault((entry["name"], entry["version"]), []).append(entry)
     records = []
-    for name, version in sorted(selected_packages(packages, target, workspace)):
+    for name, version in sorted(selected_packages(packages, target, workspace, features)):
         matches = candidates.get((name, version), [])
         if len(matches) != 1:
             raise ValueError(f"expected exactly one resolved source for {name} {version}: {len(matches)}")
@@ -222,6 +225,7 @@ def build(package, target, output, workspace):
         "schema": "llull-buzz-distribution-inventory-v1",
         "root_package": package,
         "target": target,
+        "features": features,
         "dependency_edges": "normal,build",
         "cargo_lock_sha256": hashlib.sha256(
             (workspace / "Cargo.lock").read_bytes()
@@ -246,5 +250,6 @@ if __name__ == "__main__":
     parser.add_argument("--target", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    parser.add_argument("--feature", action="append", default=[])
     args = parser.parse_args()
-    build(args.package, args.target, args.output, args.workspace.resolve(strict=True))
+    build(args.package, args.target, args.output, args.workspace.resolve(strict=True), args.feature)
