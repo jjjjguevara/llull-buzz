@@ -32,7 +32,7 @@ name="llull-buzz-pg-$(date +%s)-$$-${RANDOM}"
 postgres_image='postgres@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67'
 password="synthetic-$(date +%s)-${RANDOM}-${RANDOM}"
 created=false
-cleanup() { if "$created"; then docker rm -f "$name" >/dev/null; fi; }
+cleanup() { if "$created"; then docker rm -fv "$name" >/dev/null; fi; }
 trap cleanup EXIT INT TERM
 if docker container inspect "$name" >/dev/null 2>&1; then echo 'Name collision; nothing deleted' >&2; exit 2; fi
 docker run -d --name "$name" --label llull-buzz.test=disposable \
