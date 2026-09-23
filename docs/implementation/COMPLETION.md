@@ -1510,3 +1510,53 @@ tag without force or a global prune; the partition then had 193 MB free.
 No active container or unrelated image was touched. The selected deployment
 continues to run the `9c1c572` image. The model, native and media gateway
 health flags remain false; complete release qualification remains open.
+
+## Reserved ACP prompt gate and disposable-capacity recovery
+
+At committed source `29681003234d4e2952030a46b0859a70ae57cdd4`, the
+credential-free launcher library can construct an `AcpGuard` with one exact
+text prompt whose canonical ACP-content SHA-256 equals a supplied reservation
+digest. It admits that prompt only after the fixed initialization and session
+creation, only for the recorded session, and only once. A changed prompt,
+different session, replay, malformed part or mismatched digest is denied.
+The default probe still has no prompt reservation and refuses all prompts.
+This is a protocol filter for a future trusted supervisor; no ledger result
+is yet wired to the process, the model proxy is not installed and this commit
+does not dispatch a model call.
+
+The new regression failed to compile before `with_reserved_prompt` existed;
+the finished workspace library suite exited 0 with fourteen tests (ignored
+log SHA-256 `e77536e5e121748cf83df30398e3dd3aab6476667656beed08d3b85958df48bc`).
+Rustfmt and strict locked all-target Clippy exited 0 (Clippy log SHA-256
+`d5bfd363aac9eb70b07a7325b8cb960e985b508e26975ef5c46dd3a7ed98cf5c`).
+These host checks do not establish process containment or model usage
+accounting. At the exact committed `2968100` source, `bash
+scripts/test-containment.sh` exited 0 on the selected Docker Engine 29.8.1
+(ignored log SHA-256
+`141a3690951524d0842fc0bb5ae4779412168c65de9f88a4af73ff23c10ec291`).
+The disposable image rebuilt pinned `buzz-agent` and `buzz-acp` plus the
+locked provider workspace, then negotiated ACP2 initialization, session,
+cancel and SDK-native MCP under UID 65532. Its actual child environment
+matched the closed synthetic policy. The read-only filesystem, absent host
+control socket, and public/metadata network denials passed. The probe made
+zero model calls; it does not exercise the new reserved-prompt constructor
+or prove a supervised model path. The probe image identity before its
+scripted removal was
+`sha256:bce3bb5e562fae4c55e8af815ca204d1cbd05300fac063620fe97b61ebeda99f`.
+Afterward `check-provider` still exited 0 on the separately running private
+`9c1c572` provider image, with no host port or active restricted profile
+(ignored log SHA-256
+`94dab367d26f0fd05210131ad7665f11f20289d07f9074d1a3bca9132de5a33d`).
+The Docker partition had 1.1 GB free after the clean containment build;
+further image builds require another task-scoped capacity audit.
+
+Before that build, the selected task-only Docker VM had 193 MB free. Of 84
+detached volumes, 73 anonymous volumes contained PostgreSQL 16 data and one
+anonymous volume from a failed test start was empty. Their creation dates
+matched this task's disposable-test window; all 74 were individually
+identified and removed by exact Docker volume name without force. The ten
+named local-stack volumes and every mounted volume remained. The ignored
+identity manifest SHA-256 is
+`98531c8b047c6a266127be7e6855d4d5f84eb042ae08e82c510e36cf024a05b2`.
+The Docker partition then had 3.8 GB free. No global prune, shared daemon
+stop or unrelated resource cleanup was used.

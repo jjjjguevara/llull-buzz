@@ -533,3 +533,24 @@ fixed-origin checks against the signed two-member relay audience. This does
 not resolve native subscriber/media mediation, the actual agent/model/MCP
 path, composed Akita qualification or human UAT. Exact source, image and log
 identities are in [completion evidence](../../../docs/implementation/COMPLETION.md).
+
+2026-09-23 — Item 04.3: `2968100` adds a one-use exact-text ACP prompt
+filter bound to a supplied canonical prompt digest and the recorded session.
+The default probe still refuses prompts. Fourteen library tests, formatting
+and strict Clippy passed; the new guard case first failed to compile before
+the constructor existed. The trusted supervisor has not yet linked a durable
+reservation to this filter, and no model transport or usage settlement is
+qualified by it. The exact-source Linux containment script then exited 0:
+pinned agent/ACP executables, ACP2/MCP handshake, closed inherited
+environment and kernel process/filesystem/network denials passed with zero
+model calls. The separately running provider remained healthy afterward.
+The reserved prompt branch itself was not exercised by that probe, so actual
+supervision and model settlement remain open. Item 04.3 remains claimed.
+
+2026-09-23 — Item 04.6: on the task-only selected VM, 73 detached anonymous
+volumes were verified as PostgreSQL 16 test data and one detached anonymous
+volume was empty after a failed start. All 74 exact names were removed;
+the ten named local-stack volumes and every mounted volume remained. The
+Docker partition rose from 193 MB to 3.8 GB available. No global prune or
+shared resource cleanup occurred. The ignored identity-manifest SHA-256 is
+recorded in [completion evidence](../../../docs/implementation/COMPLETION.md).
