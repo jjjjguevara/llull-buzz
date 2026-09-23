@@ -88,13 +88,14 @@ and direct-agent ACP are early seam probes, not a complete host/native-client ma
 bash scripts/test-postgres.sh
 ```
 
-The script requires a committed lockfile. It discovers the nine non-live
+The script requires a committed lockfile. It discovers the ten non-live
 ignored scenarios and gives each a uniquely named disposable PostgreSQL 16
 container, synthetic database/user/password and loopback-only random port.
 After each real-database case it restarts that server and compares durable
-root, effect, publication, binding and observation snapshots. It removes only
-its own container. The two live-relay cases use
-`scripts/local-stack.py check-publication-live` with the separate private stack.
+root, effect, publication admission, signed delivery, scope, binding and
+observation snapshots. It removes only its own container. The two live-relay
+cases use `scripts/local-stack.py check-publication-live` with the separate
+private stack.
 Never substitute a live database or existing user resource.
 
 The test `postgres_foundation_contracts` uses actual SQLx transactions, migrations,

@@ -464,3 +464,32 @@ passed all ten cases and ten real PostgreSQL restart comparisons at committed
 `742dd78`, including the terminal-truth attachment regression. The original
 startup failure remains in the evidence; no entire BZ-C01..08 profile is
 accepted.
+
+2026-09-23 — Item 04.4: `2f2cfbc` closes a same-command retry path that
+resubmitted an `unknown` signed text publication after a lost native response.
+The PostgreSQL/signature case was red before the fix (retry returned
+`completed` after a second submit) and green afterward (original event ID,
+`unknown` state, one submit, original-owner reconciliation to `completed`).
+`d3f9555` adds the same one-submission assertion to the pinned-relay fault
+case. The exact-source live run passed both text cases: the running provider
+HTTP publication and the direct Provider-library lost-response scenario
+against actual PostgreSQL and the pinned relay. The latter did not use the
+deployed HTTP listener. Exact commands, log hashes and image/test identities
+are in [completion evidence](../../../docs/implementation/COMPLETION.md).
+Attachment delivery, native-client mediation and model/MCP publication are
+still open; this is not an acceptance of item 04.4 or BZ-C06/07.
+
+2026-09-23 — Item 04.6: the selected Docker 29.8.1 VM built and privately
+deployed an exact-source `d3f9555` Linux arm64 image with no host port and
+inactive profile. This was a cached iteration build; the last independent
+clean image remains `742dd78`. At `d3f9555`, all ten non-live PostgreSQL
+cases and ten restarts, twelve library tests, formatting and strict Clippy
+passed locally. Review of the restart script found that its digest omitted
+signed publication deliveries and scopes. The script now includes both
+tables; the populated publication recovery case passed a real restart with
+the stronger digest. The earlier ten-case pass used the old digest and is
+reported separately. The guest-root build cache and exact-source test image
+were used because the VM Docker partition was nearly full; only positively
+identified unused task images were removed. Full distribution, protected
+restore, production model/native/media gateway, composed Akita and human UAT
+qualification remain claimed work.

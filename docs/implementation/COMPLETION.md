@@ -1278,3 +1278,103 @@ counted as final-source attachment or native-client qualification.
 The final-code `cargo test --locked --workspace --lib` also exited 0 with
 twelve tests (three launch, one provider and eight wire/state; ignored local
 log SHA-256 `5774d84f05c38df5ca4a3b5fc9c088d70fbd2fe25b73d08cafcc04556797318e`).
+
+## Unknown publication retry and live relay regression
+
+At code commit `2f2cfbc`, `Provider::publish` returns the retained `unknown`
+delivery on a fresh signed retry of the same command. It does not resubmit the
+frozen native event. The separately authorized original-owner reconciliation
+route may still mark that exact event completed after lookup. The prior
+PostgreSQL/signature case was red before the change: the retry made a second
+submit and returned `completed` instead of `unknown` (exit 101, ignored log
+SHA-256 `6ce65987c9f5eb7527a7520688882b0a5a40d3460bc002e7673c00f4171746da`).
+The focused case passed after the change with one submit and a matching real
+PostgreSQL restart digest (exit 0, ignored log SHA-256
+`b7ba81f37f4daea9b6037e7fdbd245ae924430ae2c352e1e64dc4b465520cc6b`).
+Commit `d3f9555` adds the same assertion to the pinned-relay response-loss
+test. Neither result authorizes a resend after an inconclusive lookup.
+
+The selected Docker Engine 29.8.1 built a local iteration image from the
+exact `d3f95557f2134deeda35c11fec8247ffd4cedb3d` Git archive with
+`bash scripts/build-provider-image.sh`, using the inspected pinned offline
+builder image `sha256:4e07bf3b101bb833cbe11eb67d165fb7592e56072697ba40345fa56a8b642b04`
+as a dependency cache. Build exit 0; ignored log SHA-256
+`c94a23feeb65b2db268236becc9cce7e74a65634641b51f1c791e1653258b217`.
+The Linux arm64 image ID and source label are
+`sha256:97a402924a91957e9de2f1569ca9d351c91fe9b5c7e087725f383250dbcc3f22`
+and `d3f95557f2134deeda35c11fec8247ffd4cedb3d`. Its provider binary
+SHA-256 is `5c3472def3ecdce1c956171aea0d971e6b7bb247675f601d71fee59785cc7425`;
+its Rust notice manifest is the previously checked
+`d59fddc4978a97045979c56da293edfbb40354af2128081d3131258aea47d4f8`,
+with 91 OS package rows and 90 copyright-file hashes. This cached iteration
+build does not replace the clean source build at `742dd78` above.
+
+`python3 scripts/local-stack.py up-provider --provider-source d3f95557f2134deeda35c11fec8247ffd4cedb3d`
+switched only the task-owned provider container (exit 0, ignored deploy log
+SHA-256 `8554b52abb19cf74466b161ac2e8fd6bd698b41026f12dc8401de0b14f1b7195`).
+`python3 scripts/local-stack.py check-provider` exited 0 (ignored log SHA-256
+`15b26a430d95dc740382b61c63858da15b258d4c4340dde5ec5e7a37e2bded90`):
+the service has no host-published port, the restricted profile is inactive,
+native intake and publication delivery are configured, and model/native/media
+gateways remain unconfigured.
+
+For the exact-source live regression, the Git archive SHA-256 was
+`ed1cf099b0e1b436df8dfe6eec22555c9a35488cad0d5e49ad563120b786717c`.
+The VM Docker partition had only 265 MB free after image export. Only unused
+images bearing this task's provider/upstream/bridge names were removed by
+exact tag; neither the selected VM/daemon nor active images were stopped or
+pruned. The runner used a task-specific bind directory on the same VM's root
+filesystem, with 12 GB free, for the release test target and public Cargo
+cache. An initial `cargo +1.98.1 test --offline --release --locked -p
+llull-buzz-provider --test postgres --no-run` correctly stopped at an absent
+`base16ct` cache entry (exit 101, ignored log SHA-256
+`97b04fed8ba04282ba38b9293970ab32623486448154c74bf1d6f59ce2e3ee3c`).
+`cargo +1.98.1 fetch --locked` then exited 0 on the separate task-owned
+dependency egress network with no provider credentials mounted (ignored log
+SHA-256 `08161b3862e6d21bf2eac84809df0147511e16ac6fe48461701b5fe5883a71a5`).
+The same release test compile with `--offline`, `--network none`, a read-only
+source mount, dropped capabilities and the external VM target exited 0 (ignored
+log SHA-256 `bdc698c67e83b697234559ed37ea935fd118d33e62ab9d67305223af3396e06e`);
+the test executable SHA-256 was
+`f41ddb154097601e45a677d8de64eb254d428309feccdf8717c283eb74bf9bb8`.
+
+The binary ran `publication::live_ --ignored --test-threads=1 --nocapture`
+on the private task network. The first case used the deployed exact-source
+provider HTTP endpoint, actual PostgreSQL and pinned upstream relay. The
+response-loss case used the same committed `Provider::publish` library with
+actual PostgreSQL and pinned relay behind a fault proxy; it did not send its
+command through the deployed provider HTTP listener. Both tests passed
+(exit 0, ignored log SHA-256
+`575a5e0b80306d8c3d7fe2f31fc41301ee698570d2ccf7d05f35a78529c3f80d`).
+The fault proxy observed exactly one relay submit after the first response
+was lost, after a fresh same-command retry returned `unknown`, and after
+original-owner lookup completed the retained event. The other test checked
+live HTTP text publication, relay retrieval and terminal retry identity.
+This qualifies the tested text path and fault, not an attachment gateway,
+native-client disclosure policy or an independent UAT verdict.
+
+At exact committed source `d3f9555`, `bash scripts/test-postgres.sh` exited 0
+for all ten non-live PostgreSQL/signature cases, each with a real server
+restart and matching then-current digest (ignored log SHA-256
+`a5a45be8ab5b19031047c72419bd68e8ea70fc8d07478e1dce99b7b9470ef14f`).
+`cargo fmt --all -- --check`, strict
+`cargo clippy --locked --workspace --all-targets -- -D warnings`, and
+`cargo test --locked --workspace --lib` also exited 0; the latter passed
+all twelve library tests. Ignored Clippy and unit log SHA-256 values are
+`890f2343301fb5ddc231956762e22db8ee0eb8dd232d741e70fc5e27af8b715f`
+and `b9280340db6530bb5e019adbfeba46d93756949eb3447e6f1837edbaf1cbcb6a`.
+The final source also compiled its complete PostgreSQL test binary locally
+with `cargo test --locked -p llull-buzz-provider --test postgres --no-run`
+(exit 0, ignored log SHA-256
+`7172a61fc9e635df4f8792d694b409c95124d1e2c888fedc7d5ec74950574cee`).
+
+Inspection then found that the restart digest covered publication admissions
+but omitted the separate scope and signed-delivery tables. The runner now
+includes `publication_scopes` and `publication_deliveries` in its ordered
+before/after digest. `bash -n scripts/test-postgres.sh` and the populated
+`publication::publication_freezes_signed_identity_and_recovers_without_duplicate_delivery`
+case passed with a matching real PostgreSQL restart (exit 0, ignored log
+SHA-256 `976202da3120aeeaa2cb4e44632b15ca9e331f83d46401e4e6b67a54b63448e9`).
+Only that focused case was rerun with the strengthened digest; the preceding
+ten-case run used the earlier digest and is not evidence that all ten used
+the strengthened runner.
