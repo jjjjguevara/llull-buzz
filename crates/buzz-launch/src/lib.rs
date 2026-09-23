@@ -220,6 +220,7 @@ pub struct AcpGuard {
     session: Option<String>,
     reserved_prompt: Option<Value>,
     prompted: bool,
+    canceled: bool,
 }
 impl AcpGuard {
     /// An exact protocol filter for a prompt whose canonical digest was
@@ -282,9 +283,10 @@ impl AcpGuard {
             "session/cancel" => {
                 let requested: SessionCancel =
                     serde_json::from_value(frame.params).map_err(|_| Fault::Invalid)?;
-                if self.session.as_deref() != Some(requested.session_id.as_str()) {
+                if self.session.as_deref() != Some(requested.session_id.as_str()) || self.canceled {
                     return Err(Fault::Denied);
                 }
+                self.canceled = true;
                 json!({"sessionId":requested.session_id})
             }
             "session/prompt" => {
@@ -293,6 +295,7 @@ impl AcpGuard {
                     serde_json::from_value(frame.params).map_err(|_| Fault::Invalid)?;
                 if self.session.as_deref() != Some(requested.session_id.as_str())
                     || self.prompted
+                    || self.canceled
                     || &requested.prompt != expected
                 {
                     return Err(Fault::Denied);
@@ -393,6 +396,32 @@ mod tests {
         assert_eq!(
             AcpGuard::with_reserved_prompt(prompt, &"0".repeat(64)).err(),
             Some(Fault::Conflict)
+        );
+    }
+    #[test]
+    fn canceled_session_cannot_start_its_reserved_prompt() {
+        let prompt = json!([{"type":"text","text":"Synthetic canceled task"}]);
+        let digest = llull_buzz_wire::sha256(&canonical(&prompt).unwrap());
+        let mut guard = AcpGuard::with_reserved_prompt(prompt.clone(), &digest).unwrap();
+        guard
+            .admit(&frame("initialize",json!({"protocolVersion":2,"clientCapabilities":{},"clientInfo":{"name":"llull-foundation-probe","version":"0.1.0"}})))
+            .unwrap();
+        guard
+            .admit(&frame(
+                "session/new",
+                json!({"cwd":WORK,"mcpServers":[admitted_mcp()]}),
+            ))
+            .unwrap();
+        guard.record_session("synthetic-session").unwrap();
+        let cancel = frame("session/cancel", json!({"sessionId":"synthetic-session"}));
+        guard.admit(&cancel).unwrap();
+        assert_eq!(guard.admit(&cancel), Err(Fault::Denied));
+        assert_eq!(
+            guard.admit(&frame(
+                "session/prompt",
+                json!({"sessionId":"synthetic-session","prompt":prompt})
+            )),
+            Err(Fault::Denied)
         );
     }
     #[test]
