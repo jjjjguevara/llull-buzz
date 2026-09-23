@@ -797,6 +797,26 @@ FROM publication_deliveries"""
                 "Retained signed publication bytes differ from their digest")
         return rows
 
+    def provider_table_hashes(self):
+        """Compare every retained provider row without copying its contents to reports."""
+        pg = self.name("postgres")
+        require(self.inspect("container", pg)["State"]["Running"],
+                "Owned PostgreSQL is unavailable for integrity capture")
+        command = ("exec", pg, "psql", "-X", "-A", "-t", "-q", "-v", "ON_ERROR_STOP=1",
+                   "-U", "bz_provider", "-d", "bz_foundation_test", "-c")
+        names = docker(*command, "SELECT tablename FROM pg_tables "
+                       "WHERE schemaname='public' ORDER BY tablename").stdout.decode().splitlines()
+        require(names and len(names) == len(set(names)), "Provider table inventory differs")
+        result = {}
+        for table in names:
+            require(re.fullmatch(r"[a-z_][a-z0-9_]*", table) is not None,
+                    "Unexpected provider table identifier")
+            rows = docker(*command, f'COPY (SELECT to_jsonb(t)::text FROM public."{table}" t '
+                           'ORDER BY to_jsonb(t)::text COLLATE "C") TO STDOUT').stdout
+            result[table] = {"rows": len(rows.splitlines()),
+                             "sha256": hashlib.sha256(rows).hexdigest()}
+        return result
+
     def backup_storage(self):
         require(self.state["stage"] in {"native-started", "provider-started"},
                 "Start native storage before backup")
@@ -824,6 +844,11 @@ FROM publication_deliveries"""
             save(snapshot, {"rows": self.publication_rows()})
             content = snapshot.read_bytes()
             files[snapshot.name] = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
+            integrity = backup / "provider-integrity.json"
+            save(integrity, {"tables": self.provider_table_hashes()})
+            content = integrity.read_bytes()
+            files[integrity.name] = {"sha256": hashlib.sha256(content).hexdigest(),
+                                     "size": len(content)}
             for suffix in ["media", "relay-data"]:
                 volume = self.name(suffix)
                 require(self.inspect("volume", volume) is not None, "Owned data volume is missing")
@@ -907,7 +932,8 @@ FROM publication_deliveries"""
         historical = {"bz_foundation_test.dump", "bz_native.dump", "bz_filer.dump",
                       "media.tar", "relay-data.tar", "native-identities.json",
                       "native-check.json", "media-probe.json", "storage-check.json"}
-        require(expected in (historical, historical | {"publication-check.json"}),
+        require(expected in (historical, historical | {"publication-check.json"},
+                             historical | {"publication-check.json", "provider-integrity.json"}),
                 "Backup file set differs")
         for name, record in manifest["files"].items():
             data = (backup / name).read_bytes()
@@ -958,12 +984,18 @@ FROM publication_deliveries"""
             require(all(row["native_event_id"] in native_ids for row in publications
                         if row["state"] == "completed"),
                     "Completed publication missing from restored native relay")
+        integrity = None
+        if "provider-integrity.json" in expected:
+            integrity = json.loads((backup / "provider-integrity.json").read_text())["tables"]
+            require(self.provider_table_hashes() == integrity,
+                    "Restored provider table content differs from source snapshot")
         report = {"backup_manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
                   "source_owner": manifest["owner"], "restored_owner": self.state["owner"],
                   "original_native_event_id": checked["message_event_id"],
                   "original_media_sha256": media["blob_sha256"],
                   "exact_event_and_media_recovered": True, "revoked_channel_read_denied": True,
                   "publication_rows_recovered": None if publications is None else len(publications),
+                  "provider_tables_recovered": None if integrity is None else len(integrity),
                   "scope": "fresh isolated PostgreSQL/Seaweed/relay restore; protected key backup separate"}
         save(self.directory / "restore-check.json", report)
         print(json.dumps(report, indent=2))
