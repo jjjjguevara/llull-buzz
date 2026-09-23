@@ -349,11 +349,16 @@ Its [provider configuration](https://github.com/openai/codex/blob/be2951ea34f0d2
 selects the ChatGPT Codex backend for subscription authentication.
 
 One synthetic transport request for `gpt-5.6-luna` with a requested 256-token output
-limit returned HTTP 400, `Unsupported parameter: max_output_tokens`. No completed
-model response or provider qualification is claimed. Compatibility work must preserve
-finite root reservations and report the output-limit difference; removing a failing
-parameter cannot by itself establish the required bound. No paid API fallback or
-unlimited subscription capacity is inferred. Credential values are never recorded.
+limit returned HTTP 400, `Unsupported parameter: max_output_tokens`. A separate
+`codex exec --ephemeral --ignore-user-config --sandbox read-only --model gpt-5.6-luna`
+probe using the ChatGPT login exited 0 and returned `OK` with no tool call. Its reported
+usage was 17,960 input tokens and five output tokens; the private JSONL log SHA-256
+is `49f6438698d2a939af60cd53499b7942da1d84d8d308604781c142aeee56bb69`.
+This confirms subscription-backed Codex execution for one synthetic prompt, not a
+Buzz agent/model-proxy call or a pre-dispatch output bound. Compatibility work must
+preserve finite root reservations and report the output-limit difference; removing a
+failing parameter cannot by itself establish the required bound. No paid API fallback
+or unlimited subscription capacity is inferred. Credential values are never recorded.
 
 The [official authentication documentation](https://learn.chatgpt.com/docs/auth)
 distinguishes ChatGPT subscription authentication from API-key billing. That distinction

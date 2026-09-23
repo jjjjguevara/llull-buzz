@@ -732,7 +732,7 @@ enableUpsert = true
                 'export CARGO_TARGET_DIR=/source/target CARGO_BUILD_JOBS=1; '
                 '/usr/local/cargo/bin/cargo +1.98.1 test --offline --release '
                 '--locked -p llull-buzz-provider --test postgres --no-run',
-                check=False, timeout=1800)
+                check=False, timeout=2700)
             if compiled.returncode == 0:
                 found = docker("run", "--rm", "--network", "none",
                                "--label", self.label(),
