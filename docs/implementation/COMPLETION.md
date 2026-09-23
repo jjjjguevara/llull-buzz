@@ -1274,3 +1274,7 @@ The final foundation case took 169 seconds. No `llull-buzz-pg-*` container
 remained after the run; the Docker partition had 1.1 GB free. The two earlier
 live relay cases retain their own image/test-source identities and are not
 counted as final-source attachment or native-client qualification.
+
+The final-code `cargo test --locked --workspace --lib` also exited 0 with
+twelve tests (three launch, one provider and eight wire/state; ignored local
+log SHA-256 `5774d84f05c38df5ca4a3b5fc9c088d70fbd2fe25b73d08cafcc04556797318e`).
