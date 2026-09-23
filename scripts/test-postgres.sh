@@ -59,6 +59,10 @@ snapshot() {
       'attempts',(SELECT jsonb_agg(to_jsonb(a) ORDER BY attempt_id) FROM attempts a),
       'publications',(SELECT jsonb_agg(to_jsonb(p) ORDER BY publication_id) FROM publications p),
       'bindings',(SELECT jsonb_agg(to_jsonb(e) ORDER BY enrollment_id) FROM enrollments e),
+      'observation_counters',(SELECT jsonb_agg(to_jsonb(c) ORDER BY consumer_id) FROM observation_counters c),
+      'observations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY consumer_id,sequence) FROM observations o),
+      'observation_offsets',(SELECT jsonb_agg(to_jsonb(o) ORDER BY consumer_id,module_id,context_domain,recovery_epoch) FROM observation_offsets o),
+      'observation_receipts',(SELECT jsonb_agg(to_jsonb(r) ORDER BY consumer_id,cursor_sha256) FROM observation_receipts r),
       'epoch',(SELECT recovery_epoch FROM provider_control WHERE singleton=1),
       'evidence_count',(SELECT count(*) FROM admission_evidence));" | sha256sum | cut -d ' ' -f 1
 }
@@ -70,4 +74,4 @@ for _ in {1..60}; do
 done
 after=$(snapshot)
 test "$before" = "$after" || { echo 'Durable records changed across PostgreSQL restart' >&2; exit 1; }
-printf 'PostgreSQL restart preserved roots, reservations/effects, bindings, publication and recovery epoch: %s\n' "$after"
+printf 'PostgreSQL restart preserved roots, effects, bindings, publication, observations and recovery epoch: %s\n' "$after"
