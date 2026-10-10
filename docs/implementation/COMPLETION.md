@@ -5,6 +5,26 @@ The stopping criterion is the complete accepted provider and applicable qualific
 including an isolated test deployment. [Slice 1](SLICE-1.md) and
 [its validation](LOCAL-VALIDATION.md) remain historical evidence, not the current scope limit.
 
+## Successor attachment source increment, 2026-10-10
+
+The additive [attachment retention/EvidenceAccess extension](../architecture/contracts/WIRE-PROFILE.md#original-attachment-retention-extension-source-increment-2026-10-10)
+connects the actual configured native origin to transactional byte retention and the
+ordinary authenticated provider router. Original signed attachment metadata alone
+still reports no durable bytes. A distinct current service action verifies fixed-origin
+bytes and commits an immutable retention receipt, while EvidenceAccess returns bytes
+only after current scope/revocation/expiry checks. The original intake receipt and
+consumer registration remain unchanged. No global URL fetcher, output release
+substitute, native media activation or consumer-owned evidence registry is added.
+
+Authored controls cover fixed-origin/hash-only BUD-11 reads, HTTP status/MIME/length/
+digest substitution, PostgreSQL rollback after byte insertion, expiry during fetch,
+replay without a second origin read, cross-consumer/module denial and revocation.
+The existing actual PostgreSQL restart snapshot includes attachment descriptors,
+actual byte hashes and lengths without emitting raw attachment content. Rustfmt,
+locked offline metadata and whitespace checks pass. Compiler, new library tests,
+PostgreSQL/restart and installed native media checks are **unrun** for this increment.
+The restricted profile and native media gateway remain inactive; no human UAT is claimed.
+
 ## Successor model-accounting source increment, 2026-10-10
 
 The [trusted gateway accounting extension](MODEL-ACCOUNTING.md) adds signed

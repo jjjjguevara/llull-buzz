@@ -123,6 +123,8 @@ impl Rig {
             "ack-observations",
             "intake",
             "read-evidence",
+            "retain-attachment",
+            "read-attachment",
             "register-intake",
             "reconcile-publication",
             "observe-publication",

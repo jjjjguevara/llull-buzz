@@ -100,7 +100,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     source.public_origin().as_str(),
                 )?);
                 router = router
-                    .merge(api::native_routes(provider.clone(), source))
+                    .merge(api::native_routes(provider.clone(), source.clone()))
+                    .merge(api::attachment_routes(provider.clone(), source))
                     .merge(api::publication_routes(provider.clone(), publisher));
                 surfaces.native_intake = true;
                 surfaces.publication_delivery = true;

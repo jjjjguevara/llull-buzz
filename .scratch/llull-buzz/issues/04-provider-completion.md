@@ -41,6 +41,32 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-10 — Items 04.2/04.4 successor claim: Codex Buzz implementation agent
+owns a bounded native attachment retention and EvidenceAccess byte path. The
+refreshed public draft PR and clean checkout are both `b31dbccb879274d222bae12193a89ad0dc713030`.
+Original signed metadata alone remains insufficient. The increment uses the
+existing native-input identity, registered consumer authority and fixed private
+native origin; no caller-selected URL or parallel evidence registry. Original
+command receipts remain immutable, and consumer registration/native media
+publication remain separate. Source work uses existing tooling outside VMs;
+new real PostgreSQL/installed media controls remain unrun until qualified.
+
+2026-10-10 — Items 04.2/04.4 attachment source increment: actual configured native
+origin now supplies exact-hash BUD-11 reads for separate transactional retention;
+EvidenceAccess returns immutable bytes under fresh registered scope and purpose.
+Historical intake receipts and consumer registration are unchanged. Migration 0007,
+three PostgreSQL cases, byte-integrity/native HTTP controls and restart snapshot
+coverage are authored. Rustfmt, locked offline metadata, Bash syntax and Git
+whitespace passed. JSON Schema checked six unchanged examples, one new positive
+and six negative shapes; new schema SHA-256 is
+`9f006108c8b66ac9432a2dafdc59c19651464e2535b24b0d6387386a814e9b89`.
+No compiler or new Rust/PostgreSQL/runtime test was run locally; hosted controls,
+selected source adoption and native media/publication/UAT remain outstanding.
+No runtime/cache/archive/environment was created. Owned retained output is the
+finite source/docs delta below 128 KiB; measured Mac free space before final source
+checks was 77,845,000,192 bytes. The existing shared target cache was not touched.
+
+
 2026-10-10 — Item 04.4 source increment: optional `reply_to_event` is bound to
 the exact publication release. The publisher verifies original signed native
 message identity/channel through the existing owner before signing and again

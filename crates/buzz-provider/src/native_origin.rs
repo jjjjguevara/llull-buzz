@@ -1,9 +1,15 @@
 //! Fixed private native origin. Credentials and routing are trusted operator inputs.
-use crate::{native, ports::PortError, Audience, NativeEventSource, PublicationPort};
+use crate::{
+    native, ports::PortError, Audience, NativeAttachmentSource, NativeEventSource, PublicationPort,
+    MAX_ATTACHMENT_BYTES,
+};
 use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+    Engine,
+};
 use futures_util::StreamExt;
-use llull_buzz_wire::{canonical, id, parse, sha256, MAX_BYTES};
+use llull_buzz_wire::{canonical, id, parse, sha256, Evidence, MAX_BYTES};
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, time::Duration};
 use url::Url;
@@ -122,6 +128,85 @@ impl HttpNativeOrigin {
     }
     pub fn public_origin(&self) -> &Url {
         &self.public_origin
+    }
+}
+/// BUD-11 read authorization is exact-hash scoped; no host-wide `server` tag.
+fn attachment_auth(
+    key: &nostr::Keys,
+    evidence: &Evidence,
+) -> std::result::Result<String, PortError> {
+    llull_buzz_wire::hash(&evidence.sha256).map_err(|_| PortError)?;
+    id(&evidence.media_type).map_err(|_| PortError)?;
+    if evidence.size_bytes > MAX_ATTACHMENT_BYTES as u64 {
+        return Err(PortError);
+    }
+    let expiration = (nostr::Timestamp::now().as_secs() + 30).to_string();
+    let event = nostr::EventBuilder::new(nostr::Kind::Custom(24242), "Read original attachment")
+        .tags([
+            nostr::Tag::parse(["t", "get"]).map_err(|_| PortError)?,
+            nostr::Tag::parse(["x", &evidence.sha256]).map_err(|_| PortError)?,
+            nostr::Tag::parse(["expiration", &expiration]).map_err(|_| PortError)?,
+        ])
+        .sign_with_keys(key)
+        .map_err(|_| PortError)?;
+    Ok(format!(
+        "Nostr {}",
+        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&event).map_err(|_| PortError)?)
+    ))
+}
+#[async_trait]
+impl NativeAttachmentSource for HttpNativeOrigin {
+    fn attachment_owner(&self) -> &str {
+        &self.owner
+    }
+    async fn attachment(
+        &self,
+        community: &str,
+        evidence: &Evidence,
+    ) -> std::result::Result<Vec<u8>, PortError> {
+        if community != self.community {
+            return Err(PortError);
+        }
+        let authorization = attachment_auth(&self.key, evidence)?;
+        // Only the configured private origin and validated hash choose this URL.
+        // In particular, the original signed imeta URL is not a fetch instruction.
+        let url = self
+            .private_origin
+            .join(&format!("/media/{}", evidence.sha256))
+            .map_err(|_| PortError)?;
+        let host = &self.public_origin[url::Position::BeforeHost..url::Position::AfterPort];
+        let response = self
+            .client
+            .get(url)
+            .header("Host", host)
+            .header("Authorization", authorization)
+            .send()
+            .await
+            .map_err(|_| PortError)?;
+        if response.status() != reqwest::StatusCode::OK
+            || response
+                .content_length()
+                .is_some_and(|length| length != evidence.size_bytes)
+            || response.headers().contains_key("content-range")
+            || response
+                .headers()
+                .get("content-type")
+                .and_then(|h| h.to_str().ok())
+                != Some(evidence.media_type.as_str())
+        {
+            return Err(PortError);
+        }
+        let mut bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| PortError)?;
+            if bytes.len().saturating_add(chunk.len()) > evidence.size_bytes as usize {
+                return Err(PortError);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        crate::attachments::validate_bytes(evidence, &bytes).map_err(|_| PortError)?;
+        Ok(bytes)
     }
 }
 #[async_trait]
@@ -268,6 +353,127 @@ fn origin(value: &str, public: bool) -> std::result::Result<Url, PortError> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn attachment_token_is_signed_short_lived_and_exact_hash_only() {
+        let key = nostr::Keys::generate();
+        let mut evidence = Evidence {
+            source_id: "source".into(),
+            sha256: sha256(b"original"),
+            media_type: "image/png".into(),
+            size_bytes: 8,
+            release_ref: "release".into(),
+        };
+        let header = attachment_auth(&key, &evidence).unwrap();
+        let bytes = URL_SAFE_NO_PAD
+            .decode(header.strip_prefix("Nostr ").unwrap())
+            .unwrap();
+        let event = native::event(&bytes).unwrap();
+        assert_eq!(event.kind.as_u16(), 24242);
+        assert_eq!(event.pubkey, key.public_key());
+        assert_eq!(event.tags.len(), 3);
+        assert_eq!(native::tag(&event, "t").unwrap(), "get");
+        assert_eq!(native::tag(&event, "x").unwrap(), evidence.sha256);
+        let expires = native::tag(&event, "expiration")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+        assert!((event.created_at.as_secs()..=event.created_at.as_secs() + 30).contains(&expires));
+        assert!(!event
+            .tags
+            .iter()
+            .any(|t| t.as_slice().first().is_some_and(|s| s == "server")));
+        evidence.sha256 = "../foreign".into();
+        assert!(attachment_auth(&key, &evidence).is_err());
+        evidence.sha256 = sha256(b"original");
+        evidence.size_bytes = MAX_ATTACHMENT_BYTES as u64 + 1;
+        assert!(attachment_auth(&key, &evidence).is_err());
+    }
+    #[tokio::test]
+    async fn attachment_fixed_origin_rejects_redirect_mime_length_and_digest_substitution() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for (status, mime, body, extra, accepted) in [
+            ("200 OK", "image/png", "original", "", true),
+            (
+                "302 Found",
+                "image/png",
+                "original",
+                "Location: https://foreign.invalid/media\r\n",
+                false,
+            ),
+            ("200 OK", "text/html", "original", "", false),
+            ("200 OK", "image/png", "changed!", "", false),
+            ("200 OK", "image/png", "short", "", false),
+            (
+                "206 Partial Content",
+                "image/png",
+                "original",
+                "Content-Range: bytes 0-7/8\r\n",
+                false,
+            ),
+            (
+                "200 OK",
+                "image/png",
+                "original",
+                "Content-Range: bytes 0-7/8\r\n",
+                false,
+            ),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let evidence = Evidence {
+                source_id: "source".into(),
+                sha256: sha256(b"original"),
+                media_type: "image/png".into(),
+                size_bytes: 8,
+                release_ref: "release".into(),
+            };
+            let expected_hash = evidence.sha256.clone();
+            let server = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    assert!(request.len() < 16384);
+                    request.push(socket.read_u8().await.unwrap());
+                }
+                let request = String::from_utf8(request).unwrap();
+                assert!(request.starts_with(&format!("GET /media/{expected_hash} HTTP/1.1\r\n")));
+                assert!(request
+                    .to_ascii_lowercase()
+                    .contains("host: native.synthetic.invalid:18443\r\n"));
+                let auth = request
+                    .lines()
+                    .find(|l| l.to_ascii_lowercase().starts_with("authorization: "))
+                    .unwrap()
+                    .split_once(": ")
+                    .unwrap()
+                    .1;
+                let event = native::event(
+                    &URL_SAFE_NO_PAD
+                        .decode(auth.strip_prefix("Nostr ").unwrap())
+                        .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(native::tag(&event, "x").unwrap(), expected_hash);
+                assert_eq!(native::tag(&event, "t").unwrap(), "get");
+                let reply=format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: {mime}\r\n{extra}Connection: close\r\n\r\n{body}",body.len());
+                socket.write_all(reply.as_bytes()).await.unwrap();
+            });
+            let source = HttpNativeOrigin::new(
+                "community".into(),
+                &format!("http://{address}/"),
+                "https://native.synthetic.invalid:18443/",
+                nostr::Keys::generate(),
+                nostr::Keys::generate().public_key(),
+            )
+            .unwrap();
+            assert!(source.attachment("foreign", &evidence).await.is_err());
+            assert_eq!(
+                source.attachment("community", &evidence).await.is_ok(),
+                accepted
+            );
+            server.await.unwrap();
+        }
+    }
     #[test]
     fn roster_member_requires_the_pinned_relay_shape() {
         let key = "a".repeat(64);

@@ -2,6 +2,7 @@
 //! inside the restricted model runtime. PostgreSQL is the sole production ledger.
 #![forbid(unsafe_code)]
 pub mod api;
+mod attachments;
 pub mod auth;
 pub mod budget;
 mod db;
@@ -17,6 +18,7 @@ pub mod ports;
 mod publication;
 mod snapshots;
 mod tasks;
+pub use attachments::{NativeAttachmentSource, RetainAttachment, MAX_ATTACHMENT_BYTES};
 pub use db::{CommandResult, Provider, ProviderError, Result};
 pub use discovery::ProfileView;
 pub use effects::{AttemptView, DispatchPermit, RecoverEffect, ToolAdmission};

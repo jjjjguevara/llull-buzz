@@ -80,7 +80,9 @@ through resource authentication and purpose evidence where required by the regis
 | `POST /integration/v1/tasks/{id}/reconcile` | `reconcile-task`; same root/attempts and original provider lookup | BZ-C05 |
 | `POST /integration/v1/publications` | `publish`; frozen native destination/audience/release/content/attachment hashes | BZ-C06 |
 | `GET /integration/v1/publications/{id}` | Durable publication intent, persisted signed native event ID and known/unknown outcome | BZ-C06 |
-| `GET /integration/v1/evidence/{id}` | Metadata/registration readiness; authorized bytes through native media release gateway | BZ-C07 |
+| `GET /integration/v1/evidence/{id}` | Original signed metadata and separate consumer registration readiness | BZ-C07 |
+| `POST /integration/v1/attachment-retentions` | `retain-attachment`; exact original intake descriptor, private-origin bytes and separate durable receipt | BZ-C03/07 |
+| `GET /integration/v1/evidence/{id}/attachments/{sha256}` | Fresh artifact-specific EvidenceAccess; retained exact bytes, no native/public share URL | BZ-C07 |
 | `GET /integration/v1/observations?cursor=...&limit=...` | Maximum 100 records, scoped committed high-water mark and next cursor | BZ-C08 |
 | `POST /integration/v1/observation-acks` | `ack-observations`; consumer durable receipt and contiguous cursor prefix | BZ-C08 |
 
@@ -89,6 +91,40 @@ means invalid authentication/authority; 409 is intent or expected-revision confl
 expired cursor with explicit recovery coordinates; 422 is unsupported schema/profile. Oversize input
 is 413 before acceptance. Temporary admission unavailability is 503 with bounded retry advice and
 no claim that an external effect failed. Errors expose opaque IDs, not protected input or evidence.
+
+## Original attachment retention extension (source increment, 2026-10-10)
+
+`retain-attachment` uses a closed `{"source_id":"<intake UUID>","evidence":{...}}`
+payload and resource `{namespace: consumer_id, ref: "<intake UUID>/<sha256>", revision: "1"}`.
+It requires the registered service's current `retain-attachment` action and invocation
+purpose. The full descriptor must equal one in the immutable signed original intake
+in the same consumer/module/context. The configured native owner performs a bounded
+read from its private `/media/<sha256>` route with a short-lived exact-hash BUD-11
+`get` token. It does not fetch the sender's `imeta` URL or issue a host-wide token.
+The source must return HTTP 200, the exact declared MIME type and byte length, and
+matching SHA-256. Missing/redirected/partial/mismatched bytes do not become durable
+attachment evidence. The adopted maximum is 25 MiB per attachment, at most 32 per
+original intake; this is not a storage-capacity qualification.
+
+Migration 0007 retains verified bytes with the original source identity. The insert,
+command receipt and observation commit together. A fresh-authority replay returns
+the original receipt; another unchanged retention intent uses the same immutable
+bytes. Lost responses are retried under the same command identity, never a new source.
+Historical intake receipts retain their original `attachment_bytes_durable` value.
+A retention receipt does not create or change the consumer's evidence registration.
+
+The byte GET requires fresh NIP-98 plus `llull-evidence+jwt`, operation
+`read-attachment`, intent equal to the intake UUID, the same source/hash resource
+revision `1`, and the empty-body digest. Current service/enrollment, module, context,
+policy, recovery epoch and original retention deadline apply before bytes are read.
+The response is an attachment with `application/octet-stream`, `nosniff` and
+`no-store`; declared active media types are never rendered by this surface.
+
+This additive schema changes discovery's schema digest and must be adopted explicitly
+by consumers. The native client Blossom upload/GET/HEAD release gateway, attachment
+publication, transformations/previews and browser/native attachment journeys remain
+unqualified and unavailable through this increment. No current audience release or
+consumer evidence authority is replaced by the new retention route.
 
 ## Typed payload rules
 

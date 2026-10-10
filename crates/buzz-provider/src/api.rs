@@ -121,6 +121,30 @@ async fn evidence(
             .await?,
     ))
 }
+async fn attachment_bytes(
+    State(p): State<Provider>,
+    Path((id, digest)): Path<(String, String)>,
+    h: HeaderMap,
+) -> crate::Result<Response> {
+    let bytes = p
+        .attachment_bytes(
+            value(&h, "x-llull-consumer")?,
+            &id,
+            &digest,
+            credentials(&h)?,
+        )
+        .await?;
+    Ok((
+        [
+            ("content-type", "application/octet-stream"),
+            ("content-disposition", "attachment"),
+            ("x-content-type-options", "nosniff"),
+            ("cache-control", "no-store"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
 async fn publication_view(
     State(p): State<Provider>,
     Path(id): Path<uuid::Uuid>,
@@ -266,6 +290,10 @@ pub fn router_with_surfaces(provider: Provider, surfaces: ConfiguredSurfaces) ->
         .route("/integration/v1/effects/{id}", get(effect_view))
         .route("/integration/v1/evidence/{id}", get(evidence))
         .route(
+            "/integration/v1/evidence/{id}/attachments/{digest}",
+            get(attachment_bytes),
+        )
+        .route(
             "/integration/v1/intake-registrations",
             post(intake_registration),
         )
@@ -311,6 +339,28 @@ pub fn native_routes<S: crate::NativeEventSource + 'static>(
     };
     Router::new()
         .route("/integration/v1/conversation-intakes", post(intake))
+        .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
+}
+
+/// Separate from the transparent native media gateway: retains original input
+/// bytes only, under a registered service action and the original intake scope.
+pub fn attachment_routes<S: crate::NativeAttachmentSource + 'static>(
+    provider: Provider,
+    source: Arc<S>,
+) -> Router {
+    let retain = move |headers: HeaderMap, body: Bytes| {
+        let provider = provider.clone();
+        let source = source.clone();
+        async move {
+            Ok::<_, ProviderError>(Json(
+                provider
+                    .retain_attachment(&body, credentials(&headers)?, source.as_ref())
+                    .await?,
+            ))
+        }
+    };
+    Router::new()
+        .route("/integration/v1/attachment-retentions", post(retain))
         .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
 }
 
