@@ -15,9 +15,9 @@ RUN mkdir -p /image/opt/llull/bin /image/usr/share/doc/llull-buzz && \
     cp target/release/llull-buzz-provider /image/opt/llull/bin/ && \
     cp LICENSE Cargo.lock /image/usr/share/doc/llull-buzz/ && \
     (cd /image && sha256sum opt/llull/bin/llull-buzz-provider) > /image/usr/share/doc/llull-buzz/SHA256SUMS && \
-    cargo metadata --locked --format-version 1 > /image/usr/share/doc/llull-buzz/cargo-metadata.json && \
+    cargo +1.98.1 metadata --locked --format-version 1 > /image/usr/share/doc/llull-buzz/cargo-metadata.json && \
     python3 scripts/distribution-inventory.py --package llull-buzz-provider \
-      --target aarch64-unknown-linux-gnu \
+      --target "$(rustc +1.98.1 -vV | sed -n 's/^host: //p')" \
       --output /image/usr/share/doc/llull-buzz/third-party
 FROM ${RUNTIME_IMAGE}
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && \

@@ -41,6 +41,15 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-10 — Item 04.6 source correction: all three native Docker recipes
+now derive the distribution inventory target from the exact Rust 1.98.1
+compiler that built the executable, and provider metadata uses that same
+compiler. This removes an unconditional Linux arm64 inventory label from
+native amd64 builds. The existing compiler/build flags, immutable upstream
+source and runtime safeguards are unchanged. Static recipe inspection and
+Git whitespace checks passed; amd64/arm64 image builds remain unrun. No
+provider profile is activated and earlier image results do not carry forward.
+
 2026-10-10 — Item 04.3 successor claim: Codex Buzz implementation agent owns
 the reservation-to-dispatch accounting increment under the owner's full Akita
 implementation kickoff. Live PR #2 and clean local head are both

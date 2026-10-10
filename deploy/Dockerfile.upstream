@@ -37,7 +37,7 @@ RUN mkdir -p /image/opt/llull/upstream /image/usr/share/doc/buzz-upstream && \
     python3 /inventory/scripts/distribution-inventory.py --workspace /upstream \
       --package buzz-agent,buzz-acp,buzz-relay,buzz-cli,buzz-admin \
       --feature tokio-tungstenite/rustls-tls-native-roots \
-      --target aarch64-unknown-linux-gnu \
+      --target "$(rustc +1.98.1 -vV | sed -n 's/^host: //p')" \
       --output /image/usr/share/doc/buzz-upstream/third-party
 FROM ${RUNTIME_IMAGE}
 RUN apt-get update && apt-get install -y --no-install-recommends \
