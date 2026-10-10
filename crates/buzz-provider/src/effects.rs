@@ -457,6 +457,9 @@ impl Provider {
         if result.state == "effect-unknown" || state.phase == Execution::EffectUnknown {
             let unresolved:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attempts WHERE consumer_id=$1 AND root_task_id=$2 AND state IN ('pending','effect-unknown'))")
                 .bind(&expected.consumer_id).bind(&expected.root_task_id).fetch_one(&mut *tx).await?;
+            let unresolved = unresolved
+                || Self::unresolved_models(&mut tx, &expected.consumer_id, &expected.root_task_id)
+                    .await?;
             state.recovery_pending(unresolved)?;
             Self::save_state(
                 &mut tx,

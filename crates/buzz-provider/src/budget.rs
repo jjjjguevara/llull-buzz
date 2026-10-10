@@ -1,5 +1,5 @@
-//! Durable model-budget reservation only. No model transport or credentials exist
-//! here. Reservation is not a permit to bypass the future token-counting gateway.
+//! Durable model-budget reservation and signed gateway accounting DTOs. No model
+//! transport or credentials exist here; independent gateway counting is required.
 use crate::{
     auth::{self, Headers},
     Provider, Result,
@@ -33,7 +33,7 @@ impl Pricing {
         }
         Ok(())
     }
-    fn cost(&self, input: u64, output: u64) -> llull_buzz_wire::Result<u64> {
+    pub(crate) fn cost(&self, input: u64, output: u64) -> llull_buzz_wire::Result<u64> {
         let total = (input as u128) * (self.input_usd_micros_per_million as u128)
             + (output as u128) * (self.output_usd_micros_per_million as u128);
         u64::try_from(total.div_ceil(1_000_000)).map_err(|_| Fault::Exhausted)
@@ -49,6 +49,75 @@ pub struct ModelReservation {
     pub prompt_sha256: String,
     pub input_upper_bound: u64,
     pub output_upper_bound: u64,
+}
+
+/// Signed only by the trusted gateway's broker after counting the exact vendor
+/// request. For this extension, reservation.prompt_sha256 is the SHA-256 of that
+/// complete canonical request, including tools/context/model/output settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeginModelDispatch {
+    pub reservation_id: uuid::Uuid,
+    pub task_id: String,
+    pub expected_generation: u64,
+    pub worker_id: String,
+    pub model_owner: String,
+    pub request_sha256: String,
+    pub counted_input_tokens: u64,
+    pub output_upper_bound: u64,
+}
+impl BeginModelDispatch {
+    pub(crate) fn validate(&self) -> llull_buzz_wire::Result<()> {
+        for value in [&self.task_id, &self.worker_id, &self.model_owner] {
+            llull_buzz_wire::id(value)?;
+        }
+        llull_buzz_wire::hash(&self.request_sha256)?;
+        if !(1..=llull_buzz_wire::MAX_SAFE_INTEGER as u64).contains(&self.expected_generation)
+            || !(1..=32_000).contains(&self.counted_input_tokens)
+            || !(1..=16_000).contains(&self.output_upper_bound)
+        {
+            return Err(Fault::Invalid);
+        }
+        Ok(())
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub observed_usd_micros: u64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SettleModelDispatch {
+    pub reservation_id: uuid::Uuid,
+    pub task_id: String,
+    pub expected_generation: u64,
+    pub model_owner: String,
+    pub request_sha256: String,
+    pub outcome_sha256: String,
+    pub usage: ModelUsage,
+}
+impl SettleModelDispatch {
+    pub(crate) fn validate(&self) -> llull_buzz_wire::Result<()> {
+        llull_buzz_wire::id(&self.task_id)?;
+        llull_buzz_wire::id(&self.model_owner)?;
+        llull_buzz_wire::hash(&self.request_sha256)?;
+        llull_buzz_wire::hash(&self.outcome_sha256)?;
+        if !(1..=llull_buzz_wire::MAX_SAFE_INTEGER as u64).contains(&self.expected_generation)
+            || [
+                self.usage.input_tokens,
+                self.usage.output_tokens,
+                self.usage.observed_usd_micros,
+            ]
+            .iter()
+            .any(|n| *n > llull_buzz_wire::MAX_SAFE_INTEGER as u64)
+        {
+            return Err(Fault::Invalid);
+        }
+        Ok(())
+    }
 }
 impl Provider {
     pub async fn reserve_model_budget(
@@ -88,6 +157,7 @@ impl Provider {
             tx.commit().await?;
             return Ok(result);
         }
+        Self::model_profile_clear(&mut tx, &c.consumer_id).await?;
         let now = Self::now(&mut tx).await?;
         let pricing = registration.pricing.as_ref().ok_or(Fault::Unavailable)?;
         if pricing.revision != r.pricing_revision

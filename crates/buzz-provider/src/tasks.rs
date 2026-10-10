@@ -306,6 +306,9 @@ impl Provider {
         // Replacement reads attempts before doing anything with the new process.
         let unresolved:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attempts WHERE consumer_id=$1 AND root_task_id=$2 AND state IN ('pending','effect-unknown'))")
             .bind(&c.consumer_id).bind(&record.manifest.root_task_id).fetch_one(&mut *tx).await?;
+        let unresolved = unresolved
+            || Self::unresolved_models(&mut tx, &c.consumer_id, &record.manifest.root_task_id)
+                .await?;
         if !renew && unresolved && state.worker.as_ref().is_some_and(|w| w.lease_until <= now) {
             self.fence_root(
                 &mut tx,
@@ -548,7 +551,9 @@ impl Provider {
             effects.iter().any(|a| a.state == "completed"),
             effects
                 .iter()
-                .any(|a| matches!(a.state.as_str(), "pending" | "effect-unknown")),
+                .any(|a| matches!(a.state.as_str(), "pending" | "effect-unknown"))
+                || Self::unresolved_models(&mut tx, &c.consumer_id, &record.manifest.root_task_id)
+                    .await?,
         )?;
         Self::save_state(
             &mut tx,
@@ -642,6 +647,7 @@ impl Provider {
             .bind(consumer).bind(root).fetch_one(&mut **tx).await?;
         let completed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attempts WHERE consumer_id=$1 AND root_task_id=$2 AND state='completed')")
             .bind(consumer).bind(root).fetch_one(&mut **tx).await?;
+        let unknown = unknown || Self::unresolved_models(tx, consumer, root).await?;
         state.fence(unknown, completed)?;
         Self::save_state(tx, consumer, root, state).await
     }

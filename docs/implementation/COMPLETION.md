@@ -5,6 +5,28 @@ The stopping criterion is the complete accepted provider and applicable qualific
 including an isolated test deployment. [Slice 1](SLICE-1.md) and
 [its validation](LOCAL-VALIDATION.md) remain historical evidence, not the current scope limit.
 
+## Successor model-accounting source increment, 2026-10-10
+
+The [trusted gateway accounting extension](MODEL-ACCOUNTING.md) adds signed
+begin/settlement endpoints to the ordinary router, immutable dispatch identity,
+unknown outcome retention, exact usage receipts and overrun fencing. It supplies
+the provider journal for integration by an independently installed model proxy; it does
+not implement or certify that proxy, native mention completion or model delivery.
+The three new PostgreSQL cases and migration/restart checks remain **unrun**.
+
+On the current working source based on `b244ba7560112e498ee6d68a48d035c99cb0b8c2`,
+targeted `cargo check --locked -p llull-buzz-provider --tests` passed (12.25 s).
+Strict targeted Clippy passed (7.91 s) and the provider's two existing library
+regressions passed (6.03 s build, tests under 0.01 s). These used the existing
+Rust 1.98.1 toolchain/target cache with one job and incremental compilation off,
+without a service, database or new runtime environment. The first offline check
+failed because the `aead 0.5.2` archive was absent; the locked retry downloaded
+missing existing-lock archives and passed. No live provider request occurred.
+Independent source review then corrected begin replay to retain the immutable
+original receipt while exposing current dispatch state outside that receipt.
+Rustfmt and strict offline targeted Clippy passed again (8.04 s); its added
+PostgreSQL receipt assertion compiled but remains unrun with the other cases.
+
 ## Implemented continuation
 
 `Provider::discover_profile` supplies independently authenticated discovery at

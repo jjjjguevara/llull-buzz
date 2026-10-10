@@ -116,6 +116,8 @@ impl Rig {
             "publish",
             "reconcile-effect",
             "reserve-model-budget",
+            "begin-model-dispatch",
+            "settle-model-dispatch",
             "discover-profile",
             "observe",
             "ack-observations",
@@ -543,6 +545,8 @@ mod discovery;
 mod https_consumer;
 #[path = "cases/intake.rs"]
 mod intake;
+#[path = "cases/model_dispatch.rs"]
+mod model_dispatch;
 #[path = "cases/observations.rs"]
 mod observations;
 #[path = "cases/publication.rs"]

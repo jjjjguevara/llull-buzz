@@ -87,6 +87,8 @@ body_handler!(access, change_access);
 body_handler!(retire, retire_key);
 body_handler!(start, start_task);
 body_handler!(model_reservation, reserve_model_budget);
+body_handler!(model_dispatch, begin_model_dispatch);
+body_handler!(model_settlement, settle_model_dispatch);
 body_handler!(observation_ack, ack_observations);
 body_handler!(intake_registration, register_intake);
 body_handler!(create_snapshot, create_snapshot);
@@ -277,6 +279,14 @@ pub fn router_with_surfaces(provider: Provider, surfaces: ConfiguredSurfaces) ->
         .route(
             "/integration/foundation/v1/model-reservations",
             post(model_reservation),
+        )
+        .route(
+            "/integration/foundation/v1/model-dispatches",
+            post(model_dispatch),
+        )
+        .route(
+            "/integration/foundation/v1/model-settlements",
+            post(model_settlement),
         )
         .fallback(unavailable)
         .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))

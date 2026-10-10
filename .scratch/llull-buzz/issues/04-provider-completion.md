@@ -41,6 +41,20 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-10 — Item 04.3 successor claim: Codex Buzz implementation agent owns
+the reservation-to-dispatch accounting increment under the owner's full Akita
+implementation kickoff. Live PR #2 and clean local head are both
+`b244ba7560112e498ee6d68a48d035c99cb0b8c2`, open/draft, with no comments,
+reviews or inline review comments. The existing task remains claimed.
+Implement signed begin/settlement operations for the existing trusted model
+gateway, immutable original reservation/request identity, no replayed dispatch,
+retained unknown charges and root fencing. Bind BZ-C04/05, BZ-CTL01/05/06 and
+BZ-PF04/05 using the existing PostgreSQL suite; no new agent loop, provider
+activation, model credential, human verdict or parallel tracker. The integration
+owner owns consumer assembly and all VM operations. Source/compact records are
+bounded below 1 MiB; initial Mac available space is 80,467,448 KiB. The existing
+12 GiB target cache is shared retained work and is not owned by this increment.
+
 2026-09-21 — Starting inspection: local and remote PR head
 `667f8118b2386e5a4dd98e90885b266a4432bfc9`; main
 `f3fe82e94e878eba7173aaf326085b77b9c9bc51`. Clean local checkout, PR open/draft,
