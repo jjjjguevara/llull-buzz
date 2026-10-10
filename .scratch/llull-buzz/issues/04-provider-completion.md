@@ -41,6 +41,18 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-10 — Item 04.4 source increment: optional `reply_to_event` is bound to
+the exact publication release. The publisher verifies original signed native
+message identity/channel through the existing owner before signing and again
+before dispatch; the unchanged upstream SDK supplies native reply tags. Omitted
+fields preserve historical serialized bytes. Added source signature/correlation
+controls and a PostgreSQL delivery/denial/replay case. Twelve provider/wire library
+tests passed (3 + 9); strict offline Clippy including authored PostgreSQL tests
+passed in 7.10 seconds after correcting a test-module placement lint. Rustfmt and
+whitespace checks passed. PostgreSQL, installed native clients and composed
+mention-to-reply remain unrun for this increment. The restricted profile stays
+inactive. The existing source cache was reused without an environment or runtime.
+
 2026-10-10 — Item 04.6 source correction: all three native Docker recipes
 now derive the distribution inventory target from the exact Rust 1.98.1
 compiler that built the executable, and provider metadata uses that same

@@ -73,6 +73,28 @@ impl<P: PublicationPort> Publisher<P> {
         }
         Ok(a)
     }
+    async fn reply(&self, p: &Publication) -> Result<()> {
+        let Some(identity) = &p.reply_to_event else {
+            return Ok(());
+        };
+        // A consumer-supplied hash is not evidence of a native conversation.
+        // Resolve through the same fixed owner and verify signed channel bytes.
+        let bytes = tokio::time::timeout(
+            Duration::from_secs(5),
+            self.port.event(&p.community_id, &p.channel_id, identity),
+        )
+        .await
+        .map_err(|_| Fault::Unknown)?
+        .map_err(|_| Fault::Unknown)?;
+        let event = native::event(&bytes)?;
+        if event.id.to_hex() != *identity
+            || event.kind.as_u16() as u32 != buzz_core::kind::KIND_STREAM_MESSAGE
+            || native::tag(&event, "h")? != p.channel_id
+        {
+            return Err(Fault::Denied.into());
+        }
+        Ok(())
+    }
     fn sign(&self, id: Uuid, p: &Publication) -> Result<Vec<u8>> {
         // A signed imeta is a disclosure surface. Until the same-origin,
         // artifact-scoped media gateway is installed, the current native CLI
@@ -97,14 +119,26 @@ impl<P: PublicationPort> Publisher<P> {
                 format!("size {}", e.size_bytes),
             ]);
         }
-        let event = buzz_sdk::build_message(channel, &p.text, None, &[], false, &media, &[])
-            .map_err(|_| Fault::Invalid)?
-            .tag(
-                nostr::Tag::parse(["llull-publication", id.to_string().as_str()])
-                    .map_err(|_| Fault::Invalid)?,
-            )
-            .sign_with_keys(&self.key)
-            .map_err(|_| Fault::Denied)?;
+        let thread = p
+            .reply_to_event
+            .as_ref()
+            .map(|id| {
+                let event = nostr::EventId::from_hex(id).map_err(|_| Fault::Invalid)?;
+                Ok::<_, Fault>(buzz_sdk::ThreadRef {
+                    root_event_id: event,
+                    parent_event_id: event,
+                })
+            })
+            .transpose()?;
+        let event =
+            buzz_sdk::build_message(channel, &p.text, thread.as_ref(), &[], false, &media, &[])
+                .map_err(|_| Fault::Invalid)?
+                .tag(
+                    nostr::Tag::parse(["llull-publication", id.to_string().as_str()])
+                        .map_err(|_| Fault::Invalid)?,
+                )
+                .sign_with_keys(&self.key)
+                .map_err(|_| Fault::Denied)?;
         serde_json::to_vec(&event).map_err(|_| Fault::Invalid.into())
     }
 }
@@ -229,6 +263,7 @@ impl Provider {
         }
         self.current_publication_authority(&mut tx, &permit).await?;
         let audience = publisher.audience(&permit.publication).await?;
+        publisher.reply(&permit.publication).await?;
         if view.native_event_id.is_none() {
             let bytes = publisher.sign(permit.publication_id, &permit.publication)?;
             let event = native::event(&bytes)?;
@@ -265,6 +300,7 @@ impl Provider {
         }
         self.current_publication_authority(&mut tx, &permit).await?;
         let fresh = publisher.audience(&permit.publication).await?;
+        publisher.reply(&permit.publication).await?;
         if fresh != audience {
             return Err(Fault::Denied.into());
         }
@@ -443,5 +479,78 @@ impl Provider {
         claims.fresh(Self::now(&mut tx).await?.timestamp())?;
         tx.commit().await?;
         Ok(view)
+    }
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+    struct Origin {
+        key: nostr::PublicKey,
+        event: Vec<u8>,
+    }
+    #[async_trait]
+    impl NativeEventSource for Origin {
+        async fn event(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+        ) -> std::result::Result<Vec<u8>, PortError> {
+            Ok(self.event.clone())
+        }
+    }
+    #[async_trait]
+    impl PublicationPort for Origin {
+        fn owner(&self) -> &str {
+            "synthetic-fixed-owner"
+        }
+        fn public_key(&self) -> nostr::PublicKey {
+            self.key
+        }
+        async fn audience(&self, _: &str, _: &str) -> std::result::Result<Audience, PortError> {
+            Err(PortError)
+        }
+        async fn submit(&self, _: &str, _: &[u8]) -> std::result::Result<bool, PortError> {
+            panic!("no transport in source test")
+        }
+    }
+    #[tokio::test]
+    async fn exact_signed_parent_and_native_reply_tag_are_enforced() {
+        let key = nostr::Keys::generate();
+        let channel = Uuid::new_v4();
+        let parent =
+            buzz_sdk::build_message(channel, "Original mention", None, &[], false, &[], &[])
+                .unwrap()
+                .sign_with_keys(&nostr::Keys::generate())
+                .unwrap();
+        let origin = Arc::new(Origin {
+            key: key.public_key(),
+            event: serde_json::to_vec(&parent).unwrap(),
+        });
+        let publisher = Publisher::new(origin, key, "https://synthetic.invalid").unwrap();
+        let mut publication = Publication {
+            community_id: "community-one".into(),
+            channel_id: channel.to_string(),
+            audience_policy: "private".into(),
+            audience_revision: "1".into(),
+            release_ref: "release-one".into(),
+            text: "Approved link".into(),
+            text_sha256: sha256(b"Approved link"),
+            copy_mode: llull_buzz_wire::CopyMode::SummaryLink,
+            attachments: vec![],
+            reply_to_event: Some(parent.id.to_hex()),
+        };
+        publisher.reply(&publication).await.unwrap();
+        let event = native::event(&publisher.sign(Uuid::new_v4(), &publication).unwrap()).unwrap();
+        assert!(event
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice() == ["e", &parent.id.to_hex(), "", "reply"]));
+        publication.channel_id = Uuid::new_v4().to_string();
+        assert!(publisher.reply(&publication).await.is_err());
+        publication.channel_id = channel.to_string();
+        publication.reply_to_event = Some("a".repeat(64));
+        assert!(publisher.reply(&publication).await.is_err());
     }
 }

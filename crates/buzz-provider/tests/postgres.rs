@@ -1224,6 +1224,7 @@ async fn zz_postgres_foundation_contracts() {
         text: "Synthetic public text".into(),
         text_sha256: sha256(b"Synthetic public text"),
         copy_mode: CopyMode::SummaryLink,
+        reply_to_event: None,
         attachments: vec![],
     };
     let c = rig.command("publish", rig.resource("publication", 1), &publication);

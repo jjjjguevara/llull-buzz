@@ -242,6 +242,18 @@ pub struct Publication {
     pub text_sha256: String,
     pub copy_mode: CopyMode,
     pub attachments: Vec<Evidence>,
+    /// Exact original native message. Absence preserves historical wire bytes.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "reply_target"
+    )]
+    pub reply_to_event: Option<String>,
+}
+fn reply_target<'de, D: serde::Deserializer<'de>>(
+    input: D,
+) -> std::result::Result<Option<String>, D::Error> {
+    String::deserialize(input).map(Some)
 }
 impl Publication {
     pub fn validate(&self) -> Result<()> {
@@ -255,6 +267,9 @@ impl Publication {
             id(s)?;
         }
         hash(&self.text_sha256)?;
+        if let Some(event) = &self.reply_to_event {
+            hash(event)?;
+        }
         if self.text.chars().count() > 16_384 || self.attachments.len() > 32 {
             return Err(Fault::TooLarge);
         }
@@ -335,4 +350,33 @@ pub struct ToolCall<C> {
     pub action: String,
     pub resource: Resource,
     pub arguments: C,
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+    #[test]
+    fn optional_reply_preserves_historical_bytes_and_binds_exact_event() {
+        let original = serde_json::json!({"community_id":"one","channel_id":"two",
+            "audience_policy":"private","audience_revision":"1","release_ref":"release-one",
+            "text":"approved link","text_sha256":crate::sha256(b"approved link"),
+            "copy_mode":"summary-link","attachments":[]});
+        let mut publication: Publication = serde_json::from_value(original.clone()).unwrap();
+        publication.validate().unwrap();
+        assert_eq!(
+            crate::canonical(&publication).unwrap(),
+            crate::canonical(&original).unwrap()
+        );
+        publication.reply_to_event = Some("a".repeat(64));
+        publication.validate().unwrap();
+        assert_ne!(
+            crate::digest(&publication).unwrap(),
+            crate::digest(&original).unwrap()
+        );
+        publication.reply_to_event = Some("A".repeat(64));
+        assert!(publication.validate().is_err());
+        let mut null_reply = original;
+        null_reply["reply_to_event"] = Value::Null;
+        assert!(serde_json::from_value::<Publication>(null_reply).is_err());
+    }
 }

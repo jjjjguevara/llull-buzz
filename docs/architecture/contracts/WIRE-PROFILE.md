@@ -53,6 +53,16 @@ fails closed for new effects. Read/reconcile past results uses separately curren
 
 ## Owned routes and exact meanings
 
+Publication may include `reply_to_event`, the exact lowercase SHA-256 native
+message ID being answered. It is part of the frozen publication and release
+digest. Before signing and sending, the publisher resolves that signed kind-9
+message through its fixed native owner and checks its channel and identity. The
+selected upstream message builder adds the native reply tag. A changed or
+unavailable source cannot silently become a new channel message. Omission keeps
+the original publication serialization; historical commands and receipts are
+unchanged. Consumers must qualify the new advertised schema digest before using
+the optional field. This field supplies correlation, never release authority.
+
 The profile deliberately adds these adapter routes; it does not invent new upstream client routes.
 Path identifiers and body identifiers must agree. GET/query requests also bind method/path/query
 through resource authentication and purpose evidence where required by the registered scope.

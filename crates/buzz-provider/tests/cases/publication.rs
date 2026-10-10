@@ -90,6 +90,90 @@ fn signed_with_root(rig: &Rig, c: &Command, root: Option<&str>) -> (Vec<u8>, Sig
 
 #[tokio::test]
 #[ignore = "requires disposable PostgreSQL 16"]
+async fn publication_reply_requires_original_signed_same_channel_event() {
+    let rig = Rig::new().await;
+    let key = nostr::Keys::generate();
+    let channel = Uuid::new_v4();
+    let original = buzz_sdk::build_message(
+        channel,
+        "Synthetic native mention",
+        None,
+        &[],
+        false,
+        &[],
+        &[],
+    )
+    .unwrap()
+    .sign_with_keys(&nostr::Keys::generate())
+    .unwrap();
+    let sink = Arc::new(Sink {
+        key: key.public_key(),
+        revision: Mutex::new("audience-1".into()),
+        events: Mutex::new(BTreeMap::from([(
+            original.id.to_hex(),
+            serde_json::to_vec(&original).unwrap(),
+        )])),
+        calls: AtomicUsize::new(0),
+        lose: false.into(),
+    });
+    let publisher =
+        Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap();
+    let mut publication = Publication {
+        community_id: rig.registration.community_id.clone(),
+        channel_id: Uuid::new_v4().to_string(),
+        audience_policy: "synthetic-private".into(),
+        audience_revision: "audience-1".into(),
+        release_ref: Uuid::new_v4().to_string(),
+        text: "Approved result link".into(),
+        text_sha256: sha256(b"Approved result link"),
+        copy_mode: CopyMode::SummaryLink,
+        attachments: vec![],
+        reply_to_event: Some(original.id.to_hex()),
+    };
+    let wrong = rig.command("publish", rig.resource("wrong-channel", 1), &publication);
+    let (bytes, signed) = signed_publication(&rig, &wrong);
+    assert!(rig
+        .p
+        .publish(&bytes, signed.headers(), &publisher)
+        .await
+        .is_err());
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+    publication.channel_id = channel.to_string();
+    publication.release_ref = Uuid::new_v4().to_string();
+    let command = rig.command("publish", rig.resource("same-channel", 1), &publication);
+    let (bytes, signed) = signed_publication(&rig, &command);
+    let result = rig
+        .p
+        .publish(&bytes, signed.headers(), &publisher)
+        .await
+        .unwrap();
+    assert_eq!(result.publication.state, "completed");
+    let identity = result.publication.native_event_id.unwrap();
+    let retained = sink.events.lock().unwrap()[&identity].clone();
+    let reply = llull_buzz_provider::native::event(&retained).unwrap();
+    assert!(reply
+        .tags
+        .iter()
+        .any(|tag| tag.as_slice() == ["e", &original.id.to_hex(), "", "reply"]));
+    assert!(reply
+        .tags
+        .iter()
+        .any(|tag| tag.as_slice() == ["h", &channel.to_string()]));
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+    // A changed reply target is a different frozen release, never a retry.
+    let mut changed = command.clone();
+    changed.payload["reply_to_event"] = json!("f".repeat(64));
+    let (bytes, signed) = signed_publication(&rig, &changed);
+    assert!(rig
+        .p
+        .publish(&bytes, signed.headers(), &publisher)
+        .await
+        .is_err());
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16"]
 async fn publication_freezes_signed_identity_and_recovers_without_duplicate_delivery() {
     let rig = Rig::new().await;
     let key = nostr::Keys::generate();
@@ -111,6 +195,7 @@ async fn publication_freezes_signed_identity_and_recovers_without_duplicate_deli
         text: "Synthetic approved reply".into(),
         text_sha256: sha256(b"Synthetic approved reply"),
         copy_mode: CopyMode::ExplicitCopy,
+        reply_to_event: None,
         attachments: vec![],
     };
     let c = rig.command("publish", rig.resource("synthetic-result", 1), &publication);
@@ -231,6 +316,7 @@ async fn attachment_publication_keeps_admission_without_unsafe_native_delivery()
         text: text.into(),
         text_sha256: sha256(text.as_bytes()),
         copy_mode: CopyMode::ExplicitCopy,
+        reply_to_event: None,
         attachments: vec![Evidence {
             source_id: Uuid::new_v4().to_string(),
             sha256: sha256(b"synthetic attachment bytes"),
@@ -379,6 +465,7 @@ async fn live_provider_publishes_one_signed_event_to_pinned_relay() {
         text_sha256: sha256(text.as_bytes()),
         text: text.clone(),
         copy_mode: CopyMode::ExplicitCopy,
+        reply_to_event: None,
         attachments: vec![],
     };
     let command = rig.command(
@@ -573,6 +660,7 @@ async fn live_relay_response_loss_reconciles_original_event_without_resend() {
         text_sha256: sha256(text.as_bytes()),
         text: text.clone(),
         copy_mode: CopyMode::ExplicitCopy,
+        reply_to_event: None,
         attachments: vec![],
     };
     let command = rig.command(
