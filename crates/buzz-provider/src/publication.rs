@@ -215,12 +215,20 @@ impl Provider {
             return Err(Fault::Denied.into());
         }
         self.scope(tx, &registration, claims).await?;
+        let root = if let Some(root) = &claims.root_task_id {
+            let (root, state) = Self::root(tx, &claims.consumer_id, root).await?;
+            root.scope.new_work(claims)?;
+            Some((root, state))
+        } else {
+            None
+        };
+        // Lock acquisition and native lookups can outlive the immutable root.
+        // Sample the database clock after every authority row has been locked;
+        // a fresh assertion never extends that original execution deadline.
         let now = Self::now(tx).await?;
         claims.fresh(now.timestamp())?;
         claims.release_for(&permit.publication, now.timestamp())?;
-        if let Some(root) = &claims.root_task_id {
-            let (root, state) = Self::root(tx, &claims.consumer_id, root).await?;
-            root.scope.new_work(claims)?;
+        if let Some((root, state)) = root {
             state.live(&root.manifest, now)?;
         }
         Ok(())
@@ -308,10 +316,7 @@ impl Provider {
             }
         }
         // Unknown is durable BEFORE network I/O, including a crash before send.
-        permit.claims.fresh(Self::now(&mut tx).await?.timestamp())?;
-        permit
-            .claims
-            .release_for(&permit.publication, Self::now(&mut tx).await?.timestamp())?;
+        self.current_publication_authority(&mut tx, &permit).await?;
         sqlx::query("UPDATE publication_deliveries SET state='unknown',revision=revision+1,dispatched_at=COALESCE(dispatched_at,clock_timestamp()) WHERE publication_id=$1")
             .bind(permit.publication_id).execute(&mut *tx).await?;
         tx.commit().await?;
@@ -355,10 +360,7 @@ impl Provider {
         }
         // All governed native mutations share this admission lock. The private
         // origin must not expose another writer or unmediated subscriber path.
-        permit.claims.fresh(Self::now(&mut tx).await?.timestamp())?;
-        permit
-            .claims
-            .release_for(&permit.publication, Self::now(&mut tx).await?.timestamp())?;
+        self.current_publication_authority(&mut tx, &permit).await?;
         let accepted = tokio::time::timeout(
             Duration::from_secs(5),
             publisher

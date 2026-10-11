@@ -62,6 +62,69 @@ impl PublicationPort for Sink {
         }
     }
 }
+
+// Uses real database time and an actual await in the native lookup boundary,
+// without changing the immutable task, assertion, or provider clock.
+struct ExpiringAudience {
+    inner: Sink,
+    pool: PgPool,
+    deadline: chrono::DateTime<Utc>,
+    expire_on: usize,
+    reads: AtomicUsize,
+}
+#[async_trait]
+impl NativeEventSource for ExpiringAudience {
+    async fn event(
+        &self,
+        community: &str,
+        channel: &str,
+        event: &str,
+    ) -> std::result::Result<Vec<u8>, PortError> {
+        self.inner.event(community, channel, event).await
+    }
+}
+#[async_trait]
+impl PublicationPort for ExpiringAudience {
+    fn owner(&self) -> &str {
+        self.inner.owner()
+    }
+    fn public_key(&self) -> nostr::PublicKey {
+        self.inner.public_key()
+    }
+    async fn audience(
+        &self,
+        community: &str,
+        channel: &str,
+    ) -> std::result::Result<Audience, PortError> {
+        if self.reads.fetch_add(1, Ordering::SeqCst) + 1 == self.expire_on {
+            let now: chrono::DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+                .fetch_one(&self.pool)
+                .await
+                .unwrap();
+            assert!(
+                now < self.deadline,
+                "fixture must reach the awaited boundary before expiry"
+            );
+            let wait = (self.deadline - now).to_std().unwrap() + Duration::from_millis(20);
+            assert!(
+                wait < Duration::from_secs(4),
+                "keep within the native lookup timeout"
+            );
+            tokio::time::sleep(wait).await;
+            let expired: bool = sqlx::query_scalar("SELECT clock_timestamp() >= $1")
+                .bind(self.deadline)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap();
+            assert!(expired);
+        }
+        self.inner.audience(community, channel).await
+    }
+    async fn submit(&self, community: &str, bytes: &[u8]) -> std::result::Result<bool, PortError> {
+        self.inner.submit(community, bytes).await
+    }
+}
+
 fn signed_publication(rig: &Rig, c: &Command) -> (Vec<u8>, Signed) {
     signed_with_root(rig, c, None)
 }
@@ -86,6 +149,153 @@ fn signed_with_root(rig: &Rig, c: &Command, root: Option<&str>) -> (Vec<u8>, Sig
         PUBLICATION,
     );
     (body, h)
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16"]
+async fn publication_root_expiry_during_native_lookup_never_dispatches_or_rewrites_unknown() {
+    for boundary in [0, 1, 2] {
+        let rig = Rig::new().await;
+        let root = rig
+            .start(None, "module-a", if boundary == 0 { 30 } else { 3 })
+            .await;
+        let key = nostr::Keys::generate();
+        let channel = Uuid::new_v4();
+        let parent = buzz_sdk::build_message(
+            channel,
+            "Original signed mention",
+            None,
+            &[],
+            false,
+            &[],
+            &[],
+        )
+        .unwrap()
+        .sign_with_keys(&nostr::Keys::generate())
+        .unwrap();
+        let sink = Arc::new(ExpiringAudience {
+            inner: Sink {
+                key: key.public_key(),
+                revision: Mutex::new("audience-1".into()),
+                events: Mutex::new(BTreeMap::from([(
+                    parent.id.to_hex(),
+                    serde_json::to_vec(&parent).unwrap(),
+                )])),
+                calls: AtomicUsize::new(0),
+                lose: false.into(),
+            },
+            pool: rig.pool.clone(),
+            deadline: root.expires_at,
+            expire_on: boundary,
+            reads: AtomicUsize::new(0),
+        });
+        let publisher =
+            Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap();
+        let publication = Publication {
+            community_id: rig.registration.community_id.clone(),
+            channel_id: channel.to_string(),
+            audience_policy: "synthetic-private".into(),
+            audience_revision: "audience-1".into(),
+            release_ref: Uuid::new_v4().to_string(),
+            text: "Approved reply".into(),
+            text_sha256: sha256(b"Approved reply"),
+            copy_mode: CopyMode::SummaryLink,
+            attachments: vec![],
+            reply_to_event: Some(parent.id.to_hex()),
+        };
+        let command = rig.command("publish", rig.resource("deadline-result", 1), &publication);
+        let (body, signed) = signed_with_root(&rig, &command, Some(&root.root_task_id));
+        let original = rig
+            .p
+            .admit_publication(&body, signed.headers())
+            .await
+            .unwrap();
+        let id = Uuid::parse_str(&original.receipt.operation_id).unwrap();
+        let stored: Value = sqlx::query_scalar("SELECT result FROM commands WHERE consumer_id=$1 AND operation='publish' AND intent_id=$2")
+            .bind(&command.consumer_id).bind(&command.intent_id).fetch_one(&rig.pool).await.unwrap();
+        let (body, signed) = signed_with_root(&rig, &command, Some(&root.root_task_id));
+        let result = rig.p.publish(&body, signed.headers(), &publisher).await;
+        if boundary == 0 {
+            assert_eq!(result.unwrap().publication.state, "completed");
+            assert_eq!(sink.inner.calls.load(Ordering::SeqCst), 1);
+            continue;
+        }
+        assert!(matches!(
+            result,
+            Err(ProviderError::Admission(Fault::Exhausted))
+        ));
+        assert_eq!(sink.reads.load(Ordering::SeqCst), boundary);
+        assert_eq!(sink.inner.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            sink.inner.events.lock().unwrap().len(),
+            1,
+            "only the original mention exists"
+        );
+        let delivery: Option<(String, String, Vec<u8>, i64)> = sqlx::query_as(
+            "SELECT state,native_event_id,signed_event,revision FROM publication_deliveries WHERE publication_id=$1")
+            .bind(id).fetch_optional(&rig.pool).await.unwrap();
+        if boundary == 1 {
+            assert!(
+                delivery.is_none(),
+                "expired preflight cannot commit signed custody"
+            );
+            let (body, signed) = signed_with_root(&rig, &command, Some(&root.root_task_id));
+            assert!(matches!(
+                rig.p.publish(&body, signed.headers(), &publisher).await,
+                Err(ProviderError::Admission(Fault::Exhausted))
+            ));
+        } else {
+            let retained = delivery.unwrap();
+            assert_eq!(retained.0, "unknown");
+            assert_eq!(
+                llull_buzz_provider::native::event(&retained.2)
+                    .unwrap()
+                    .id
+                    .to_hex(),
+                retained.1
+            );
+            let (body, signed) = signed_with_root(&rig, &command, Some(&root.root_task_id));
+            let retry = rig
+                .p
+                .publish(&body, signed.headers(), &publisher)
+                .await
+                .unwrap();
+            assert_eq!(retry.publication.state, "unknown");
+            assert_eq!(
+                retry.publication.native_event_id.as_deref(),
+                Some(retained.1.as_str())
+            );
+            // Current record-access authority may observe an expired original
+            // root, but a missing event never authorizes a new send or identity.
+            let recovery = rig.command(
+                "reconcile-publication",
+                rig.resource(&id.to_string(), 1),
+                json!({"publication_id": id}),
+            );
+            let claims = rig.claims(&recovery, "module-a", None, None);
+            let (body, signed) = rig.prepare(
+                &format!("/integration/v1/publications/{id}/reconcile"),
+                &recovery,
+                &claims,
+            );
+            assert_eq!(
+                rig.p
+                    .reconcile_publication(id, &body, signed.headers(), &publisher)
+                    .await
+                    .unwrap()
+                    .state,
+                "unknown"
+            );
+            let after: (String, String, Vec<u8>, i64) = sqlx::query_as(
+                "SELECT state,native_event_id,signed_event,revision FROM publication_deliveries WHERE publication_id=$1")
+                .bind(id).fetch_one(&rig.pool).await.unwrap();
+            assert_eq!(after, retained);
+        }
+        let after: Value = sqlx::query_scalar("SELECT result FROM commands WHERE consumer_id=$1 AND operation='publish' AND intent_id=$2")
+            .bind(&command.consumer_id).bind(&command.intent_id).fetch_one(&rig.pool).await.unwrap();
+        assert_eq!(after, stored, "original admission receipt is immutable");
+        assert_eq!(sink.inner.calls.load(Ordering::SeqCst), 0);
+    }
 }
 
 #[tokio::test]

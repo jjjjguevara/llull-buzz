@@ -109,6 +109,22 @@ re-signs an old event to repair its thread or resubmits an unknown delivery.
 Publication JSON/release digests remain unchanged. Real native journey and updated
 PostgreSQL controls remain unqualified until executed.
 
+Publication gates also recheck the original root's execution state and deadline
+after native audience/parent lookups, before committing signed delivery custody
+and immediately before native submission. Database time is sampled after the
+authority rows are locked; an unexpired invocation or release cannot extend a
+shorter root lifetime. Expiry before custody leaves the original admission pending.
+Expiry after the durable unknown transition leaves that exact signed event unknown;
+fresh record-access reconciliation may inspect it but cannot resend or infer failure
+from an absent native event. The existing admission lock order, immutable receipts,
+terminal observations and media-denial guards remain unchanged. The PostgreSQL
+control `publication_root_expiry_during_native_lookup_never_dispatches_or_rewrites_unknown`
+uses real database time at both awaited native audience boundaries, with an
+unexpired positive reply control. It is authored **UNRUN**; compilation is also
+**UNRUN** while the earlier storage deficit remains unresolved. This source change
+does not alter schema discovery, registration actions or the inactive profile, and
+does not establish the cause of the historical missing native reply.
+
 ## Foundation wire additions
 
 The accepted [wire profile](../architecture/contracts/WIRE-PROFILE.md), schemas and
