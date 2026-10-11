@@ -97,6 +97,20 @@ authority. The PostgreSQL control
 response, both control routes, owner lookup, explicit completion and unchanged
 stored command results. This new control is authored, not yet executed.
 
+A first, valid late model settlement now refreshes an already uncertain root's
+current recovery state. Outstanding pending/unknown business attempts or
+unknown/incident model dispatches keep `EffectUnknown`; only known outcomes
+permit stopped `Pending`. This matches business-effect recovery and does not
+complete the task, issue a new worker, alter its generation/deadline, or refund
+reservations. Exact settlement replay and an identical settlement under another
+command identity do not advance root state again. Historical begin/settlement
+receipts remain immutable. The existing PostgreSQL suite has authored controls
+for two separately settled model calls, foreign scope, remaining business
+uncertainty, another model incident, replay and denial of replacement execution
+or completion without a known business effect. These new controls and compilation
+are **UNRUN** under the unresolved compiler-storage gate. No schema, operation,
+registration or profile activation changes accompany this source correction.
+
 Native reply publication preserves the original conversation root as well as the
 exact immediate parent. It reuses the selected upstream shared
 [NIP-10 parser](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-core/src/nip10.rs),

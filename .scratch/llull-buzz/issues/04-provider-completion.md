@@ -41,6 +41,40 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-11 — RootSuccessor integration owner and `buzz_runtime` implementation
+agent continue items 04.3/04.4 outside the deployment VMs. Published
+`b75d2b46e00083a6e06be9de9939f696723c275b`: after awaited native audience/parent
+reads, publication rechecks the original task deadline/state before durable
+signed custody and before submission. The existing lock order and original
+unknown/no-resend semantics remain. Independent source review accepted; configured
+edition-2021 formatting and whitespace pass. Six existing PostgreSQL controls
+and signing helpers remain byte-identical; the new two-boundary expiry/positive
+control is authored/unrun, as is compilation. Root's first formatting invocation
+used the wrong edition2024, changed no files and was corrected. This does not
+establish the cause of the old missing native reply or activate the profile.
+
+The bounded read-only storage reconciliation found no known residual or open
+consumer; all31 repaired aliases and31 siblings still match the original custody
+record. The retired576-path manifest and precompile linkage inventory were lost,
+so the historical15,134,720-byte physical deficit remains unresolved. No safe
+deletion target, new compiler allocation or new environment was introduced.
+The actual PR record is
+https://github.com/jjjjguevara/llull-buzz/pull/2#issuecomment-6112942633.
+
+Item04.3 now implements current root-state reconciliation on first valid late
+model settlement. Existing `recovery_pending` semantics retain stop-new-work,
+no worker, original generation/budgets/receipts and unresolved tool/model
+incidents. Only the last known original outcome permits stopped Pending;
+completion still requires the explicit business attestation. Root independently
+reviewed the production path and exact three-file seals, reproduced edition2021
+formatting and whitespace checks, and verified the three previous PostgreSQL
+controls remain byte-identical. Two additional controls cover partial/final
+settlement, foreign scope, business uncertainty, model incident, immutable replay,
+denied replacement work and explicit completion after original owner lookup.
+They and compilation are AUTHORED/UNRUN. No automatic completion or new execution
+authority is introduced. Runtime, provider, distribution and human qualification
+remain open; this ticket is not resolved.
+
 2026-10-11 — Items 04.2/04.4 native original-byte lease claim and source increment.
 Refreshed local/live PR #2 at `0c36e784008928f69595ed93e8c5d962beb14c7e`,
 open/draft with no reviews. The selected native CLI emits a relay-wide BUD-11

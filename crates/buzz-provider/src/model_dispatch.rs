@@ -275,6 +275,29 @@ impl Provider {
                     &mut state,
                 )
                 .await?;
+            } else if state.phase == Execution::EffectUnknown {
+                // Accounting can be the last original outcome learned after a
+                // fence. Refresh only current recovery truth, as tool outcome
+                // recovery does; no worker, budget, generation, or business
+                // completion authority is restored by a known model result.
+                let tools_unknown: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM attempts WHERE consumer_id=$1 AND root_task_id=$2 AND state IN ('pending','effect-unknown'))")
+                    .bind(&command.consumer_id).bind(&root.manifest.root_task_id)
+                    .fetch_one(&mut *tx).await?;
+                let unresolved = tools_unknown
+                    || Self::unresolved_models(
+                        &mut tx,
+                        &command.consumer_id,
+                        &root.manifest.root_task_id,
+                    )
+                    .await?;
+                state.recovery_pending(unresolved)?;
+                Self::save_state(
+                    &mut tx,
+                    &command.consumer_id,
+                    &root.manifest.root_task_id,
+                    &state,
+                )
+                .await?;
             }
         }
         claims.fresh(Self::now(&mut tx).await?.timestamp())?;
