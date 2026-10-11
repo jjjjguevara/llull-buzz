@@ -83,6 +83,8 @@ through resource authentication and purpose evidence where required by the regis
 | `GET /integration/v1/evidence/{id}` | Original signed metadata and separate consumer registration readiness | BZ-C07 |
 | `POST /integration/v1/attachment-retentions` | `retain-attachment`; exact original intake descriptor, private-origin bytes and separate durable receipt | BZ-C03/07 |
 | `GET /integration/v1/evidence/{id}/attachments/{sha256}` | Fresh artifact-specific EvidenceAccess; retained exact bytes, no native/public share URL | BZ-C07 |
+| `POST /integration/v1/native-attachment-leases` | `lease-native-attachment`; explicit current EvidenceAccess for one original attachment and proved enrollment | BZ-C07 |
+| Native `GET/HEAD /media/{sha256}` | Same-origin Blossom identity plus one current exact attachment lease; no range, preview or upload | BZ-C07 |
 | `GET /integration/v1/observations?cursor=...&limit=...` | Maximum 100 records, scoped committed high-water mark and next cursor | BZ-C08 |
 | `POST /integration/v1/observation-acks` | `ack-observations`; consumer durable receipt and contiguous cursor prefix | BZ-C08 |
 
@@ -125,6 +127,56 @@ by consumers. The native client Blossom upload/GET/HEAD release gateway, attachm
 publication, transformations/previews and browser/native attachment journeys remain
 unqualified and unavailable through this increment. No current audience release or
 consumer evidence authority is replaced by the new retention route.
+
+## Native original-byte lease extension (source increment, 2026-10-11)
+
+This additive operation realizes the registered assertion/lease option in
+[BZ-R05](PROVIDED-REQUIRED.md). It changes the advertised schema digest and requires
+deliberate consumer adoption and explicit registration of `lease-native-attachment`.
+It does not change `read-attachment`/`retain-attachment`, activate the restricted
+profile, or qualify the complete native media gateway.
+
+The lease POST requires registered service NIP-98 plus `llull-evidence+jwt` over
+the complete immutable command. Resource: original `<intake UUID>/<sha256>`,
+revision `1`. The closed payload supplies `source_id`, exact retained `evidence`,
+existing `enrollment_id` and positive `enrollment_revision`, `audience_policy`,
+`audience_revision`, `release_ref` and absolute `expires_at`. The registered
+consumer issuer attests that this exact person, source, artifact and audience
+policy may receive these bytes now. Signed `release_ref` is consumer provenance,
+not a new provider authority registry or permission inferred from an opaque
+reference. No approval or delegated task grant is invented. Service-key possession
+without the exact current EvidenceAccess assertion cannot mint a lease.
+
+The native key comes only from the previously proved active enrollment in the
+same consumer/module. The fixed original native owner must confirm the original
+channel's current audience revision and membership, including the requester.
+Migration 0008 records immutable custody of the original assertion, enrollment
+revision/epoch, source, context, owner and expiry. Lease, command receipt and
+observation commit together. Retry preserves the original receipt and expiry;
+fresh transport never renews it. Expiry beyond the original assertion, authority
+freshness or original intake-retention deadline is rejected. The lifetime is at
+most the existing 60-second EvidenceAccess bound. Historical custody remains
+retained after expiry, without conferring access.
+
+Native GET and HEAD bind the configured relay authority, exact bare SHA-256 path
+and signed BUD-11 `get` proof. The selected CLI
+[`sign_blossom_get`](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-cli/src/client.rs)
+emits a server-tagged kind-24242 proof lasting 600 seconds. It proves identity
+only; it never extends EvidenceAccess. Every request rechecks current registration,
+policy/recovery epochs, proved enrollment revision/epoch/key, original retention,
+fixed owner, actual native audience and final expiry. A foreign key, missing or
+expired lease, or multiple current leases for the key/hash denies access rather
+than guessing a consumer/source. Callers must keep the lease unambiguous; a second
+intent does not supersede or renew the first.
+
+GET returns exact digest-checked bytes as an inert download (`no-store`, `nosniff`,
+`application/octet-stream`). HEAD runs the same authority and integrity checks
+before returning length without bytes. Conditional requests, ranges, transformed
+suffixes, thumbnails, uploads and attachment publication remain unavailable.
+Frontdoor routing must reach this adapter on the configured relay origin and keep
+the private native owner inaccessible. Authored routes do not prove installed
+containment. Actual CLI, PostgreSQL, restart, revocation and composed attachment
+journeys remain unrun for this increment.
 
 ## Typed payload rules
 

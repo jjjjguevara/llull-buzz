@@ -1,7 +1,7 @@
 //! Operator CLI and credential-bearing control daemon. Never run in the agent sandbox.
 use llull_buzz_provider::{
-    api, auth::Registration, HttpNativeOrigin, NativeEventSource, Provider, PublicationPort,
-    Publisher,
+    api, auth::Registration, HttpNativeOrigin, NativeEventSource, NativeMedia, Provider,
+    PublicationPort, Publisher,
 };
 use std::{env, error::Error};
 #[derive(serde::Deserialize)]
@@ -94,6 +94,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if env::var_os("NATIVE_ORIGIN_CONFIG").is_some() {
                 let (_, source, key) = native_origin().await?;
                 let source = std::sync::Arc::new(source);
+                let media = std::sync::Arc::new(NativeMedia::new(
+                    source.clone(),
+                    source.public_origin().as_str(),
+                )?);
                 let publisher = std::sync::Arc::new(Publisher::new(
                     source.clone(),
                     key,
@@ -102,6 +106,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 router = router
                     .merge(api::native_routes(provider.clone(), source.clone()))
                     .merge(api::attachment_routes(provider.clone(), source))
+                    .merge(api::native_media_routes(provider.clone(), media))
                     .merge(api::publication_routes(provider.clone(), publisher));
                 surfaces.native_intake = true;
                 surfaces.publication_delivery = true;

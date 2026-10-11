@@ -16,6 +16,18 @@ commitment, proof and UAT identities remain controlling; no competing tracker ex
 
 ## Implemented boundaries
 
+2026-10-11 source increment: the explicitly registered
+[`lease-native-attachment`](../architecture/contracts/WIRE-PROFILE.md#native-original-byte-lease-extension-source-increment-2026-10-11)
+operation and native GET/HEAD routes use the same configured original owner.
+They retain an exact short-lived EvidenceAccess assertion for an already proved
+native enrollment and original attachment. Every read checks current scope,
+audience and expiry; source metadata never grants byte access. Migration 0008 and
+the changed schema digest require deliberate consumer/grant/image adoption.
+Rust and PostgreSQL controls are authored **UNRUN** for this source increment;
+the prior compiler storage gate remains unresolved, so no new compilation ran.
+Whole media gateway qualification, uploads, previews and outgoing attachment
+publication remain unavailable, with the existing publication safeguards intact.
+
 | Surface | Production symbols and records | Boundary in this slice |
 | --- | --- | --- |
 | Strict wire and state | `llull-buzz-wire`: `parse`, `canonical`, `Command`, `TaskManifest`, `TaskState` | Duplicate keys, unsafe numbers, unknown typed fields, oversize data, changed intent, expiry and exhausted reservations fail. Pure functions are not durability evidence. |

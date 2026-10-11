@@ -41,6 +41,41 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-11 — Items 04.2/04.4 native original-byte lease claim and source increment.
+Refreshed local/live PR #2 at `0c36e784008928f69595ed93e8c5d962beb14c7e`,
+open/draft with no reviews. The selected native CLI emits a relay-wide BUD-11
+identity proof; it does not prove release of one artifact. The existing BZ-R05
+registered assertion/lease option is realized as a new closed, explicitly
+registered `lease-native-attachment` operation, rather than changing the old read
+or retention operation. The original consumer EvidenceAccess assertion is the
+authority; release_ref remains consumer provenance. Native key identity comes
+from the existing proved enrollment, with no parallel principal/grant registry.
+
+The configured provider now wires this lease POST and inert native GET/HEAD to
+the fixed original owner. Exact source/hash, same module/context, enrollment and
+authority epochs, audience revision/membership and the original assertion and
+retention deadlines fence reads. Immutable command/lease custody commits together;
+fresh retries cannot renew an old lease. Ambiguous current key/hash leases deny.
+The schema digest changes and migration 0008 must be adopted explicitly; existing
+consumer pins/actions/profile activation are unchanged. Attachment publication,
+upload, range and preview guards remain intact. Authored signed-proof and actual
+PostgreSQL/HTTP controls remain **UNRUN** pending the unresolved physical compiler
+storage gate and an admitted external runtime. No new compiler/cache allocation,
+container, provider effect or human UAT verdict is claimed.
+
+Source-only checks for this lease increment: formatting and whitespace pass;
+six unchanged documentary schema scenarios and fourteen lease shape controls
+pass with the existing Python/JSON Schema toolchain. An initial additional
+invalid-date expectation failed because that environment lacks JSON Schema's
+optional date-time format checker; timestamp rejection remains covered by the
+authored, **UNRUN** Rust deserializer control, not a claimed Python format pass.
+All four preceding native-intake test bodies and the existing publication,
+attachment retention and authentication modules remain byte-identical. Local
+document targets and four credential-pattern families pass. No compilation or
+PostgreSQL execution occurred. A bounded read-only disk observation reports
+60,559,056 KiB available; this does not reconcile or reattribute the earlier
+15,134,720-byte unresolved compiler deficit.
+
 2026-10-11 — Item 04.4 native thread correlation claim. Refreshed local and live
 open/draft PR #2 at `fb9e826604e689d5656ae705e134120f2caa3875`, no reviews.
 The publisher verifies the signed immediate parent but currently signs every reply

@@ -125,6 +125,7 @@ impl Rig {
             "read-evidence",
             "retain-attachment",
             "read-attachment",
+            "lease-native-attachment",
             "register-intake",
             "reconcile-publication",
             "observe-publication",

@@ -79,6 +79,7 @@ snapshot() {
       'publication_scopes',(SELECT jsonb_agg(to_jsonb(s) ORDER BY publication_id) FROM publication_scopes s),
       'publication_deliveries',(SELECT jsonb_agg(to_jsonb(d) ORDER BY publication_id) FROM publication_deliveries d),
       'native_attachments',(SELECT jsonb_agg(jsonb_build_object('consumer',consumer_id,'source',source_id,'evidence',evidence,'owner',origin_owner,'retained_at',retained_at,'declared_sha256',byte_sha256,'declared_length',byte_length,'actual_sha256',encode(sha256(bytes),'hex'),'actual_length',octet_length(bytes)) ORDER BY consumer_id,source_id,evidence_source_id) FROM native_attachments),
+      'native_attachment_leases',(SELECT jsonb_agg(to_jsonb(l) ORDER BY lease_id) FROM native_attachment_leases l),
       'bindings',(SELECT jsonb_agg(to_jsonb(e) ORDER BY enrollment_id) FROM enrollments e),
       'observation_counters',(SELECT jsonb_agg(to_jsonb(c) ORDER BY consumer_id) FROM observation_counters c),
       'observations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY consumer_id,sequence) FROM observations o),
@@ -95,4 +96,4 @@ for _ in {1..60}; do
 done
 after=$(snapshot)
 test "$before" = "$after" || { echo 'Durable records changed across PostgreSQL restart' >&2; exit 1; }
-printf 'PostgreSQL restart preserved roots, effects, model reservations/dispatches, bindings, publication admissions/scopes/deliveries, attachment bytes/digests, observations and recovery epoch: %s\n' "$after"
+printf 'PostgreSQL restart preserved roots, effects, model reservations/dispatches, bindings, publication admissions/scopes/deliveries, attachment bytes/digests/read leases, observations and recovery epoch: %s\n' "$after"

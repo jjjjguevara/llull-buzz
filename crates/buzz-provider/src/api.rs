@@ -7,8 +7,8 @@ use crate::{
 };
 use axum::{
     body::Bytes,
-    extract::{DefaultBodyLimit, Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    extract::{DefaultBodyLimit, OriginalUri, Path, Query, State},
+    http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -144,6 +144,93 @@ async fn attachment_bytes(
         bytes,
     )
         .into_response())
+}
+
+/// Partial native media surface: original leased bytes only. It deliberately does
+/// not mark the whole media gateway qualified or enable publisher attachments.
+pub fn native_media_routes<P: crate::PublicationPort + 'static>(
+    provider: Provider,
+    media: Arc<crate::NativeMedia<P>>,
+) -> Router {
+    let lease_provider = provider.clone();
+    let lease_media = media.clone();
+    let lease = move |headers: HeaderMap, body: Bytes| {
+        let provider = lease_provider.clone();
+        let media = lease_media.clone();
+        async move {
+            Ok::<_, ProviderError>(Json(
+                provider
+                    .lease_native_attachment(&body, credentials(&headers)?, media.as_ref())
+                    .await?,
+            ))
+        }
+    };
+    let read = move |Path(digest): Path<String>,
+                     OriginalUri(uri): OriginalUri,
+                     method: Method,
+                     headers: HeaderMap,
+                     body: Bytes| {
+        let provider = provider.clone();
+        let media = media.clone();
+        async move {
+            let result = async {
+                // No transformations, ranges, conditionals or alternate source URLs.
+                if !body.is_empty()
+                    || uri.query().is_some()
+                    || uri.path() != format!("/media/{digest}")
+                    || ["range", "if-range", "if-none-match", "if-modified-since"]
+                        .iter()
+                        .any(|h| headers.contains_key(*h))
+                {
+                    return Err::<Vec<u8>, ProviderError>(Fault::Unavailable.into());
+                }
+                provider
+                    .native_attachment_bytes(
+                        &digest,
+                        value(&headers, "host")?,
+                        value(&headers, "authorization")?,
+                        media.as_ref(),
+                    )
+                    .await
+            }
+            .await;
+            let mut response = match result {
+                Ok(bytes) => {
+                    let length = bytes.len();
+                    let mut response = if method == Method::HEAD {
+                        Vec::<u8>::new().into_response()
+                    } else {
+                        bytes.into_response()
+                    };
+                    response
+                        .headers_mut()
+                        .insert("content-length", length.into());
+                    response.headers_mut().insert(
+                        "content-type",
+                        "application/octet-stream".parse().expect("static header"),
+                    );
+                    response.headers_mut().insert(
+                        "content-disposition",
+                        "attachment".parse().expect("static header"),
+                    );
+                    response
+                }
+                Err(error) => error.into_response(),
+            };
+            response
+                .headers_mut()
+                .insert("cache-control", "no-store".parse().expect("static header"));
+            response.headers_mut().insert(
+                "x-content-type-options",
+                "nosniff".parse().expect("static header"),
+            );
+            response
+        }
+    };
+    Router::new()
+        .route("/integration/v1/native-attachment-leases", post(lease))
+        .route("/media/{digest}", get(read.clone()).head(read))
+        .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
 }
 async fn publication_view(
     State(p): State<Provider>,
