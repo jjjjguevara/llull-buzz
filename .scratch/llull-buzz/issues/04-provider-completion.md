@@ -41,6 +41,73 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-11 — Item 04.4 native thread correlation claim. Refreshed local and live
+open/draft PR #2 at `fb9e826604e689d5656ae705e134120f2caa3875`, no reviews.
+The publisher verifies the signed immediate parent but currently signs every reply
+with root equal to parent. A native mention already inside a conversation therefore
+loses its original thread root. Reuse the selected `01b6174` shared NIP-10 parser
+used by CLI/ACP/relay, verify the derived signed root through the same fixed owner
+and channel, and preserve exact ancestry at both publication fences. No new
+publication field, release authority, dependency or schema digest is needed.
+Historical missing signed-reply causation remains unestablished; correcting this
+source defect does not qualify a full native journey. The implementation and
+existing native-source/PostgreSQL controls remain provider-neutral.
+
+2026-10-11 — Thread correction ready for independent review. The native owner
+now resolves and validates the signed conversation root before signing and again
+before send; frozen bytes must match that exact root/immediate-parent pair.
+Top-level publication and the optional JSON field retain their existing meaning.
+Actual cached source checks: `cargo test --offline --locked -p
+llull-buzz-provider --lib publication::reply_tests -j1 -- --nocapture` passed
+all three controls (8.83 seconds compilation, 0.01 seconds execution), including
+direct/nested ancestry, missing root, foreign channel and missing signing context.
+`cargo check --offline --locked -p llull-buzz-provider --test postgres -j1`
+passed in 6.01 seconds. The existing PostgreSQL signed-reply case now asserts the
+original root as well as the immediate parent; it is **COMPILED, RUNTIME UNRUN**.
+No native service, model, consumer effect or human acceptance was exercised.
+
+Compiler storage was bounded to 180 seconds, 256 MiB growth and 128 KiB output in
+the existing cache; observed peak growth was 150,552,576 bytes. Initial cleanup
+refused a replaced shared build-script alias before deletion; reconciliation also
+refused an omitted wire-object name in its narrow allowlist before deletion. Both
+failures remain recorded. With no active compiler and the cache lock held, exact
+invocation-created directory/file identities were reconciled and 576 output paths
+retired; no such path remained. Actual retirement returned 153,894,912 filesystem
+bytes (61,861,888,000 to 62,015,782,912 free). The 31 replaced shared aliases were
+preserved: each is byte-identical to its older adjacent hashed executable, totaling
+23,953,808 logical bytes and 24,027,136 stat-allocated bytes; combined path/inode/
+size/allocation/content identity digest is
+`300351cfa21c9dda7846a58320974d349f132c9e001ed396d4200ce74b1a223b`.
+Stat allocation does not establish exclusive physical allocation. Precompile
+alias allocation/link relationships cannot be reconstructed from the failed
+supervisor's lost memory-only inventory; no restoration is claimed. A bounded
+current-user deleted-open-file observation found no removed target output still
+open (107,388 bytes inspected in memory, zero errors). Original free
+space was 62,033,969,152 bytes; the latest two sync/read observations were
+62,012,428,288 and 62,012,436,480 bytes. The global 21,532,672-byte deficit remains
+unresolved and is not attributed to unrelated work or declared a storage pass.
+No next large task is admitted by these results. No shared cache was pruned or
+relinked. Item 04.4 and full native qualification remain open.
+
+2026-10-11 — Subsequent bounded cache reconciliation preserved every logical
+shared path. For the 31 aliases proven replaced during this invocation, verified
+regular distinct-inode/nlink-one originals with matching bytes, mode and extended
+attributes were cloned using APFS `clonefile`, one same-directory temporary at a
+time, then atomically substituted only after identity rechecks. Original hashed
+executables were unchanged; final contents, access/modification timestamps and
+modes matched, with no temporary or deleted-open target residual. This was cloning,
+not hardlink creation or restoration of unknown historical link relationships.
+The first metadata probe refused an unavailable Python `listxattr` API before
+writing; the bounded system attribute reader supplied the actual comparison.
+The operation took 16.29 seconds. Its free-space observation was negative:
+62,022,410,240 to 62,021,308,416 bytes (minus 1,101,824), so no additional physical
+reclamation is claimed. Final verification observed 62,018,830,336 and
+62,018,834,432 free bytes, 15,134,720 below the original compile observation.
+The compact private custody receipt explicitly records completed alias replacement
+and **unresolved physical reconciliation**; its digest is recorded in the current
+review handoff. The earlier positive output retirement and every failed custody
+check remain valid observations, with no speculative cause for the global deficit.
+
 2026-10-11 — Items 04.3/04.6 successor claim: Codex provider implementation
 agent owns the existing task replay projection correction. Refreshed public
 PR #2 and clean local branch both select

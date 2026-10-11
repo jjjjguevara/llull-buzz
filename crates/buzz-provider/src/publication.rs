@@ -73,9 +73,9 @@ impl<P: PublicationPort> Publisher<P> {
         }
         Ok(a)
     }
-    async fn reply(&self, p: &Publication) -> Result<()> {
+    async fn reply(&self, p: &Publication) -> Result<Option<buzz_sdk::ThreadRef>> {
         let Some(identity) = &p.reply_to_event else {
-            return Ok(());
+            return Ok(None);
         };
         // A consumer-supplied hash is not evidence of a native conversation.
         // Resolve through the same fixed owner and verify signed channel bytes.
@@ -93,9 +93,41 @@ impl<P: PublicationPort> Publisher<P> {
         {
             return Err(Fault::Denied.into());
         }
-        Ok(())
+        // Match the selected native CLI/ACP/relay ancestry semantics. A mention
+        // may itself be a direct or nested reply, not a new thread root.
+        let root = buzz_core::nip10::parse_thread_markers(&event.tags)
+            .resolve()
+            .map(|(root, _)| nostr::EventId::from_hex(&root).map_err(|_| Fault::Invalid))
+            .transpose()?
+            .unwrap_or(event.id);
+        if root != event.id {
+            let bytes = tokio::time::timeout(
+                Duration::from_secs(5),
+                self.port
+                    .event(&p.community_id, &p.channel_id, &root.to_hex()),
+            )
+            .await
+            .map_err(|_| Fault::Unknown)?
+            .map_err(|_| Fault::Unknown)?;
+            let ancestor = native::event(&bytes)?;
+            if ancestor.id != root
+                || ancestor.kind.as_u16() as u32 != buzz_core::kind::KIND_STREAM_MESSAGE
+                || native::tag(&ancestor, "h")? != p.channel_id
+            {
+                return Err(Fault::Denied.into());
+            }
+        }
+        Ok(Some(buzz_sdk::ThreadRef {
+            root_event_id: root,
+            parent_event_id: event.id,
+        }))
     }
-    fn sign(&self, id: Uuid, p: &Publication) -> Result<Vec<u8>> {
+    fn sign(
+        &self,
+        id: Uuid,
+        p: &Publication,
+        thread: Option<&buzz_sdk::ThreadRef>,
+    ) -> Result<Vec<u8>> {
         // A signed imeta is a disclosure surface. Until the same-origin,
         // artifact-scoped media gateway is installed, the current native CLI
         // cannot read provider-origin URLs and the relay's host-scoped Blossom
@@ -119,26 +151,17 @@ impl<P: PublicationPort> Publisher<P> {
                 format!("size {}", e.size_bytes),
             ]);
         }
-        let thread = p
-            .reply_to_event
-            .as_ref()
-            .map(|id| {
-                let event = nostr::EventId::from_hex(id).map_err(|_| Fault::Invalid)?;
-                Ok::<_, Fault>(buzz_sdk::ThreadRef {
-                    root_event_id: event,
-                    parent_event_id: event,
-                })
-            })
-            .transpose()?;
-        let event =
-            buzz_sdk::build_message(channel, &p.text, thread.as_ref(), &[], false, &media, &[])
-                .map_err(|_| Fault::Invalid)?
-                .tag(
-                    nostr::Tag::parse(["llull-publication", id.to_string().as_str()])
-                        .map_err(|_| Fault::Invalid)?,
-                )
-                .sign_with_keys(&self.key)
-                .map_err(|_| Fault::Denied)?;
+        if p.reply_to_event.as_deref() != thread.map(|t| t.parent_event_id.to_hex()).as_deref() {
+            return Err(Fault::Denied.into());
+        }
+        let event = buzz_sdk::build_message(channel, &p.text, thread, &[], false, &media, &[])
+            .map_err(|_| Fault::Invalid)?
+            .tag(
+                nostr::Tag::parse(["llull-publication", id.to_string().as_str()])
+                    .map_err(|_| Fault::Invalid)?,
+            )
+            .sign_with_keys(&self.key)
+            .map_err(|_| Fault::Denied)?;
         serde_json::to_vec(&event).map_err(|_| Fault::Invalid.into())
     }
 }
@@ -263,9 +286,13 @@ impl Provider {
         }
         self.current_publication_authority(&mut tx, &permit).await?;
         let audience = publisher.audience(&permit.publication).await?;
-        publisher.reply(&permit.publication).await?;
+        let thread = publisher.reply(&permit.publication).await?;
+        let expected_thread = thread
+            .as_ref()
+            .map(|t| (t.root_event_id.to_hex(), t.parent_event_id.to_hex()));
         if view.native_event_id.is_none() {
-            let bytes = publisher.sign(permit.publication_id, &permit.publication)?;
+            let bytes =
+                publisher.sign(permit.publication_id, &permit.publication, thread.as_ref())?;
             let event = native::event(&bytes)?;
             sqlx::query("INSERT INTO publication_deliveries(publication_id,consumer_id,module_id,context_domain,owner,native_event_id,signed_event,event_sha256,audience,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')")
                 .bind(permit.publication_id).bind(&permit.command.consumer_id).bind(&permit.claims.module_id).bind(&permit.claims.context_domain).bind(publisher.port.owner()).bind(event.id.to_hex()).bind(&bytes).bind(sha256(&bytes)).bind(Json(&audience)).execute(&mut *tx).await?;
@@ -300,8 +327,13 @@ impl Provider {
         }
         self.current_publication_authority(&mut tx, &permit).await?;
         let fresh = publisher.audience(&permit.publication).await?;
-        publisher.reply(&permit.publication).await?;
-        if fresh != audience {
+        let fresh_thread = publisher.reply(&permit.publication).await?;
+        if fresh != audience
+            || fresh_thread
+                .as_ref()
+                .map(|t| (t.root_event_id.to_hex(), t.parent_event_id.to_hex()))
+                != expected_thread
+        {
             return Err(Fault::Denied.into());
         }
         let row = sqlx::query(
@@ -316,6 +348,10 @@ impl Provider {
             || Some(event.id.to_hex()) != view.native_event_id
         {
             return Err(Fault::Unknown.into());
+        }
+        if buzz_core::nip10::parse_thread_markers(&event.tags).resolve() != expected_thread {
+            // Never rewrite an old frozen event to repair its ancestry.
+            return Err(Fault::Denied.into());
         }
         // All governed native mutations share this admission lock. The private
         // origin must not expose another writer or unmediated subscriber path.
@@ -485,9 +521,10 @@ impl Provider {
 #[cfg(test)]
 mod reply_tests {
     use super::*;
+    use std::collections::BTreeMap;
     struct Origin {
         key: nostr::PublicKey,
-        event: Vec<u8>,
+        events: BTreeMap<String, Vec<u8>>,
     }
     #[async_trait]
     impl NativeEventSource for Origin {
@@ -495,9 +532,9 @@ mod reply_tests {
             &self,
             _: &str,
             _: &str,
-            _: &str,
+            id: &str,
         ) -> std::result::Result<Vec<u8>, PortError> {
-            Ok(self.event.clone())
+            self.events.get(id).cloned().ok_or(PortError)
         }
     }
     #[async_trait]
@@ -526,7 +563,7 @@ mod reply_tests {
                 .unwrap();
         let origin = Arc::new(Origin {
             key: key.public_key(),
-            event: serde_json::to_vec(&parent).unwrap(),
+            events: BTreeMap::from([(parent.id.to_hex(), serde_json::to_vec(&parent).unwrap())]),
         });
         let publisher = Publisher::new(origin, key, "https://synthetic.invalid").unwrap();
         let mut publication = Publication {
@@ -541,8 +578,13 @@ mod reply_tests {
             attachments: vec![],
             reply_to_event: Some(parent.id.to_hex()),
         };
-        publisher.reply(&publication).await.unwrap();
-        let event = native::event(&publisher.sign(Uuid::new_v4(), &publication).unwrap()).unwrap();
+        let thread = publisher.reply(&publication).await.unwrap();
+        let event = native::event(
+            &publisher
+                .sign(Uuid::new_v4(), &publication, thread.as_ref())
+                .unwrap(),
+        )
+        .unwrap();
         assert!(event
             .tags
             .iter()
@@ -552,5 +594,125 @@ mod reply_tests {
         publication.channel_id = channel.to_string();
         publication.reply_to_event = Some("a".repeat(64));
         assert!(publisher.reply(&publication).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn threaded_mentions_preserve_verified_original_root_and_exact_parent() {
+        let channel = Uuid::new_v4();
+        let source_key = nostr::Keys::generate();
+        let message = |thread: Option<&buzz_sdk::ThreadRef>| {
+            buzz_sdk::build_message(
+                channel,
+                "Synthetic thread mention",
+                thread,
+                &[],
+                false,
+                &[],
+                &[],
+            )
+            .unwrap()
+            .sign_with_keys(&source_key)
+            .unwrap()
+        };
+        let root = message(None);
+        let direct = message(Some(&buzz_sdk::ThreadRef {
+            root_event_id: root.id,
+            parent_event_id: root.id,
+        }));
+        let nested = message(Some(&buzz_sdk::ThreadRef {
+            root_event_id: root.id,
+            parent_event_id: direct.id,
+        }));
+        for parent in [&direct, &nested] {
+            let key = nostr::Keys::generate();
+            let origin = Arc::new(Origin {
+                key: key.public_key(),
+                events: [(&root, root.id.to_hex()), (parent, parent.id.to_hex())]
+                    .into_iter()
+                    .map(|(event, id)| (id, serde_json::to_vec(event).unwrap()))
+                    .collect(),
+            });
+            let publisher = Publisher::new(origin, key, "https://synthetic.invalid").unwrap();
+            let publication = Publication {
+                community_id: "community-one".into(),
+                channel_id: channel.to_string(),
+                audience_policy: "private".into(),
+                audience_revision: "1".into(),
+                release_ref: "release-thread".into(),
+                text: "Approved thread reply".into(),
+                text_sha256: sha256(b"Approved thread reply"),
+                copy_mode: llull_buzz_wire::CopyMode::SummaryLink,
+                attachments: vec![],
+                reply_to_event: Some(parent.id.to_hex()),
+            };
+            let thread = publisher.reply(&publication).await.unwrap().unwrap();
+            assert_eq!(thread.root_event_id, root.id);
+            assert_eq!(thread.parent_event_id, parent.id);
+            assert!(publisher.sign(Uuid::new_v4(), &publication, None).is_err());
+            let signed = publisher
+                .sign(Uuid::new_v4(), &publication, Some(&thread))
+                .unwrap();
+            let event = native::event(&signed).unwrap();
+            assert_eq!(
+                buzz_core::nip10::parse_thread_markers(&event.tags).resolve(),
+                Some((root.id.to_hex(), parent.id.to_hex()))
+            );
+            assert_eq!(native::tag(&event, "h").unwrap(), channel.to_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_or_foreign_thread_root_cannot_become_a_new_channel_reply() {
+        let channel = Uuid::new_v4();
+        let key = nostr::Keys::generate();
+        let foreign =
+            buzz_sdk::build_message(Uuid::new_v4(), "Other channel", None, &[], false, &[], &[])
+                .unwrap()
+                .sign_with_keys(&nostr::Keys::generate())
+                .unwrap();
+        let parent = buzz_sdk::build_message(
+            channel,
+            "Foreign root mention",
+            Some(&buzz_sdk::ThreadRef {
+                root_event_id: foreign.id,
+                parent_event_id: foreign.id,
+            }),
+            &[],
+            false,
+            &[],
+            &[],
+        )
+        .unwrap()
+        .sign_with_keys(&nostr::Keys::generate())
+        .unwrap();
+        let publication = Publication {
+            community_id: "community-one".into(),
+            channel_id: channel.to_string(),
+            audience_policy: "private".into(),
+            audience_revision: "1".into(),
+            release_ref: "release-thread".into(),
+            text: "Approved thread reply".into(),
+            text_sha256: sha256(b"Approved thread reply"),
+            copy_mode: llull_buzz_wire::CopyMode::SummaryLink,
+            attachments: vec![],
+            reply_to_event: Some(parent.id.to_hex()),
+        };
+        for root_available in [false, true] {
+            let mut events =
+                BTreeMap::from([(parent.id.to_hex(), serde_json::to_vec(&parent).unwrap())]);
+            if root_available {
+                events.insert(foreign.id.to_hex(), serde_json::to_vec(&foreign).unwrap());
+            }
+            let publisher = Publisher::new(
+                Arc::new(Origin {
+                    key: key.public_key(),
+                    events,
+                }),
+                key.clone(),
+                "https://synthetic.invalid",
+            )
+            .unwrap();
+            assert!(publisher.reply(&publication).await.is_err());
+        }
     }
 }

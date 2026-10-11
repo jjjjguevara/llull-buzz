@@ -85,6 +85,18 @@ authority. The PostgreSQL control
 response, both control routes, owner lookup, explicit completion and unchanged
 stored command results. This new control is authored, not yet executed.
 
+Native reply publication preserves the original conversation root as well as the
+exact immediate parent. It reuses the selected upstream shared
+[NIP-10 parser](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-core/src/nip10.rs),
+as the native CLI does: direct and nested parent messages retain their existing
+root; a top-level parent becomes the root. Derived roots must resolve to verified
+signed kind-9 events in the same channel through the fixed native owner at both
+publication fences. Missing or foreign roots do not fall back to a new channel
+message. Frozen signed bytes must already match this ancestry; the provider never
+re-signs an old event to repair its thread or resubmits an unknown delivery.
+Publication JSON/release digests remain unchanged. Real native journey and updated
+PostgreSQL controls remain unqualified until executed.
+
 ## Foundation wire additions
 
 The accepted [wire profile](../architecture/contracts/WIRE-PROFILE.md), schemas and

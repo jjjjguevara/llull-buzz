@@ -94,10 +94,18 @@ async fn publication_reply_requires_original_signed_same_channel_event() {
     let rig = Rig::new().await;
     let key = nostr::Keys::generate();
     let channel = Uuid::new_v4();
+    let thread_root =
+        buzz_sdk::build_message(channel, "Original conversation", None, &[], false, &[], &[])
+            .unwrap()
+            .sign_with_keys(&nostr::Keys::generate())
+            .unwrap();
     let original = buzz_sdk::build_message(
         channel,
         "Synthetic native mention",
-        None,
+        Some(&buzz_sdk::ThreadRef {
+            root_event_id: thread_root.id,
+            parent_event_id: thread_root.id,
+        }),
         &[],
         false,
         &[],
@@ -109,10 +117,13 @@ async fn publication_reply_requires_original_signed_same_channel_event() {
     let sink = Arc::new(Sink {
         key: key.public_key(),
         revision: Mutex::new("audience-1".into()),
-        events: Mutex::new(BTreeMap::from([(
-            original.id.to_hex(),
-            serde_json::to_vec(&original).unwrap(),
-        )])),
+        events: Mutex::new(BTreeMap::from([
+            (original.id.to_hex(), serde_json::to_vec(&original).unwrap()),
+            (
+                thread_root.id.to_hex(),
+                serde_json::to_vec(&thread_root).unwrap(),
+            ),
+        ])),
         calls: AtomicUsize::new(0),
         lose: false.into(),
     });
@@ -159,6 +170,10 @@ async fn publication_reply_requires_original_signed_same_channel_event() {
         .tags
         .iter()
         .any(|tag| tag.as_slice() == ["h", &channel.to_string()]));
+    assert_eq!(
+        buzz_core::nip10::parse_thread_markers(&reply.tags).resolve(),
+        Some((thread_root.id.to_hex(), original.id.to_hex()))
+    );
     assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
     // A changed reply target is a different frozen release, never a retry.
     let mut changed = command.clone();
