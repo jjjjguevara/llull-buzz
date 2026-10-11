@@ -381,6 +381,14 @@ impl Rig {
         (binding, c, body)
     }
     async fn start(&self, binding: Option<&Binding>, module: &str, lifetime: i64) -> TaskManifest {
+        self.start_recorded(binding, module, lifetime).await.0
+    }
+    async fn start_recorded(
+        &self,
+        binding: Option<&Binding>,
+        module: &str,
+        lifetime: i64,
+    ) -> (TaskManifest, Command, CommandResult) {
         let root = Uuid::new_v4().to_string();
         let manifest = TaskManifest {
             task_id: root.clone(),
@@ -416,8 +424,8 @@ impl Rig {
         );
         let claims = self.claims(&c, module, Some(&root), binding);
         let (body, h) = self.prepare("/integration/v1/tasks", &c, &claims);
-        self.p.start_task(&body, h.headers()).await.unwrap();
-        manifest
+        let result = self.p.start_task(&body, h.headers()).await.unwrap();
+        (manifest, c, result)
     }
     async fn worker(
         &self,
@@ -617,6 +625,291 @@ fn permit(admission: ToolAdmission<SetLabel>) -> DispatchPermit<SetLabel> {
     match admission {
         ToolAdmission::Dispatch(p) => *p,
         _ => panic!("expected one new durable reservation"),
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn task_replays_preserve_receipts_and_current_original_owner_recovery() {
+    let rig = Rig::new().await;
+    let native = nostr::Keys::generate();
+    let (binding, _, _) = rig.enroll("module-a", &native).await;
+    let (other, _, _) = rig.enroll("module-b", &native).await;
+    let (task, start, started) = rig.start_recorded(Some(&binding), "module-a", 600).await;
+    assert_eq!(started.receipt.execution, Execution::Pending);
+    rig.worker(&task, Some(&binding), "module-a", 1, false)
+        .await;
+    let claims = rig.claims(&start, "module-a", Some(&task.root_task_id), Some(&binding));
+    let (body, h) = rig.prepare("/integration/v1/tasks", &start, &claims);
+    let running = rig.p.start_task(&body, h.headers()).await.unwrap();
+    assert!(running.replayed);
+    assert_eq!(
+        canonical(&running.receipt).unwrap(),
+        canonical(&started.receipt).unwrap()
+    );
+    let view: TaskView = serde_json::from_value(running.result).unwrap();
+    assert_eq!(view.execution, Execution::Running);
+    assert!(view.revision > started.receipt.revision);
+
+    // The owner commits, but its ACK is lost. Recovery must retain the exact
+    // attempt identity and must never execute the business command again.
+    let call = rig.tool(&task, 1);
+    let consumer = Consumer {
+        lost: true,
+        ..Consumer::default()
+    };
+    let attempt = rig
+        .p
+        .dispatch(
+            permit(rig.admit(&call, Some(&binding), "module-a").await.unwrap()),
+            &consumer,
+        )
+        .await
+        .unwrap();
+    assert_eq!(attempt.state, "effect-unknown");
+    let mut controls = Vec::new();
+    let mut generation = 1;
+    for reconcile in [false, true] {
+        let operation = if reconcile {
+            "reconcile-task"
+        } else {
+            "cancel-task"
+        };
+        let path = format!(
+            "/integration/v1/tasks/{}/{}",
+            task.task_id,
+            if reconcile { "reconcile" } else { "cancel" }
+        );
+        let command = rig.command(
+            operation,
+            rig.resource(&task.task_id, generation),
+            TaskControl {
+                task_id: task.task_id.clone(),
+                expected_generation: generation,
+                reason: "synthetic lost acknowledgement recovery".into(),
+            },
+        );
+        let claims = rig.claims(
+            &command,
+            "module-a",
+            Some(&task.root_task_id),
+            Some(&binding),
+        );
+        let (body, h) = rig.prepare(&path, &command, &claims);
+        let first = rig
+            .p
+            .control_task(&task.task_id, reconcile, &body, h.headers())
+            .await
+            .unwrap();
+        assert_eq!(first.receipt.execution, Execution::EffectUnknown);
+        let current: TaskView = serde_json::from_value(first.result["task"].clone()).unwrap();
+        assert_eq!(current.generation, generation + 1);
+        generation = current.generation;
+        let claims = rig.claims(
+            &command,
+            "module-a",
+            Some(&task.root_task_id),
+            Some(&binding),
+        );
+        let (body, h) = rig.prepare(&path, &command, &claims);
+        let replay = rig
+            .p
+            .control_task(&task.task_id, reconcile, &body, h.headers())
+            .await
+            .unwrap();
+        assert!(replay.replayed);
+        assert_eq!(
+            canonical(&replay.receipt).unwrap(),
+            canonical(&first.receipt).unwrap()
+        );
+        assert_eq!(replay.result, first.result);
+        assert_eq!(replay.result["recovery"], "lookup-original-owner-only");
+        assert_eq!(replay.result["attempts"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            replay.result["attempts"][0]["attempt_id"],
+            attempt.attempt_id.to_string()
+        );
+        assert_eq!(replay.result["attempts"][0]["state"], "effect-unknown");
+        controls.push((reconcile, path, command, first));
+    }
+    let recovery = rig.command(
+        "reconcile-effect",
+        call.resource.clone(),
+        RecoverEffect {
+            task_id: task.task_id.clone(),
+            expected_generation: generation,
+            attempt_id: attempt.attempt_id,
+            effect_owner: attempt.effect_owner.clone(),
+            effect_intent_id: attempt.effect_intent_id.clone(),
+            request_sha256: attempt.request_sha256.clone(),
+        },
+    );
+    let claims = rig.claims(
+        &recovery,
+        "module-a",
+        Some(&task.root_task_id),
+        Some(&binding),
+    );
+    let (body, h) = rig.prepare(
+        &format!(
+            "/integration/foundation/v1/effects/{}/reconcile/{}",
+            attempt.attempt_id,
+            SetLabel::SCHEMA_ID
+        ),
+        &recovery,
+        &claims,
+    );
+    let settled = rig
+        .p
+        .recover_effect::<SetLabel, _>(attempt.attempt_id, &body, h.headers(), &consumer)
+        .await
+        .unwrap();
+    assert_eq!(settled.state, "completed");
+    let completion = rig.command(
+        "complete-task",
+        rig.resource(&task.task_id, generation),
+        CompleteTask {
+            task_id: task.task_id.clone(),
+            expected_generation: generation,
+            completed_effects: vec![CompletedEffect {
+                attempt_id: settled.attempt_id,
+                effect_owner: settled.effect_owner.clone(),
+                effect_intent: settled.effect_intent_id.clone(),
+                request_sha256: settled.request_sha256.clone(),
+                result_ref: settled.result_ref.clone().unwrap(),
+            }],
+        },
+    );
+    let claims = rig.claims(
+        &completion,
+        "module-a",
+        Some(&task.root_task_id),
+        Some(&binding),
+    );
+    let (body, h) = rig.prepare(
+        &format!("/integration/foundation/v1/tasks/{}/complete", task.task_id),
+        &completion,
+        &claims,
+    );
+    let completed = rig
+        .p
+        .complete_task(&task.task_id, &body, h.headers())
+        .await
+        .unwrap();
+    assert_eq!(completed.receipt.execution, Execution::Completed);
+
+    for (reconcile, path, command, original) in &controls {
+        let claims = rig.claims(
+            command,
+            "module-a",
+            Some(&task.root_task_id),
+            Some(&binding),
+        );
+        let (body, h) = rig.prepare(path, command, &claims);
+        let replay = rig
+            .p
+            .control_task(&task.task_id, *reconcile, &body, h.headers())
+            .await
+            .unwrap();
+        assert!(replay.replayed);
+        assert_eq!(
+            canonical(&replay.receipt).unwrap(),
+            canonical(&original.receipt).unwrap()
+        );
+        assert_eq!(replay.result.as_object().unwrap().len(), 3);
+        let current: TaskView = serde_json::from_value(replay.result["task"].clone()).unwrap();
+        assert_eq!(current.execution, Execution::Completed);
+        assert_eq!(current.revision, completed.receipt.revision);
+        assert_eq!(replay.result["recovery"], "lookup-original-owner-only");
+        assert_eq!(
+            replay.result["attempts"],
+            serde_json::to_value(vec![&settled]).unwrap()
+        );
+
+        // Fresh signatures cannot borrow another module's binding or change
+        // the original command body while keeping its intent identity.
+        let claims = rig.claims(command, "module-b", Some(&task.root_task_id), Some(&other));
+        let (body, h) = rig.prepare(path, command, &claims);
+        assert!(rig
+            .p
+            .control_task(&task.task_id, *reconcile, &body, h.headers())
+            .await
+            .is_err());
+        let mut changed = command.clone();
+        changed.payload["reason"] = json!("changed original intent");
+        let claims = rig.claims(
+            &changed,
+            "module-a",
+            Some(&task.root_task_id),
+            Some(&binding),
+        );
+        let (body, h) = rig.prepare(path, &changed, &claims);
+        assert!(rig
+            .p
+            .control_task(&task.task_id, *reconcile, &body, h.headers())
+            .await
+            .is_err());
+    }
+    let claims = rig.claims(&start, "module-a", Some(&task.root_task_id), Some(&binding));
+    let (body, h) = rig.prepare("/integration/v1/tasks", &start, &claims);
+    let replay = rig.p.start_task(&body, h.headers()).await.unwrap();
+    assert!(replay.replayed);
+    assert_eq!(
+        canonical(&replay.receipt).unwrap(),
+        canonical(&started.receipt).unwrap()
+    );
+    assert_eq!(replay.result, completed.result);
+    let mut originals = vec![(&start, &started)];
+    originals.extend(
+        controls
+            .iter()
+            .map(|(_, _, command, result)| (command, result)),
+    );
+    for (command, original) in originals {
+        let stored: sqlx::types::Json<CommandResult> = sqlx::query_scalar(
+            "SELECT result FROM commands WHERE consumer_id=$1 AND operation=$2 AND intent_id=$3",
+        )
+        .bind(&command.consumer_id)
+        .bind(&command.operation)
+        .bind(&command.intent_id)
+        .fetch_one(&rig.pool)
+        .await
+        .unwrap();
+        assert_eq!(canonical(&stored.0).unwrap(), canonical(original).unwrap());
+    }
+    assert_eq!(consumer.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(consumer.lookups.load(Ordering::SeqCst), 1);
+
+    // Revocation also applies to a historical successful command; replay is
+    // not a way to read current scoped state after its binding is retired.
+    let revoke = rig.command(
+        "change-access",
+        rig.resource(&binding.enrollment_id, 1),
+        ChangeAccess {
+            enrollment_id: binding.enrollment_id.clone(),
+            expected_revision: "1".into(),
+            change: AccessChange::Revoke,
+        },
+    );
+    let claims = rig.claims(&revoke, "module-a", None, None);
+    let (body, h) = rig.prepare("/integration/v1/access-changes", &revoke, &claims);
+    rig.p.change_access(&body, h.headers()).await.unwrap();
+    let claims = rig.claims(&start, "module-a", Some(&task.root_task_id), Some(&binding));
+    let (body, h) = rig.prepare("/integration/v1/tasks", &start, &claims);
+    assert!(rig.p.start_task(&body, h.headers()).await.is_err());
+    for (reconcile, path, command, _) in controls {
+        let claims = rig.claims(
+            &command,
+            "module-a",
+            Some(&task.root_task_id),
+            Some(&binding),
+        );
+        let (body, h) = rig.prepare(&path, &command, &claims);
+        assert!(rig
+            .p
+            .control_task(&task.task_id, reconcile, &body, h.headers())
+            .await
+            .is_err());
     }
 }
 

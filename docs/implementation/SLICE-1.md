@@ -72,6 +72,19 @@ require explicit reconciliation/completion. A separately held recovery-epoch flo
 be advanced before admitting work against a restored database. It must not be restored
 from the same backup as PostgreSQL.
 
+Task command replays retain the original immutable `receipt`, including its
+execution and revision at first admission. Freshly authorized start replays return
+the current `TaskView` in `result`; cancel/reconcile replays retain the existing
+`{task, attempts, recovery}` result shape, with current task and original-owner
+attempt observations and `recovery: "lookup-original-owner-only"`. A completed
+current task does not turn an earlier pending or unknown receipt into a completion
+receipt. Neither replay executes an effect or advances the task generation. Current
+scope, revocation and assertion freshness still apply; a replay is not historical
+authority. The PostgreSQL control
+`task_replays_preserve_receipts_and_current_original_owner_recovery` covers lost
+response, both control routes, owner lookup, explicit completion and unchanged
+stored command results. This new control is authored, not yet executed.
+
 ## Foundation wire additions
 
 The accepted [wire profile](../architecture/contracts/WIRE-PROFILE.md), schemas and

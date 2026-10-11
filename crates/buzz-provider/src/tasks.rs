@@ -144,10 +144,11 @@ impl Provider {
         if let Some(mut result) = Self::replay(&mut tx, &c).await? {
             let (root, state) = Self::root(&mut tx, &c.consumer_id, &manifest.root_task_id).await?;
             root.scope.recovery(&claims)?;
+            // The receipt is immutable command history. Current task progress
+            // belongs only to the existing live result projection.
             result.result = serde_json::to_value(TaskView::new(&manifest.task_id, &root, &state))
                 .map_err(|_| Fault::Invalid)?;
-            result.receipt.execution = state.phase;
-            result.receipt.revision = state.revision;
+            claims.fresh(Self::now(&mut tx).await?.timestamp())?;
             tx.commit().await?;
             return Ok(result);
         }
@@ -457,10 +458,13 @@ impl Provider {
         self.scope(&mut tx, &registration, &claims).await?;
         record.scope.recovery(&claims)?;
         if let Some(mut result) = Self::replay(&mut tx, &c).await? {
-            result.result = serde_json::to_value(TaskView::new(task_id, &record, &state))
-                .map_err(|_| Fault::Invalid)?;
-            result.receipt.execution = state.phase;
-            result.receipt.revision = state.revision;
+            let attempts =
+                Self::attempts(&mut tx, &c.consumer_id, &record.manifest.root_task_id).await?;
+            // A lost response must retain both the original receipt and the
+            // documented control shape, including original-owner recovery.
+            result.result = serde_json::json!({"task":TaskView::new(task_id,&record,&state),
+                "attempts":attempts,"recovery":"lookup-original-owner-only"});
+            claims.fresh(Self::now(&mut tx).await?.timestamp())?;
             tx.commit().await?;
             return Ok(result);
         }

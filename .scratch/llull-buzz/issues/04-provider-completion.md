@@ -41,6 +41,56 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-11 — Items 04.3/04.6 successor claim: Codex provider implementation
+agent owns the existing task replay projection correction. Refreshed public
+PR #2 and clean local branch both select
+`bea4aae17d38a4b29b7d98bae2e840749188d16f`, open/draft with no reviews.
+The start/cancel/reconcile replay paths currently replace recorded receipt
+execution/revision with later task state; control replay also drops the
+original response's task/attempts/recovery wrapper. Preserve immutable command
+receipts while returning the current scoped projection in the existing result
+field, and exercise lost-acknowledgement/unknown-effect reconciliation in the
+existing PostgreSQL suite. No provider activation, fresh execution, authority
+extension, consumer source or new wire field is authorized by this correction.
+Source work remains outside VMs, with no dependency fetch or new environment.
+Initial observed Mac free space: 60,557,716 KiB; owned source delta bounded below
+128 KiB. Existing shared target cache is not a task-owned disposable tree.
+
+2026-10-11 — Replay correction ready for independent source review. Start replay
+preserves the original receipt; cancel/reconcile replay preserves that receipt
+and its existing task/attempts/recovery wrapper. Current scope and final assertion
+freshness remain required. One new real-PostgreSQL scenario covers pending receipt
+versus running/completed projection, a committed consumer effect with lost ACK,
+both control routes across generation fences, exact original-owner lookup without
+redispatch, unchanged stored results, changed intent, cross-module denial and
+revocation. Prior PostgreSQL test bodies are unchanged; the existing start fixture
+now exposes its actual original command/result through a reusable helper.
+
+Actual local source checks: host-filtered locked/offline Cargo metadata PASS;
+`cargo check --offline --locked -p llull-buzz-provider --test postgres -j1` PASS
+(8.76 seconds), compiling the provider and the complete PostgreSQL test target;
+`cargo fmt --all -- --check` and `git diff --check` PASS. The first unfiltered
+metadata command refused missing `android_system_properties v0.1.6` without any
+download; host filtering resolved only the applicable cached dependency graph.
+No PostgreSQL, native service, model, consumer or provider effect was executed.
+Run the new control in an admitted disposable environment with
+`scripts/test-postgres.sh --case task_replays_preserve_receipts_and_current_original_owner_recovery`.
+It remains **AUTHORED/COMPILED, RUNTIME UNRUN**, not a qualification or profile
+activation. This task and all outstanding capability/human acceptance claims stay open.
+
+Compiler custody: no active compiler before launch; existing target inventory
+contained 68,459 entries. Execution was limited to 180 seconds, 64 MiB of allocation
+growth and 128 KiB of output. Observed peak growth was 61,353,984 bytes. Initial
+retirement stopped because deleting children changed a new parent directory's
+mtime; this failure is retained. Reconciliation verified the invocation's exact
+APFS birthtime/inode identities and no remaining compiler, then removed its three
+empty incremental directories, three zero-byte locks and three generated metadata
+files. Final reconciliation returned 4,182,016 observed filesystem bytes
+(62,039,052,288 to 62,043,234,304 free); final free was 42,987,520 bytes above the
+62,000,246,784 precompile observation. No invocation-created inode remains.
+Preexisting shared parents, fingerprint and dependency records were preserved;
+this is not a claim that compiler-updated cache metadata was restored byte-for-byte.
+
 2026-10-10 — Items 04.2/04.4 successor claim: Codex Buzz implementation agent
 owns a bounded native attachment retention and EvidenceAccess byte path. The
 refreshed public draft PR and clean checkout are both `b31dbccb879274d222bae12193a89ad0dc713030`.
