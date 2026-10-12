@@ -105,10 +105,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 )?);
                 router = router
                     .merge(api::native_routes(provider.clone(), source.clone()))
+                    .merge(api::native_handoff_routes(provider.clone(), source.clone()))
                     .merge(api::attachment_routes(provider.clone(), source))
                     .merge(api::native_media_routes(provider.clone(), media))
                     .merge(api::publication_routes(provider.clone(), publisher));
                 surfaces.native_intake = true;
+                surfaces.native_handoff = true;
                 surfaces.publication_delivery = true;
             }
             router = api::router_with_surfaces(provider.clone(), surfaces).merge(router);

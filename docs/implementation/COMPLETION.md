@@ -5,6 +5,40 @@ The stopping criterion is the complete accepted provider and applicable qualific
 including an isolated test deployment. [Slice 1](SLICE-1.md) and
 [its validation](LOCAL-VALIDATION.md) remain historical evidence, not the current scope limit.
 
+## Current human native navigation source increment, 2026-10-12
+
+The optional [native handoff](../architecture/contracts/WIRE-PROFILE.md#current-human-native-navigation-extension-source-increment-2026-10-12)
+adds `POST /integration/v1/native-handoffs` through the existing configured native
+owner. Its separately registered action requires a current proved human binding,
+fresh matching browser login, exact consumer/module/context and signed native
+audience. Optional message/thread targets are verified original signed events.
+The response supplies only canonical selected upstream navigation, with no native
+callback, authentication grant or business effect. Returning to the original
+consumer tab requires renewed current access; native-client return is unqualified.
+
+On working source based on `bf3db77a3580701d80fbdf4f30052a9db8828668`, independent
+source review, edition-2021 `rustfmt --check` on the six changed Rust files,
+`git diff --check` and 53 streamed schema/legacy-source/local-link assertions pass.
+The new standalone schema's RFC 8785 SHA-256 is
+`381c8cf4f2b574285bb39e01bd3ab16d369e923e1ea33f0eb1c82cee6d007d7f`.
+Historical main schema and discovery remain byte-identical. The first assertion
+script failed to parse before execution; only its corrected run is counted.
+
+Six controls appended to `crates/buzz-provider/tests/cases/intake.rs` cover current
+read and reused-intent revocation with zero business effects, 19 human/authority
+denials, signed message/root scope and final audience order, expiry across native
+reads, actual closed HTTP/no callback, and unchanged historical delegation gates.
+Run each through `scripts/test-postgres.sh --case intake::<test_name>` in the
+existing admitted runner after compiler/storage admission. Compilation and these
+PostgreSQL/HTTP controls remain **AUTHORED/UNRUN**; formatting/schema checks do not
+prove Rust type correctness, provider execution or native-client behavior.
+
+No new compiler cache, container, runtime, environment or large artifact was made.
+The [retained compiler custody failure](https://github.com/jjjjguevara/llull-buzz/pull/2#issuecomment-6112334658)
+and later bounded no-residual observation remain unresolved; no additional storage
+reclamation is claimed. This optional source increment neither activates the
+profile nor qualifies an image, installed/composed journey or human UAT.
+
 ## Successor attachment source increment, 2026-10-10
 
 The additive [attachment retention/EvidenceAccess extension](../architecture/contracts/WIRE-PROFILE.md#original-attachment-retention-extension-source-increment-2026-10-10)

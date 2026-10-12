@@ -84,6 +84,7 @@ through resource authentication and purpose evidence where required by the regis
 | `POST /integration/v1/attachment-retentions` | `retain-attachment`; exact original intake descriptor, private-origin bytes and separate durable receipt | BZ-C03/07 |
 | `GET /integration/v1/evidence/{id}/attachments/{sha256}` | Fresh artifact-specific EvidenceAccess; retained exact bytes, no native/public share URL | BZ-C07 |
 | `POST /integration/v1/native-attachment-leases` | `lease-native-attachment`; explicit current EvidenceAccess for one original attachment and proved enrollment | BZ-C07 |
+| `POST /integration/v1/native-handoffs` | Optional `read-native-handoff`; fresh browser human, proved enrollment and current native audience; navigation only | BZ-C02/03 |
 | Native `GET/HEAD /media/{sha256}` | Same-origin Blossom identity plus one current exact attachment lease; no range, preview or upload | BZ-C07 |
 | `GET /integration/v1/observations?cursor=...&limit=...` | Maximum 100 records, scoped committed high-water mark and next cursor | BZ-C08 |
 | `POST /integration/v1/observation-acks` | `ack-observations`; consumer durable receipt and contiguous cursor prefix | BZ-C08 |
@@ -177,6 +178,59 @@ Frontdoor routing must reach this adapter on the configured relay origin and kee
 the private native owner inaccessible. Authored routes do not prove installed
 containment. Actual CLI, PostgreSQL, restart, revocation and composed attachment
 journeys remain unrun for this increment.
+
+## Current human native navigation extension (source increment, 2026-10-12)
+
+The optional [native-handoff-v1 schema](schemas/native-handoff-v1.schema.json)
+defines a closed Command-shaped request and a separate `response` definition.
+Consumers adopt its RFC 8785 SHA-256 digest and provider source pin explicitly.
+The historical `bz-wire-v1` schema and discovery response retain their existing
+meaning and digest. Registration must explicitly include `read-native-handoff`;
+older profiles do not acquire this action automatically. The native owner must
+also be configured. Configuration and source checks do not activate the profile.
+
+The POST uses existing service NIP-98 authentication over the exact URL and body,
+plus `X-Llull-Invocation` with purpose `llull-invocation+jwt`. The consumer issuer
+binds the exact resource/revision, payload fingerprint, module and context to
+current record access and an existing destination. Resource namespace equals
+the registered consumer. The payload is exactly `community_id`, `channel_id`,
+`audience_revision`, and explicit null or lowercase event hash `event_id`.
+It cannot create a channel, select a network origin, supply a callback, carry a
+prompt, or authorize a publication or task.
+
+This new action requires a proved active enrollment, its current revision and
+authority epoch, `represented_principal` equal to its subject, and existing
+`browser_authentication` matching its issuer/subject. Browser authentication
+must be no older than 60 seconds and unexpired; stale login requires a recent
+sign-in. `delegation_id`, `root_task_id` and `grant_revision` must all be null;
+`verdicts` must be empty and `release` null. No agent grant is invented for a
+human navigation read. Existing actions retain their delegated-authority gate.
+Registration, module issuer policy, recovery epoch, current binding, native
+audience and final invocation/browser expiry are revalidated on every request,
+including a reused intent. The read stores only existing authentication replay
+and admission evidence; it creates no mutation receipt, task or observation.
+
+The fixed native owner verifies any requested signed kind-9 event and its
+existing thread root in the exact channel, then reads the current audience last.
+The audience revision must match exactly and contain the proved native key.
+The response format is `llull-buzz-native-handoff/v1`, identifies the complete
+request/binding/destination scope, and expires at the earliest invocation expiry,
+browser expiry or browser authentication time plus 60 seconds. `verified_until`
+is Unix seconds. Consumers compare every echoed identity and reconstruct the
+expected URI; schema validation alone cannot establish that correspondence.
+
+The selected [desktop](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/desktop/src/shared/deep-link.ts)
+and [mobile](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/mobile/lib/shared/deeplink/deep_link.dart)
+parsers support `buzz://channel/<canonical UUID>` and
+`buzz://message?channel=<canonical UUID>&id=<lowercase hash>[&thread=<root hash>]`.
+No community selector, authentication grant, consumer data or callback is added.
+The native app uses its own current key/relay and enforces its channel access.
+The link is navigation, not an authenticated app switch or a business effect.
+The consumer keeps its original browser tab, actor, route, draft and unresolved
+command custody, provides explicit return guidance, and revalidates current
+access when the user returns. The separate native identity-binding callback
+must not be repurposed. Actual native return, PostgreSQL and composed journeys
+remain unqualified until executed against the admitted candidate.
 
 ## Typed payload rules
 

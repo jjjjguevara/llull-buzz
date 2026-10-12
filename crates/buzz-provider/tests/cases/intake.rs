@@ -1028,3 +1028,520 @@ async fn native_media_lease_cannot_outlive_release_or_survive_unknown_partial_co
         "fresh transport does not renew an expired original lease"
     );
 }
+
+// This source-authored navigation suite uses the real provider authorization,
+// proved enrollment and PostgreSQL ledger. The fixed native owner is a synthetic
+// transport; none of these assertions constitutes desktop/mobile execution.
+struct HandoffOrigin {
+    media: MediaAudience,
+    events: Mutex<BTreeMap<String, Vec<u8>>>,
+    reads: Mutex<Vec<String>>,
+}
+#[async_trait]
+impl NativeEventSource for HandoffOrigin {
+    async fn event(
+        &self,
+        _: &str,
+        _: &str,
+        event: &str,
+    ) -> std::result::Result<Vec<u8>, PortError> {
+        self.reads.lock().unwrap().push(event.into());
+        self.events
+            .lock()
+            .unwrap()
+            .get(event)
+            .cloned()
+            .ok_or(PortError)
+    }
+}
+#[async_trait]
+impl PublicationPort for HandoffOrigin {
+    fn owner(&self) -> &str {
+        self.media.owner()
+    }
+    fn public_key(&self) -> nostr::PublicKey {
+        self.media.public_key()
+    }
+    async fn audience(
+        &self,
+        community: &str,
+        channel: &str,
+    ) -> std::result::Result<Audience, PortError> {
+        self.reads.lock().unwrap().push("audience".into());
+        self.media.audience(community, channel).await
+    }
+    async fn submit(&self, _: &str, _: &[u8]) -> std::result::Result<bool, PortError> {
+        panic!("navigation must never publish or execute")
+    }
+}
+async fn handoff_fixture() -> (Rig, Binding, Command, HandoffOrigin) {
+    let mut rig = Rig::new().await;
+    let (binding, _, _) = rig.enroll("module-a", &nostr::Keys::generate()).await;
+    let expected = digest(&rig.registration).unwrap();
+    rig.registration.revision += 1;
+    // A proved human uses its binding epoch, not this service-only epoch.
+    rig.registration.authority_epoch = 7;
+    rig.registration
+        .modules
+        .get_mut("module-a")
+        .unwrap()
+        .actions
+        .insert("read-native-handoff".into());
+    rig.p
+        .register(rig.registration.clone(), Some(&expected))
+        .await
+        .unwrap();
+    let channel = Uuid::new_v4().to_string();
+    let command = rig.command(
+        "read-native-handoff",
+        rig.resource("synthetic-record", 7),
+        NativeHandoffTarget {
+            community_id: rig.registration.community_id.clone(),
+            channel_id: channel.clone(),
+            audience_revision: "audience-1".into(),
+            event_id: None,
+        },
+    );
+    let origin = HandoffOrigin {
+        media: MediaAudience {
+            key: rig.key.clone(),
+            delay: Mutex::new(Duration::ZERO),
+            audience: Mutex::new(Audience {
+                community_id: rig.registration.community_id.clone(),
+                channel_id: channel,
+                revision: "audience-1".into(),
+                members: BTreeSet::from([binding.native_key.clone()]),
+            }),
+        },
+        events: Mutex::new(BTreeMap::new()),
+        reads: Mutex::new(vec![]),
+    };
+    (rig, binding, command, origin)
+}
+fn handoff_claims(rig: &Rig, command: &Command, binding: &Binding) -> Claims {
+    let mut claims = rig.claims(command, "module-a", None, Some(binding));
+    claims.registration_revision = rig.registration.revision;
+    claims.delegation_id = None;
+    claims.grant_revision = None;
+    claims.browser_authentication = Some(rig.browser.clone());
+    claims
+}
+async fn read_handoff(
+    rig: &Rig,
+    command: &Command,
+    claims: &Claims,
+    origin: &HandoffOrigin,
+) -> llull_buzz_provider::Result<NativeHandoff> {
+    let (body, signed) = rig.prepare("/integration/v1/native-handoffs", command, claims);
+    rig.p.native_handoff(&body, signed.headers(), origin).await
+}
+async fn handoff_business_counts(rig: &Rig) -> Vec<i64> {
+    sqlx::query_scalar("SELECT ARRAY[(SELECT count(*) FROM commands WHERE consumer_id=$1),(SELECT count(*) FROM task_roots WHERE consumer_id=$1),(SELECT count(*) FROM attempts WHERE consumer_id=$1),(SELECT count(*) FROM publications WHERE consumer_id=$1),(SELECT count(*) FROM observations WHERE consumer_id=$1),(SELECT count(*) FROM native_inputs WHERE consumer_id=$1)]")
+        .bind(&rig.registration.consumer_id).fetch_one(&rig.pool).await.unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16"]
+async fn native_handoff_is_current_navigation_without_business_effect_or_permission_replay() {
+    let (rig, binding, command, origin) = handoff_fixture().await;
+    assert_ne!(
+        binding.authority_epoch as u64,
+        rig.registration.authority_epoch
+    );
+    let before = handoff_business_counts(&rig).await;
+    for _ in 0..2 {
+        let claims = handoff_claims(&rig, &command, &binding);
+        let result = read_handoff(&rig, &command, &claims, &origin)
+            .await
+            .unwrap();
+        assert_eq!(result.format, "llull-buzz-native-handoff/v1");
+        assert_eq!(result.resource, command.resource);
+        assert_eq!(result.intent_id, command.intent_id);
+        assert_eq!(result.enrollment_id, binding.enrollment_id);
+        assert_eq!(result.enrollment_revision, binding.revision as u64);
+        assert_eq!(result.native_key, binding.native_key);
+        assert_eq!(
+            result.native_uri,
+            format!(
+                "buzz://channel/{}",
+                command.payload["channel_id"].as_str().unwrap()
+            )
+        );
+        assert!(result.event_id.is_none() && result.thread_root_id.is_none());
+        assert!(
+            result.verified_until <= claims.exp
+                && result.verified_until <= rig.browser.authenticated_at + 60
+        );
+    }
+    assert_eq!(*origin.reads.lock().unwrap(), vec!["audience", "audience"]);
+    assert_eq!(handoff_business_counts(&rig).await, before);
+    let admissions: i64 = sqlx::query_scalar("SELECT count(*) FROM admission_evidence WHERE consumer_id=$1 AND claims->>'operation'='read-native-handoff'")
+        .bind(&rig.registration.consumer_id).fetch_one(&rig.pool).await.unwrap();
+    assert_eq!(
+        admissions, 2,
+        "fresh authentication evidence, no replayed mutation receipt"
+    );
+    origin.media.audience.lock().unwrap().revision = "audience-2".into();
+    assert!(read_handoff(
+        &rig,
+        &command,
+        &handoff_claims(&rig, &command, &binding),
+        &origin
+    )
+    .await
+    .is_err());
+    origin.media.audience.lock().unwrap().revision = "audience-1".into();
+    origin.media.audience.lock().unwrap().members.clear();
+    assert!(read_handoff(
+        &rig,
+        &command,
+        &handoff_claims(&rig, &command, &binding),
+        &origin
+    )
+    .await
+    .is_err());
+    origin
+        .media
+        .audience
+        .lock()
+        .unwrap()
+        .members
+        .insert(binding.native_key.clone());
+    let revoke = rig.command(
+        "change-access",
+        rig.resource(&binding.enrollment_id, binding.revision as u64),
+        ChangeAccess {
+            enrollment_id: binding.enrollment_id.clone(),
+            expected_revision: binding.revision.to_string(),
+            change: AccessChange::Revoke,
+        },
+    );
+    let mut claims = rig.claims(&revoke, "module-a", None, None);
+    claims.registration_revision = rig.registration.revision;
+    claims.authority_epoch = rig.registration.authority_epoch;
+    let (body, signed) = rig.prepare("/integration/v1/access-changes", &revoke, &claims);
+    rig.p.change_access(&body, signed.headers()).await.unwrap();
+    assert!(read_handoff(
+        &rig,
+        &command,
+        &handoff_claims(&rig, &command, &binding),
+        &origin
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16"]
+async fn native_handoff_requires_current_exact_human_binding_and_no_delegated_authority() {
+    let (rig, binding, command, origin) = handoff_fixture().await;
+    let before = handoff_business_counts(&rig).await;
+    for case in 0..19 {
+        let mut claims = handoff_claims(&rig, &command, &binding);
+        match case {
+            0 => claims.enrollment_id = None,
+            1 => claims.enrollment_revision = None,
+            2 => claims.enrollment_revision = Some(binding.revision as u64 + 1),
+            3 => claims.represented_principal = None,
+            4 => claims.delegation_id = Some("invented-delegation".into()),
+            5 => claims.root_task_id = Some("invented-root".into()),
+            6 => claims.grant_revision = Some("invented-grant".into()),
+            7 => claims.browser_authentication = None,
+            8 => claims.browser_authentication.as_mut().unwrap().subject = "other-person".into(),
+            9 => {
+                claims.browser_authentication.as_mut().unwrap().issuer =
+                    "https://other.synthetic.invalid".into()
+            }
+            10 => {
+                let browser = claims.browser_authentication.as_mut().unwrap();
+                browser.authenticated_at -= 61;
+                browser.expires_at = browser.authenticated_at + 300;
+            }
+            11 => claims.authority_epoch = rig.registration.authority_epoch,
+            12 => claims.recovery_epoch += 1,
+            13 => claims.context_domain = "foreign-context".into(),
+            14 => claims.module_id = "module-b".into(),
+            15 => claims.registration_revision -= 1,
+            16 => claims.policy_revision = "former-policy".into(),
+            17 => claims.verdicts.push(Verdict {
+                reference: "unused-verdict".into(),
+                operation: claims.operation.clone(),
+                resource: claims.resource.clone(),
+                payload_sha256: claims.payload_sha256.clone(),
+                decision: "approved".into(),
+            }),
+            18 => {
+                claims.release = Some(Release {
+                    release_ref: "unused-release".into(),
+                    community_id: "synthetic-community".into(),
+                    channel_id: "unused-channel".into(),
+                    audience_policy: "unused-policy".into(),
+                    audience_revision: "1".into(),
+                    publication_sha256: sha256(b"unused"),
+                    checked_at: claims.iat,
+                })
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            matches!(
+                read_handoff(&rig, &command, &claims, &origin).await,
+                Err(ProviderError::Admission(Fault::Denied))
+            ),
+            "case {case}"
+        );
+    }
+    assert!(origin.reads.lock().unwrap().is_empty());
+    assert_eq!(handoff_business_counts(&rig).await, before);
+    let claims = handoff_claims(&rig, &command, &binding);
+    let (body, signed) = rig.prepare("/integration/v1/native-handoffs", &command, &claims);
+    rig.p
+        .native_handoff(&body, signed.headers(), &origin)
+        .await
+        .unwrap();
+    assert!(
+        rig.p
+            .native_handoff(&body, signed.headers(), &origin)
+            .await
+            .is_err(),
+        "exact authentication proof cannot replay"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16"]
+async fn native_handoff_verifies_original_message_and_thread_before_last_audience_read() {
+    let (rig, binding, mut command, origin) = handoff_fixture().await;
+    let channel = command.payload["channel_id"].as_str().unwrap().to_owned();
+    let root = nostr::EventBuilder::new(nostr::Kind::Custom(9), "synthetic root")
+        .tag(nostr::Tag::parse(["h", channel.as_str()]).unwrap())
+        .sign_with_keys(&rig.key)
+        .unwrap();
+    let root_id = root.id.to_hex();
+    let reply = nostr::EventBuilder::new(nostr::Kind::Custom(9), "synthetic reply")
+        .tags([
+            nostr::Tag::parse(["h", channel.as_str()]).unwrap(),
+            nostr::Tag::parse(["e", root_id.as_str(), "", "root"]).unwrap(),
+        ])
+        .sign_with_keys(&rig.key)
+        .unwrap();
+    let reply_id = reply.id.to_hex();
+    origin
+        .events
+        .lock()
+        .unwrap()
+        .insert(root_id.clone(), serde_json::to_vec(&root).unwrap());
+    origin
+        .events
+        .lock()
+        .unwrap()
+        .insert(reply_id.clone(), serde_json::to_vec(&reply).unwrap());
+    command.payload["event_id"] = json!(reply_id);
+    let result = read_handoff(
+        &rig,
+        &command,
+        &handoff_claims(&rig, &command, &binding),
+        &origin,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.native_uri,
+        format!("buzz://message?channel={channel}&id={reply_id}&thread={root_id}")
+    );
+    assert_eq!(
+        *origin.reads.lock().unwrap(),
+        vec![reply_id.clone(), root_id.clone(), "audience".into()]
+    );
+    origin.reads.lock().unwrap().clear();
+    command.payload["event_id"] = json!(root_id);
+    let result = read_handoff(
+        &rig,
+        &command,
+        &handoff_claims(&rig, &command, &binding),
+        &origin,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result.native_uri,
+        format!("buzz://message?channel={channel}&id={root_id}")
+    );
+    assert!(result.thread_root_id.is_none());
+    // A valid event from a different channel cannot be substituted for the root.
+    let foreign = nostr::EventBuilder::new(nostr::Kind::Custom(9), "synthetic other channel")
+        .tag(nostr::Tag::parse(["h", Uuid::new_v4().to_string().as_str()]).unwrap())
+        .sign_with_keys(&rig.key)
+        .unwrap();
+    let foreign_id = foreign.id.to_hex();
+    origin
+        .events
+        .lock()
+        .unwrap()
+        .insert(foreign_id.clone(), serde_json::to_vec(&foreign).unwrap());
+    command.payload["event_id"] = json!(foreign_id);
+    assert!(read_handoff(
+        &rig,
+        &command,
+        &handoff_claims(&rig, &command, &binding),
+        &origin
+    )
+    .await
+    .is_err());
+    command.payload["event_id"] = json!(reply_id);
+    origin.events.lock().unwrap().remove(&root_id);
+    assert!(read_handoff(
+        &rig,
+        &command,
+        &handoff_claims(&rig, &command, &binding),
+        &origin
+    )
+    .await
+    .is_err());
+    origin
+        .events
+        .lock()
+        .unwrap()
+        .insert(root_id, serde_json::to_vec(&reply).unwrap());
+    assert!(
+        read_handoff(
+            &rig,
+            &command,
+            &handoff_claims(&rig, &command, &binding),
+            &origin
+        )
+        .await
+        .is_err(),
+        "wrong signed bytes cannot satisfy original root ID"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16"]
+async fn native_handoff_rechecks_browser_and_invocation_expiry_after_native_read() {
+    let (rig, binding, command, origin) = handoff_fixture().await;
+    let before = handoff_business_counts(&rig).await;
+    *origin.media.delay.lock().unwrap() = Duration::from_millis(2100);
+    for browser_expiry in [false, true] {
+        let mut claims = handoff_claims(&rig, &command, &binding);
+        if browser_expiry {
+            let browser = claims.browser_authentication.as_mut().unwrap();
+            browser.authenticated_at = claims.iat - 58;
+            browser.expires_at = claims.iat + 100;
+        } else {
+            claims.exp = claims.iat + 2;
+        }
+        assert!(matches!(
+            read_handoff(&rig, &command, &claims, &origin).await,
+            Err(ProviderError::Admission(Fault::Denied))
+        ));
+    }
+    assert_eq!(*origin.reads.lock().unwrap(), vec!["audience", "audience"]);
+    assert_eq!(handoff_business_counts(&rig).await, before);
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16"]
+async fn native_handoff_http_is_closed_and_never_redirects_or_supplies_a_callback() {
+    let (rig, binding, command, origin) = handoff_fixture().await;
+    let origin = std::sync::Arc::new(origin);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = api::native_handoff_routes(rig.p.clone(), origin.clone());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let url = format!("http://{address}/integration/v1/native-handoffs");
+    assert_eq!(client.get(&url).send().await.unwrap().status(), 405);
+    assert_eq!(
+        client.post(&url).body("{}").send().await.unwrap().status(),
+        403
+    );
+    for case in 0..6 {
+        let mut candidate = command.clone();
+        match case {
+            1 => candidate.payload["callback"] = json!("https://consumer.synthetic.invalid/return"),
+            2 => {
+                candidate
+                    .payload
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("event_id");
+            }
+            3 => candidate.payload["channel_id"] = json!("../synthetic?prompt=execute"),
+            4 => candidate.payload["event_id"] = json!("A".repeat(64)),
+            _ => (),
+        }
+        let claims = handoff_claims(&rig, &candidate, &binding);
+        let (body, signed) = rig.prepare("/integration/v1/native-handoffs", &candidate, &claims);
+        let target = if case == 5 {
+            format!("{url}?callback=ignored")
+        } else {
+            url.clone()
+        };
+        let response = client
+            .post(target)
+            .header("authorization", signed.resource)
+            .header("x-llull-invocation", signed.assertion)
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert!(response.headers().get("location").is_none());
+        if case == 0 {
+            assert_eq!(response.status(), 200);
+            let result: NativeHandoff = response.json().await.unwrap();
+            assert_eq!(result.intent_id, command.intent_id);
+            assert_eq!(result.resource, command.resource);
+        } else {
+            assert_eq!(response.status(), 400, "case {case}");
+        }
+    }
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16"]
+async fn historical_task_replay_still_requires_actual_delegation_fields() {
+    let rig = Rig::new().await;
+    let (binding, _, _) = rig.enroll("module-a", &nostr::Keys::generate()).await;
+    let (manifest, command, original) = rig.start_recorded(Some(&binding), "module-a", 120).await;
+    for case in 0..3 {
+        let mut claims = rig.claims(
+            &command,
+            "module-a",
+            Some(&manifest.root_task_id),
+            Some(&binding),
+        );
+        claims.browser_authentication = Some(rig.browser.clone());
+        match case {
+            0 => claims.delegation_id = None,
+            1 => claims.grant_revision = None,
+            _ => claims.root_task_id = None,
+        }
+        let (body, signed) = rig.prepare("/integration/v1/tasks", &command, &claims);
+        assert!(matches!(
+            rig.p.start_task(&body, signed.headers()).await,
+            Err(ProviderError::Admission(Fault::Denied))
+        ));
+    }
+    let claims = rig.claims(
+        &command,
+        "module-a",
+        Some(&manifest.root_task_id),
+        Some(&binding),
+    );
+    let (body, signed) = rig.prepare("/integration/v1/tasks", &command, &claims);
+    let replay = rig.p.start_task(&body, signed.headers()).await.unwrap();
+    assert!(replay.replayed);
+    assert_eq!(
+        canonical(&original.receipt).unwrap(),
+        canonical(&replay.receipt).unwrap()
+    );
+}

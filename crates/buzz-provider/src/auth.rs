@@ -357,7 +357,9 @@ pub(crate) fn verify_assertion(
         return Err(Fault::Denied);
     }
     c.resource.validate(&registration.consumer_id)?;
-    if c.represented_principal.is_some()
+    if c.operation == "read-native-handoff" {
+        c.native_handoff_browser(now)?;
+    } else if c.represented_principal.is_some()
         && (c.delegation_id.is_none() || c.grant_revision.is_none() || c.root_task_id.is_none())
     {
         return Err(Fault::Denied);
@@ -380,6 +382,29 @@ pub(crate) fn verify_assertion(
     Ok(c)
 }
 impl Claims {
+    /// This new read-only operation represents a currently proved browser human,
+    /// never an invented agent delegation. Historical actions retain their gate.
+    pub(crate) fn native_handoff_browser(
+        &self,
+        now: i64,
+    ) -> std::result::Result<&BrowserAuthentication, Fault> {
+        if self.operation != "read-native-handoff"
+            || self.enrollment_id.is_none()
+            || self
+                .enrollment_revision
+                .is_none_or(|revision| revision == 0)
+            || self.represented_principal.is_none()
+            || self.delegation_id.is_some()
+            || self.root_task_id.is_some()
+            || self.grant_revision.is_some()
+            || !self.verdicts.is_empty()
+            || self.release.is_some()
+        {
+            return Err(Fault::Denied);
+        }
+        self.browser(true, now)
+    }
+
     pub(crate) fn fresh(&self, now: i64) -> std::result::Result<(), Fault> {
         if !(0..=MAX_SAFE_INTEGER).contains(&now)
             || self.iat < 0

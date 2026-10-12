@@ -41,6 +41,33 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-12 — Integration owner and delegated provider agent continue items
+04.1/04.2 with the consumer-neutral native navigation read. Refreshed local/live
+PR #2 at `bf3db77a3580701d80fbdf4f30052a9db8828668`, open/draft with no reviews.
+The optional `read-native-handoff` action uses the existing signed service
+transport, proved human enrollment and fresh browser assertion; it verifies the
+current native audience and emits only selected upstream channel/message URIs.
+No callback, task, prompt, publication, key grant or observation is created.
+Repeated intents revalidate current access rather than replaying permission.
+Existing action grants and wire/discovery responses retain their meaning.
+
+Independent integration-owner source review accepted the finite implementation.
+Edition-2021 Rust formatting, whitespace and 53 bounded schema/legacy-source/local
+link assertions passed. The first streamed assertion script had an unmatched
+parenthesis and executed no checks; the corrected script produced the reported
+53 passes. The entire previous intake test file remains a byte-identical prefix;
+historical authentication freshness/browser/release methods and publication,
+discovery, main wire schema and shared PostgreSQL fixture are unchanged.
+The six appended real-signature/PostgreSQL/HTTP controls and compilation are
+**AUTHORED/UNRUN**. The separately versioned optional schema has RFC 8785 SHA-256
+`381c8cf4f2b574285bb39e01bd3ab16d369e923e1ea33f0eb1c82cee6d007d7f`.
+See [completion evidence](../../../docs/implementation/COMPLETION.md#current-human-native-navigation-source-increment-2026-10-12)
+for scope and reproduction. No compiler/cache allocation, new environment,
+runtime or temporary evidence assembly was created. The earlier 15,134,720-byte
+physical deficit remains unresolved; this source pass does not clear its gate.
+The profile stays inactive and the task remains claimed; installed native return,
+composed journeys and named-human acceptance are unqualified.
+
 2026-10-11 — RootSuccessor integration owner and `buzz_runtime` implementation
 agent continue items 04.3/04.4 outside the deployment VMs. Published
 `b75d2b46e00083a6e06be9de9939f696723c275b`: after awaited native audience/parent

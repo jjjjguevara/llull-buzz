@@ -8,6 +8,7 @@ pub mod budget;
 mod db;
 mod discovery;
 mod effects;
+mod handoff;
 mod identity;
 mod intake;
 mod model_dispatch;
@@ -23,6 +24,7 @@ pub use attachments::{NativeAttachmentSource, RetainAttachment, MAX_ATTACHMENT_B
 pub use db::{CommandResult, Provider, ProviderError, Result};
 pub use discovery::ProfileView;
 pub use effects::{AttemptView, DispatchPermit, RecoverEffect, ToolAdmission};
+pub use handoff::{NativeHandoff, NativeHandoffTarget};
 pub use identity::{Binding, EnrollmentChallenge};
 pub use intake::{Intake, NativeEventSource, RetainedEvidence};
 pub use llull_buzz_wire as wire;

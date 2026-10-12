@@ -66,6 +66,7 @@ async fn unavailable() -> Response {
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct ConfiguredSurfaces {
     pub native_intake: bool,
+    pub native_handoff: bool,
     pub publication_delivery: bool,
     pub native_gateway: bool,
     pub media_gateway: bool,
@@ -426,6 +427,39 @@ pub fn native_routes<S: crate::NativeEventSource + 'static>(
     };
     Router::new()
         .route("/integration/v1/conversation-intakes", post(intake))
+        .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
+}
+
+/// Authenticated current navigation through an operator-selected native owner.
+/// No redirect, caller-selected callback, prompt, publication or key is accepted.
+pub fn native_handoff_routes<P: crate::PublicationPort + 'static>(
+    provider: Provider,
+    source: Arc<P>,
+) -> Router {
+    let handoff = move |OriginalUri(uri): OriginalUri, headers: HeaderMap, body: Bytes| {
+        let provider = provider.clone();
+        let source = source.clone();
+        async move {
+            let result = async {
+                if uri.path() != "/integration/v1/native-handoffs" || uri.query().is_some() {
+                    return Err(ProviderError::from(Fault::Invalid));
+                }
+                Ok(Json(
+                    provider
+                        .native_handoff(&body, credentials(&headers)?, source.as_ref())
+                        .await?,
+                ))
+            }
+            .await;
+            let mut response = result.into_response();
+            response
+                .headers_mut()
+                .insert("cache-control", "no-store".parse().unwrap());
+            response
+        }
+    };
+    Router::new()
+        .route("/integration/v1/native-handoffs", post(handoff))
         .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
 }
 
