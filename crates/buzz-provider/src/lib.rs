@@ -32,6 +32,8 @@ pub use model_dispatch::ModelDispatchView;
 pub use native_media::{NativeAttachmentLease, NativeMedia};
 pub use native_origin::HttpNativeOrigin;
 pub use observations::{Observation, ObservationPage, ObservationQuery};
-pub use publication::{Audience, PublicationPort, PublicationView, PublishResult, Publisher};
+pub use publication::{
+    Audience, PublicationEvidence, PublicationPort, PublicationView, PublishResult, Publisher,
+};
 pub use snapshots::{SnapshotPage, SnapshotQuery};
 pub use tasks::{CompleteTask, CompletedEffect, TaskView, WorkerRequest};

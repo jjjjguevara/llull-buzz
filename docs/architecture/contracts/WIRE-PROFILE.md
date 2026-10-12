@@ -274,6 +274,56 @@ A fiscal result/evidence remains committed when later mail or conversation publi
 
 ## Applicability and evidence
 
+### Optional read-only publication evidence
+
+`GET /integration/v1/publications/{canonical UUID}/evidence` is mounted only
+with the configured native publisher. It uses existing `observe-publication`
+rootless service authority and signs that exact empty-body GET path; query
+parameters, noncanonical UUIDs, HEAD and request bodies are rejected. The
+existing five-field publication view is unchanged. Responses, including errors,
+are `Cache-Control: no-store`. The read preserves existing authentication replay
+evidence but creates no publication, work grant, mutation receipt, observation
+or native network request. An original root-bound publication remains readable
+under current original-consumer/module/context record access without making its
+root live again.
+
+The closed `llull-buzz-publication-evidence/v1` response has 19 fields:
+`format`, `consumer_id`, `module_id`, `context_domain`, `publication_id`,
+`intent_id`, `release_ref`, `request_sha256`, `publication`, `admission`, `state`,
+`native_event_id`, `owner`, `revision`, `event_sha256`, `signed_event_base64`,
+`audience`, `completed_at`, `publisher_public_key`. `publication` and `admission`
+are the exact original stored payload and admission; `request_sha256` binds the
+entire original command. Consumers compare these to their retained original,
+not to a reconstructed or new intent. The provider authenticates original scope
+before reading private publication, signed bytes or audience. It rechecks the
+original invocation expiry after locks, validation and serialization.
+
+`publisher_public_key` is the actual configured fixed publisher key, not the
+consumer's NIP-98 transport key. The provider verifies the frozen event's ID,
+signature, configured owner/key, kind, channel, publication UUID, exact content,
+frozen audience and original reply parent before disclosing it. Original bytes
+use canonical standard base64; `event_sha256` hashes the decoded exact bytes.
+Consumers independently verify that hash and Nostr signature/source bindings.
+Unless independently configured otherwise, publisher identity and previously
+validated reply ancestry remain provider attestations, not independent key pins
+or a new native-owner lookup performed by this read.
+
+The proof fields `native_event_id`, `owner`, `event_sha256`,
+`signed_event_base64`, `audience`, `completed_at` are null when no delivery row
+exists. A signed pending/unknown event is not completed delivery.
+`completed_at` is positive Unix seconds only for `completed`; the initial
+admission remains pending. A lost POST acknowledgement may leave the consumer
+without a provider UUID; existing scoped observation/snapshot reads can locate
+the original operation by its original resource before evidence comparison.
+Absent or malformed proof never authorizes publication or resend.
+
+This observation implementation bounds signed bytes to 262,144, retained
+audience members to 1,024 and encoded response bytes to 1,048,576. Larger
+retained sources remain unqualified for this observation surface; these are
+transport bounds, not accepted business audience ceilings or permission to
+truncate, delete or replace original evidence. Compilation, PostgreSQL/HTTP,
+installed native delivery and human acceptance remain unrun for this addition.
+
 ### Completed task and separately admitted native publication
 
 Task completion attests the known business effects. It stops new work and does

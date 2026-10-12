@@ -41,6 +41,26 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-12 — Item 04.4 read-only original publication evidence source addition.
+Refreshed local/live draft PR #2 at `c2032a3ccd5f75cb8b53945c361abbc77275e459`,
+open/draft with no reviews. The additive, publisher-configured evidence GET
+preserves the old five-field observation and existing `observe-publication`
+authority. It verifies original consumer/module/context, immutable admission,
+existing root scope without renewed work, configured native signer/owner,
+original signed event/content/channel/reply and bounded frozen audience before
+returning exact base64 bytes and digest. Pending/unknown signed custody does not
+become completed delivery; lookup never publishes or reconciles. Existing
+authentication replay evidence remains; no new business ledger or receipt.
+
+Two signature/source and four PostgreSQL/HTTP controls are **AUTHORED/UNRUN**;
+compiler, Clippy, installed native/provider/consumer delivery and named-human
+acceptance remain unqualified. Larger sources outside the new proof transport
+bounds are unqualified, not a newly accepted business ceiling. Formatting and
+finite source checks are distinct from these outstanding qualifications. See
+[completion evidence](../../../docs/implementation/COMPLETION.md#read-only-original-publication-evidence-source-addition--2026-10-12).
+No compiler/cache/runtime or temporary evidence was allocated, no disk recovery
+is claimed, and the restricted profile stays inactive. Task 04 remains claimed.
+
 2026-10-12 — Item 04.4 publication completion seam source controls. Refreshed
 local/live PR #2 at `d06330a4d18aea4b9b9bd23245c734536a408008`, open/draft,
 no reviews. Existing provider semantics are correct: a completed business root

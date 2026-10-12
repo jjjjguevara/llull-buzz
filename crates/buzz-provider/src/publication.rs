@@ -8,7 +8,11 @@ use crate::{
     CommandResult, NativeEventSource, Provider, Result,
 };
 use async_trait::async_trait;
-use llull_buzz_wire::{hash, id, sha256, Command, Execution, Fault, Publication, Resource};
+use base64::{engine::general_purpose::STANDARD, Engine};
+use llull_buzz_wire::{
+    hash, id, sha256, Admission, Command, Execution, Fault, Publication, Resource, CONTRACT,
+    PROFILE,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{types::Json, Row};
@@ -185,6 +189,75 @@ pub struct PublicationView {
 pub struct PublishResult {
     pub admission: CommandResult,
     pub publication: PublicationView,
+}
+/// Existing immutable publication evidence, never a new release or native send.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicationEvidence {
+    pub format: String,
+    pub consumer_id: String,
+    pub module_id: String,
+    pub context_domain: String,
+    pub publication_id: Uuid,
+    pub intent_id: String,
+    pub release_ref: String,
+    pub request_sha256: String,
+    pub publication: Publication,
+    pub admission: CommandResult,
+    pub state: String,
+    pub native_event_id: Option<String>,
+    pub owner: Option<String>,
+    pub revision: u64,
+    pub event_sha256: Option<String>,
+    pub signed_event_base64: Option<String>,
+    pub audience: Option<Audience>,
+    pub completed_at: Option<i64>,
+    pub publisher_public_key: String,
+}
+
+fn verified_publication_event<P: PublicationPort>(
+    bytes: &[u8],
+    publication_id: Uuid,
+    publication: &Publication,
+    audience: &Audience,
+    frozen_identity: (&str, &str, &str),
+    publisher: &Publisher<P>,
+) -> Result<()> {
+    let (owner, event_id, event_sha256) = frozen_identity;
+    if bytes.len() > 262_144 || audience.members.is_empty() || audience.members.len() > 1024 {
+        return Err(Fault::TooLarge.into());
+    }
+    publication.validate()?;
+    let event = native::event(bytes)?;
+    if owner != publisher.port.owner()
+        || event.pubkey != publisher.port.public_key()
+        || event.pubkey != publisher.key.public_key()
+        || event.kind.as_u16() != 9
+        || event.id.to_hex() != event_id
+        || sha256(bytes) != event_sha256
+        || event.content != publication.text
+        || native::tag(&event, "h")? != publication.channel_id
+        || native::tag(&event, "llull-publication")? != publication_id.to_string()
+        || audience.community_id != publication.community_id
+        || audience.channel_id != publication.channel_id
+        || audience.revision != publication.audience_revision
+        || !audience.members.contains(&event.pubkey.to_hex())
+        || !publication.attachments.is_empty()
+    {
+        return Err(Fault::Denied.into());
+    }
+    for member in &audience.members {
+        hash(member)?;
+    }
+    let ancestry = buzz_core::nip10::parse_thread_markers(&event.tags).resolve();
+    match (&publication.reply_to_event, ancestry) {
+        (None, None) => {}
+        (Some(parent), Some((root, actual_parent))) if parent == &actual_parent => {
+            hash(&root)?;
+        }
+        _ => return Err(Fault::Denied.into()),
+    }
+    Ok(())
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -474,6 +547,197 @@ impl Provider {
         Ok(view)
     }
 
+    pub async fn observe_publication_evidence<P: PublicationPort>(
+        &self,
+        consumer: &str,
+        publication_id: Uuid,
+        headers: Headers<'_>,
+        publisher: &Publisher<P>,
+    ) -> Result<(PublicationEvidence, Vec<u8>, tokio::time::Instant)> {
+        let identity = publication_id.to_string();
+        let resource = Resource {
+            namespace: consumer.into(),
+            reference: identity.clone(),
+            revision: "1".into(),
+        };
+        let mut tx = self.begin().await?;
+        let (registration, claims) = self
+            .authorize(
+                &mut tx,
+                &SignedRequest {
+                    headers: &headers,
+                    body: b"",
+                },
+                auth::INVOCATION,
+                &format!("/integration/v1/publications/{identity}/evidence"),
+                "GET",
+                &Target {
+                    consumer,
+                    intent: &identity,
+                    operation: "observe-publication",
+                    resource: &resource,
+                    fingerprint: &sha256(b""),
+                    root: None,
+                },
+            )
+            .await?;
+        // This service read cannot carry a work grant or release capability.
+        self.service_scope(&registration, &claims)?;
+        if claims.root_task_id.is_some()
+            || claims.delegation_id.is_some()
+            || claims.grant_revision.is_some()
+            || claims.release.is_some()
+            || !claims.verdicts.is_empty()
+            || claims.browser_authentication.is_some()
+        {
+            return Err(Fault::Denied.into());
+        }
+        self.scope(&mut tx, &registration, &claims).await?;
+        // Authorize the original observation BEFORE reading private publication,
+        // audience or event bytes. Recovery compares scope, never active work.
+        let allowed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM observations WHERE consumer_id=$1 AND module_id=$2 AND context_domain=$3 AND record->>'operation'='publish' AND record->>'operation_id'=$4)")
+            .bind(consumer).bind(&claims.module_id).bind(&claims.context_domain).bind(&identity).fetch_one(&mut *tx).await?;
+        if !allowed {
+            return Err(Fault::Denied.into());
+        }
+        let original = sqlx::query("SELECT p.intent_id,p.release_ref,p.request_sha256,p.publication,s.scope,s.root_task_id,c.result FROM publications p JOIN publication_scopes s USING(publication_id) JOIN commands c ON c.consumer_id=p.consumer_id AND c.operation='publish' AND c.intent_id=p.intent_id AND c.request_sha256=p.request_sha256 WHERE p.consumer_id=$1 AND p.publication_id=$2 FOR SHARE OF p,s,c")
+            .bind(consumer).bind(publication_id).fetch_optional(&mut *tx).await?.ok_or(Fault::Denied)?;
+        let scope: crate::tasks::ScopeStamp = original.try_get::<Json<_>, _>("scope")?.0;
+        scope.recovery(&claims)?;
+        let root_id: Option<String> = original.try_get("root_task_id")?;
+        if let Some(root_id) = root_id {
+            let root: Json<crate::tasks::RootRecord> = sqlx::query_scalar(
+                "SELECT record FROM task_roots WHERE consumer_id=$1 AND root_task_id=$2 FOR SHARE",
+            )
+            .bind(consumer)
+            .bind(&root_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(Fault::Denied)?;
+            if root.0.manifest.root_task_id != root_id {
+                return Err(Fault::Denied.into());
+            }
+            root.0.scope.recovery(&claims)?;
+        }
+        let publication: Publication = original.try_get::<Json<_>, _>("publication")?.0;
+        publication.validate()?;
+        let admission: CommandResult = original.try_get::<Json<_>, _>("result")?.0;
+        let intent_id: String = original.try_get("intent_id")?;
+        let release_ref: String = original.try_get("release_ref")?;
+        let request_sha256: String = original.try_get("request_sha256")?;
+        hash(&request_sha256)?;
+        id(&intent_id)?;
+        if release_ref != publication.release_ref
+            || admission.receipt.contract != CONTRACT
+            || admission.receipt.profile != PROFILE
+            || admission.receipt.consumer_id != consumer
+            || admission.receipt.intent_id != intent_id
+            || admission.receipt.operation_id != identity
+            || admission.receipt.request_sha256 != request_sha256
+            || admission.receipt.admission != Admission::Accepted
+            || admission.receipt.execution != Execution::Pending
+            || admission.receipt.revision != 1
+            || !admission.receipt.effect_refs.is_empty()
+            || admission.replayed
+            || admission.result
+                != json!({"publication_id":publication_id,"delivery":"pending","final_native_audience_check":"pending","signed_native_event":null})
+        {
+            return Err(Fault::Denied.into());
+        }
+        let mut result = PublicationEvidence {
+            format: "llull-buzz-publication-evidence/v1".into(),
+            consumer_id: consumer.into(),
+            module_id: claims.module_id.clone(),
+            context_domain: claims.context_domain.clone(),
+            publication_id,
+            intent_id,
+            release_ref,
+            request_sha256,
+            publication,
+            admission,
+            state: "pending".into(),
+            native_event_id: None,
+            owner: None,
+            revision: 1,
+            event_sha256: None,
+            signed_event_base64: None,
+            audience: None,
+            completed_at: None,
+            publisher_public_key: publisher.port.public_key().to_hex(),
+        };
+        let delivery = sqlx::query("SELECT owner,native_event_id,signed_event,event_sha256,audience,state,revision,completed_at FROM publication_deliveries WHERE publication_id=$1 AND consumer_id=$2 AND module_id=$3 AND context_domain=$4 FOR SHARE")
+            .bind(publication_id).bind(consumer).bind(&claims.module_id).bind(&claims.context_domain).fetch_optional(&mut *tx).await?;
+        if let Some(delivery) = delivery {
+            let bytes: Vec<u8> = delivery.try_get("signed_event")?;
+            let audience: Audience = delivery.try_get::<Json<_>, _>("audience")?.0;
+            let owner: String = delivery.try_get("owner")?;
+            let event_id: String = delivery.try_get("native_event_id")?;
+            let event_sha256: String = delivery.try_get("event_sha256")?;
+            verified_publication_event(
+                &bytes,
+                publication_id,
+                &result.publication,
+                &audience,
+                (&owner, &event_id, &event_sha256),
+                publisher,
+            )?;
+            let state: String = delivery.try_get("state")?;
+            let revision: i64 = delivery.try_get("revision")?;
+            let completed_at: Option<chrono::DateTime<chrono::Utc>> =
+                delivery.try_get("completed_at")?;
+            if !matches!(
+                state.as_str(),
+                "pending" | "unknown" | "completed" | "denied"
+            ) || !(1..=llull_buzz_wire::MAX_SAFE_INTEGER).contains(&revision)
+                || (state == "completed") != completed_at.is_some()
+                || completed_at.is_some_and(|stamp| stamp.timestamp() <= 0)
+            {
+                return Err(Fault::Denied.into());
+            }
+            result.state = state;
+            result.revision = revision as u64;
+            result.completed_at = completed_at.map(|stamp| stamp.timestamp());
+            result.native_event_id = Some(event_id);
+            result.owner = Some(owner);
+            result.event_sha256 = Some(event_sha256);
+            result.signed_event_base64 = Some(STANDARD.encode(bytes));
+            result.audience = Some(audience);
+        } else {
+            // A mismatched scoped row is not evidence that no signing happened.
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM publication_deliveries WHERE publication_id=$1)",
+            )
+            .bind(publication_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if exists {
+                return Err(Fault::Denied.into());
+            }
+        }
+        // One original fractional DB-clock interval bounds encoding and commit.
+        let clock_anchor = tokio::time::Instant::now();
+        let now = Self::now(&mut tx).await?;
+        claims.fresh(now.timestamp())?;
+        let expires =
+            chrono::DateTime::<chrono::Utc>::from_timestamp(claims.exp, 0).ok_or(Fault::Denied)?;
+        let remaining = (expires - now).to_std().map_err(|_| Fault::Denied)?;
+        let deadline = clock_anchor.checked_add(remaining).ok_or(Fault::Denied)?;
+        let encoded = serde_json::to_vec(&result).map_err(|_| Fault::Invalid)?;
+        if encoded.len() > llull_buzz_wire::MAX_BYTES {
+            return Err(Fault::TooLarge.into());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(Fault::Denied.into());
+        }
+        tokio::time::timeout_at(deadline, tx.commit())
+            .await
+            .map_err(|_| Fault::Denied)??;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(Fault::Denied.into());
+        }
+        Ok((result, encoded, deadline))
+    }
+
     pub async fn observe_publication(
         &self,
         consumer: &str,
@@ -553,6 +817,175 @@ mod reply_tests {
         async fn submit(&self, _: &str, _: &[u8]) -> std::result::Result<bool, PortError> {
             panic!("no transport in source test")
         }
+    }
+    #[test]
+    fn evidence_verifies_original_bytes_and_configured_signer_not_another_audience_member() {
+        let key = nostr::Keys::generate();
+        let foreign = nostr::Keys::generate();
+        let publisher = Publisher::new(
+            Arc::new(Origin {
+                key: key.public_key(),
+                events: BTreeMap::new(),
+            }),
+            key.clone(),
+            "https://synthetic.invalid",
+        )
+        .unwrap();
+        let identity = Uuid::new_v4();
+        let publication = Publication {
+            community_id: "community-one".into(),
+            channel_id: Uuid::new_v4().to_string(),
+            audience_policy: "private".into(),
+            audience_revision: "1".into(),
+            release_ref: "original-release".into(),
+            text: "Approved link".into(),
+            text_sha256: sha256(b"Approved link"),
+            copy_mode: llull_buzz_wire::CopyMode::SummaryLink,
+            attachments: vec![],
+            reply_to_event: None,
+        };
+        let bytes = publisher.sign(identity, &publication, None).unwrap();
+        let event_id = native::event(&bytes).unwrap().id.to_hex();
+        let original_audience = Audience {
+            community_id: publication.community_id.clone(),
+            channel_id: publication.channel_id.clone(),
+            revision: "1".into(),
+            members: BTreeSet::from([key.public_key().to_hex(), foreign.public_key().to_hex()]),
+        };
+        for fault in [
+            "none",
+            "owner",
+            "identity",
+            "digest",
+            "content",
+            "channel",
+            "audience",
+            "foreign-signer",
+            "oversize",
+        ] {
+            let mut p = publication.clone();
+            let mut audience = original_audience.clone();
+            let mut raw = bytes.clone();
+            let mut id = identity;
+            let mut owner = "synthetic-fixed-owner";
+            match fault {
+                "owner" => owner = "another-owner",
+                "identity" => id = Uuid::new_v4(),
+                "content" => {
+                    p.text = "Changed release".into();
+                    p.text_sha256 = sha256(p.text.as_bytes());
+                }
+                "channel" => p.channel_id = Uuid::new_v4().to_string(),
+                "audience" => audience.revision = "2".into(),
+                "foreign-signer" => {
+                    let channel = Uuid::parse_str(&p.channel_id).unwrap();
+                    let event =
+                        buzz_sdk::build_message(channel, &p.text, None, &[], false, &[], &[])
+                            .unwrap()
+                            .tag(
+                                nostr::Tag::parse([
+                                    "llull-publication",
+                                    identity.to_string().as_str(),
+                                ])
+                                .unwrap(),
+                            )
+                            .sign_with_keys(&foreign)
+                            .unwrap();
+                    raw = serde_json::to_vec(&event).unwrap();
+                }
+                "oversize" => raw.resize(262_145, b' '),
+                _ => {}
+            }
+            let native_id = if fault == "foreign-signer" {
+                native::event(&raw).unwrap().id.to_hex()
+            } else {
+                event_id.clone()
+            };
+            let checksum = if fault == "digest" {
+                "0".repeat(64)
+            } else {
+                sha256(&raw)
+            };
+            let result = verified_publication_event(
+                &raw,
+                id,
+                &p,
+                &audience,
+                (owner, &native_id, &checksum),
+                &publisher,
+            );
+            assert_eq!(result.is_ok(), fault == "none", "{fault}");
+        }
+    }
+
+    #[test]
+    fn evidence_requires_exact_original_reply_parent_without_native_lookup() {
+        let key = nostr::Keys::generate();
+        let publisher = Publisher::new(
+            Arc::new(Origin {
+                key: key.public_key(),
+                events: BTreeMap::new(),
+            }),
+            key.clone(),
+            "https://synthetic.invalid",
+        )
+        .unwrap();
+        let identity = Uuid::new_v4();
+        let thread = buzz_sdk::ThreadRef {
+            root_event_id: nostr::EventId::from_hex("a".repeat(64)).unwrap(),
+            parent_event_id: nostr::EventId::from_hex("b".repeat(64)).unwrap(),
+        };
+        let mut publication = Publication {
+            community_id: "community-one".into(),
+            channel_id: Uuid::new_v4().to_string(),
+            audience_policy: "private".into(),
+            audience_revision: "1".into(),
+            release_ref: "original-release".into(),
+            text: "Approved reply link".into(),
+            text_sha256: sha256(b"Approved reply link"),
+            copy_mode: llull_buzz_wire::CopyMode::SummaryLink,
+            attachments: vec![],
+            reply_to_event: Some(thread.parent_event_id.to_hex()),
+        };
+        let bytes = publisher
+            .sign(identity, &publication, Some(&thread))
+            .unwrap();
+        let event_id = native::event(&bytes).unwrap().id.to_hex();
+        let audience = Audience {
+            community_id: publication.community_id.clone(),
+            channel_id: publication.channel_id.clone(),
+            revision: "1".into(),
+            members: BTreeSet::from([key.public_key().to_hex()]),
+        };
+        assert!(verified_publication_event(
+            &bytes,
+            identity,
+            &publication,
+            &audience,
+            ("synthetic-fixed-owner", &event_id, &sha256(&bytes)),
+            &publisher
+        )
+        .is_ok());
+        publication.reply_to_event = Some("c".repeat(64));
+        assert!(verified_publication_event(
+            &bytes,
+            identity,
+            &publication,
+            &audience,
+            ("synthetic-fixed-owner", &event_id, &sha256(&bytes)),
+            &publisher
+        )
+        .is_err());
+        publication.reply_to_event = None;
+        assert!(verified_publication_event(
+            &bytes,
+            identity,
+            &publication,
+            &audience,
+            ("synthetic-fixed-owner", &event_id, &sha256(&bytes)),
+            &publisher
+        )
+        .is_err());
     }
     #[tokio::test]
     async fn exact_signed_parent_and_native_reply_tag_are_enforced() {

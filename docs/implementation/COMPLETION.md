@@ -1729,3 +1729,71 @@ identity manifest SHA-256 is
 `98531c8b047c6a266127be7e6855d4d5f84eb042ae08e82c510e36cf024a05b2`.
 The Docker partition then had 3.8 GB free. No global prune, shared daemon
 stop or unrelated resource cleanup was used.
+
+## Read-only original publication evidence source addition — 2026-10-12
+
+Refreshed local/live draft PR #2 at `c2032a3ccd5f75cb8b53945c361abbc77275e459`,
+open/draft with no reviews. The existing five-field publication view cannot
+supply independently verifiable signed bytes. The optional
+[evidence contract](../architecture/contracts/WIRE-PROFILE.md#optional-read-only-publication-evidence)
+adds an authorized exact-path GET with the existing `observe-publication`
+action, preserving all earlier endpoints, command schemas, dependency pins and
+the inactive restricted profile. It reads the existing original publication,
+admission, scope and delivery rows; no new ledger, mutation receipt,
+observation, send, reconciliation, signer or work grant is introduced.
+
+Current original-consumer/module/context authority precedes private payload
+access. Historical root scope is checked without renewing work. Shared locks,
+original admission/request hashes, actual configured publisher key/owner,
+Nostr signature/ID/source, exact content/channel/publication UUID/reply parent,
+frozen audience and final invocation expiry bind the returned evidence.
+Encoded proof uses standard base64 for the original bytes and their SHA-256.
+Signed pending/unknown custody remains distinct from provider-completed
+delivery and its completion time. Publisher identity and frozen ancestry are
+provider-attested unless the consumer independently pins them. This read does
+not query the native owner to re-prove the original parent/root or resolve an
+unknown delivery, and an absent provider UUID cannot become a fabricated ID or
+resend. Existing scoped observations can discover the original operation before
+exact proof comparison.
+
+The observation bounds are 256 KiB signed bytes, 1,024 frozen audience members
+and 1 MiB serialized response. Larger retained proof is unqualified on this
+surface; these bounds do not accept a business ceiling or authorize evidence
+truncation/deletion. Two existing-module signature/source controls and four
+existing PostgreSQL/HTTP controls are **AUTHORED/UNRUN**. They cover configured
+signer versus another audience member, exact original reply, admitted-unsent
+versus completed/unknown frozen evidence, repeated read without another native
+submission or journal entry, wrong scope/missing ID/revoked service, actual
+expiry during a shared-row lock, actual scoped deferred-COMMIT delay past the
+original invocation expiry and canonical empty GET/no-store routing, including
+extractor/unsupported-method errors. One original monotonic interval anchored
+before a fractional DB-clock sample covers encoding and commit; the route uses
+the same once-serialized bytes and deadline before constructing its response.
+No socket-last-byte guarantee or runtime result is claimed. The first source
+version lacked the commit/route fence; independent review found and corrected
+it before freeze. Response middleware covers errors that bypass handler extraction.
+The submit counter controls submission only; absence of native lookup is a
+production source observation, not a counter-measured lookup result.
+
+Reproduction after an admitted build/storage environment exists:
+
+```sh
+cargo test --locked -p llull-buzz-provider evidence_
+cargo test --locked -p llull-buzz-provider --test postgres publication_evidence_ -- --ignored
+cargo clippy --locked -p llull-buzz-provider --all-targets -- -D warnings
+```
+
+None of these compiler, PostgreSQL or Clippy commands was run. Four-file edition-2021
+formatting, whitespace and finite source assertions passed. These bind the closed
+19-field DTO, original authorization order/shared locks/final expiry, fixed
+signer/source/bounds, no new network or delivery writes, unchanged legacy view,
+historical PostgreSQL test prefix and unchanged Cargo manifests/lock against
+both the refreshed head and source candidate `b31dbccb`. These finite controls for
+this candidate; they cannot establish Rust typing, installed HTTP behavior,
+native delivery or human acceptance. A source review caught an eight-argument
+helper that would violate the existing strict Clippy default; the frozen source
+groups the exact owner/event-ID/digest identity without a lint waiver. An empty
+documentation hunk was rejected before any write and then corrected. Historical
+failures and qualification limits above remain retained. No compiler cache,
+runtime environment, provider effect or temporary evidence was created; no
+disk reclamation is claimed. Existing storage qualification remains unresolved.

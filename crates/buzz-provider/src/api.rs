@@ -485,10 +485,63 @@ pub fn attachment_routes<S: crate::NativeAttachmentSource + 'static>(
         .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
 }
 
+async fn publication_evidence_no_store(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .insert("cache-control", "no-store".parse().expect("static header"));
+    response
+}
+
 pub fn publication_routes<P: crate::PublicationPort + 'static>(
     provider: Provider,
     publisher: Arc<crate::Publisher<P>>,
 ) -> Router {
+    let evidence_provider = provider.clone();
+    let evidence_publisher = publisher.clone();
+    let evidence = move |Path(identity): Path<String>,
+                         OriginalUri(uri): OriginalUri,
+                         method: Method,
+                         h: HeaderMap,
+                         b: Bytes| {
+        let provider = evidence_provider.clone();
+        let publisher = evidence_publisher.clone();
+        async move {
+            let result = async {
+                let id = uuid::Uuid::parse_str(&identity).map_err(|_| Fault::Invalid)?;
+                if method != Method::GET
+                    || !b.is_empty()
+                    || id.to_string() != identity
+                    || uri.query().is_some()
+                    || uri.path() != format!("/integration/v1/publications/{identity}/evidence")
+                {
+                    return Err(ProviderError::from(Fault::Invalid));
+                }
+                let (_, encoded, deadline) = provider
+                    .observe_publication_evidence(
+                        value(&h, "x-llull-consumer")?,
+                        id,
+                        credentials(&h)?,
+                        publisher.as_ref(),
+                    )
+                    .await?;
+                let response = ([("content-type", "application/json")], encoded).into_response();
+                if tokio::time::Instant::now() >= deadline {
+                    return Err(ProviderError::from(Fault::Denied));
+                }
+                Ok(response)
+            }
+            .await;
+            let mut response = result.into_response();
+            response
+                .headers_mut()
+                .insert("cache-control", "no-store".parse().expect("static header"));
+            response
+        }
+    };
     let ep = provider.clone();
     let outgoing = publisher.clone();
     let publish = move |h: HeaderMap, b: Bytes| {
@@ -513,6 +566,11 @@ pub fn publication_routes<P: crate::PublicationPort + 'static>(
     Router::new()
         .route("/integration/v1/publications", post(publish))
         .route("/integration/v1/publications/{id}/reconcile", post(recover))
+        .merge(
+            Router::new()
+                .route("/integration/v1/publications/{id}/evidence", get(evidence))
+                .route_layer(axum::middleware::from_fn(publication_evidence_no_store)),
+        )
         .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))
 }
 

@@ -1204,3 +1204,517 @@ async fn completed_root_denies_publication_but_independent_exact_release_deliver
 async fn completed_root_independent_reply_lost_ack_recovers_original_without_resend() {
     completed_root_independent_reply(true).await;
 }
+
+fn publication_evidence_headers(rig: &Rig, identity: Uuid, module: &str) -> Signed {
+    let mut command = rig.command(
+        "observe-publication",
+        rig.resource(&identity.to_string(), 1),
+        json!({}),
+    );
+    command.intent_id = identity.to_string();
+    let mut claims = rig.claims(&command, module, None, None);
+    claims.payload_sha256 = sha256(b"");
+    rig.sign(
+        &format!("/integration/v1/publications/{identity}/evidence"),
+        "GET",
+        b"",
+        &claims,
+        INVOCATION,
+    )
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn publication_evidence_reads_original_signed_reply_without_dispatch_or_recovery() {
+    for lost_ack in [false, true] {
+        let rig = Rig::new().await;
+        let key = nostr::Keys::generate();
+        let channel = Uuid::new_v4();
+        let parent = buzz_sdk::build_message(
+            channel,
+            "Original approved mention",
+            None,
+            &[],
+            false,
+            &[],
+            &[],
+        )
+        .unwrap()
+        .sign_with_keys(&nostr::Keys::generate())
+        .unwrap();
+        let sink = Arc::new(Sink {
+            key: key.public_key(),
+            revision: Mutex::new("audience-1".into()),
+            events: Mutex::new(BTreeMap::from([(
+                parent.id.to_hex(),
+                serde_json::to_vec(&parent).unwrap(),
+            )])),
+            calls: AtomicUsize::new(0),
+            lose: lost_ack.into(),
+        });
+        let publisher =
+            Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap();
+        let publication = Publication {
+            community_id: rig.registration.community_id.clone(),
+            channel_id: channel.to_string(),
+            audience_policy: "synthetic-private".into(),
+            audience_revision: "audience-1".into(),
+            release_ref: Uuid::new_v4().to_string(),
+            text: "https://consumer.synthetic.invalid/resource/exact".into(),
+            text_sha256: sha256(b"https://consumer.synthetic.invalid/resource/exact"),
+            copy_mode: CopyMode::SummaryLink,
+            attachments: vec![],
+            reply_to_event: Some(parent.id.to_hex()),
+        };
+        let command = rig.command(
+            "publish",
+            rig.resource(&publication.release_ref, 1),
+            &publication,
+        );
+        let (body, signed) = signed_publication(&rig, &command);
+        let admitted = rig
+            .p
+            .admit_publication(&body, signed.headers())
+            .await
+            .unwrap();
+        let identity = Uuid::parse_str(&admitted.receipt.operation_id).unwrap();
+        let h = publication_evidence_headers(&rig, identity, "module-a");
+        let (pending, _, _) = rig
+            .p
+            .observe_publication_evidence(&command.consumer_id, identity, h.headers(), &publisher)
+            .await
+            .unwrap();
+        assert_eq!(pending.state, "pending");
+        assert!(pending.signed_event_base64.is_none() && pending.completed_at.is_none());
+        assert_eq!(pending.request_sha256, command.fingerprint().unwrap());
+        assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+        let (body, signed) = signed_publication(&rig, &command);
+        let sent = rig
+            .p
+            .publish(&body, signed.headers(), &publisher)
+            .await
+            .unwrap();
+        let before: (String,String,Vec<u8>,i64) = sqlx::query_as("SELECT state,native_event_id,signed_event,revision FROM publication_deliveries WHERE publication_id=$1")
+            .bind(identity).fetch_one(&rig.pool).await.unwrap();
+        let counts: (i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM commands WHERE consumer_id=$1),(SELECT count(*) FROM observations WHERE consumer_id=$1)")
+            .bind(&command.consumer_id).fetch_one(&rig.pool).await.unwrap();
+        for _ in 0..2 {
+            let h = publication_evidence_headers(&rig, identity, "module-a");
+            let (evidence, encoded, deadline) = rig
+                .p
+                .observe_publication_evidence(
+                    &command.consumer_id,
+                    identity,
+                    h.headers(),
+                    &publisher,
+                )
+                .await
+                .unwrap();
+            assert_eq!(evidence.format, "llull-buzz-publication-evidence/v1");
+            assert_eq!(
+                serde_json::from_slice::<Value>(&encoded).unwrap()["state"],
+                evidence.state
+            );
+            assert!(tokio::time::Instant::now() < deadline);
+            assert_eq!(
+                evidence.state,
+                if lost_ack { "unknown" } else { "completed" }
+            );
+            assert_eq!(evidence.completed_at.is_some(), !lost_ack);
+            assert_eq!(
+                evidence.admission.receipt.request_sha256,
+                admitted.receipt.request_sha256
+            );
+            assert_eq!(
+                serde_json::to_value(&evidence.publication).unwrap(),
+                serde_json::to_value(&publication).unwrap()
+            );
+            let raw = STANDARD
+                .decode(evidence.signed_event_base64.unwrap())
+                .unwrap();
+            assert_eq!(raw, before.2);
+            assert_eq!(sha256(&raw), evidence.event_sha256.unwrap());
+            let event = llull_buzz_provider::native::event(&raw).unwrap();
+            assert_eq!(
+                event.id.to_hex(),
+                sent.publication.native_event_id.clone().unwrap()
+            );
+            assert_eq!(event.pubkey.to_hex(), evidence.publisher_public_key);
+            assert_eq!(
+                buzz_core::nip10::parse_thread_markers(&event.tags).resolve(),
+                Some((parent.id.to_hex(), parent.id.to_hex()))
+            );
+            assert_eq!(
+                sink.calls.load(Ordering::SeqCst),
+                1,
+                "observation cannot submit another native event"
+            );
+        }
+        let after: (String,String,Vec<u8>,i64) = sqlx::query_as("SELECT state,native_event_id,signed_event,revision FROM publication_deliveries WHERE publication_id=$1")
+            .bind(identity).fetch_one(&rig.pool).await.unwrap();
+        assert_eq!(after, before);
+        let after_counts: (i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM commands WHERE consumer_id=$1),(SELECT count(*) FROM observations WHERE consumer_id=$1)")
+            .bind(&command.consumer_id).fetch_one(&rig.pool).await.unwrap();
+        assert_eq!(
+            after_counts, counts,
+            "read does not append a mutation receipt or observation"
+        );
+        let foreign_scope = publication_evidence_headers(&rig, identity, "module-b");
+        assert!(rig
+            .p
+            .observe_publication_evidence(
+                &command.consumer_id,
+                identity,
+                foreign_scope.headers(),
+                &publisher
+            )
+            .await
+            .is_err());
+        let nonexistent = Uuid::new_v4();
+        let h = publication_evidence_headers(&rig, nonexistent, "module-a");
+        assert!(rig
+            .p
+            .observe_publication_evidence(
+                &command.consumer_id,
+                nonexistent,
+                h.headers(),
+                &publisher
+            )
+            .await
+            .is_err());
+        rig.p
+            .set_service_active(
+                &command.consumer_id,
+                false,
+                &digest(&rig.registration).unwrap(),
+            )
+            .await
+            .unwrap();
+        let h = publication_evidence_headers(&rig, identity, "module-a");
+        assert!(rig
+            .p
+            .observe_publication_evidence(&command.consumer_id, identity, h.headers(), &publisher)
+            .await
+            .is_err());
+        assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn publication_evidence_expiry_during_original_share_lock_returns_no_private_proof() {
+    let rig = Rig::new().await;
+    let key = nostr::Keys::generate();
+    let sink = Arc::new(Sink {
+        key: key.public_key(),
+        revision: Mutex::new("audience-1".into()),
+        events: Mutex::new(BTreeMap::new()),
+        calls: AtomicUsize::new(0),
+        lose: false.into(),
+    });
+    let publisher =
+        Arc::new(Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap());
+    let publication = Publication {
+        community_id: rig.registration.community_id.clone(),
+        channel_id: Uuid::new_v4().to_string(),
+        audience_policy: "synthetic-private".into(),
+        audience_revision: "audience-1".into(),
+        release_ref: Uuid::new_v4().to_string(),
+        text: "Authorized original".into(),
+        text_sha256: sha256(b"Authorized original"),
+        copy_mode: CopyMode::SummaryLink,
+        attachments: vec![],
+        reply_to_event: None,
+    };
+    let command = rig.command(
+        "publish",
+        rig.resource(&publication.release_ref, 1),
+        &publication,
+    );
+    let (body, signed) = signed_publication(&rig, &command);
+    let admitted = rig
+        .p
+        .admit_publication(&body, signed.headers())
+        .await
+        .unwrap();
+    let identity = Uuid::parse_str(&admitted.receipt.operation_id).unwrap();
+    let mut blocker = rig.pool.begin().await.unwrap();
+    sqlx::query("SELECT publication_id FROM publications WHERE publication_id=$1 FOR UPDATE")
+        .bind(identity)
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    let mut observe = rig.command(
+        "observe-publication",
+        rig.resource(&identity.to_string(), 1),
+        json!({}),
+    );
+    observe.intent_id = identity.to_string();
+    let mut claims = rig.claims(&observe, "module-a", None, None);
+    claims.payload_sha256 = sha256(b"");
+    claims.exp = claims.iat + 2;
+    let h = rig.sign(
+        &format!("/integration/v1/publications/{identity}/evidence"),
+        "GET",
+        b"",
+        &claims,
+        INVOCATION,
+    );
+    let provider = rig.p.clone();
+    let consumer = command.consumer_id.clone();
+    let reader = tokio::spawn(async move {
+        provider
+            .observe_publication_evidence(&consumer, identity, h.headers(), publisher.as_ref())
+            .await
+    });
+    let maximum = tokio::time::Instant::now() + Duration::from_secs(4);
+    loop {
+        let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%FROM publications p JOIN publication_scopes%')")
+            .fetch_one(&rig.pool).await.unwrap();
+        if waiting {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < maximum,
+            "actual original publication SHARE lock must be reached"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    loop {
+        let expired: bool = sqlx::query_scalar(
+            "SELECT extract(epoch FROM clock_timestamp()) >= $1::double precision",
+        )
+        .bind(claims.exp as f64)
+        .fetch_one(&rig.pool)
+        .await
+        .unwrap();
+        if expired {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < maximum,
+            "bounded actual database expiry"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    blocker.rollback().await.unwrap();
+    assert!(reader.await.unwrap().is_err());
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM publication_deliveries WHERE publication_id=$1")
+            .bind(identity)
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        count, 0,
+        "expired evidence read never signs or creates delivery"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn publication_evidence_http_is_canonical_empty_get_no_store_and_no_effect() {
+    let rig = Rig::new().await;
+    let key = nostr::Keys::generate();
+    let sink = Arc::new(Sink {
+        key: key.public_key(),
+        revision: Mutex::new("audience-1".into()),
+        events: Mutex::new(BTreeMap::new()),
+        calls: AtomicUsize::new(0),
+        lose: false.into(),
+    });
+    let publisher =
+        Arc::new(Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap());
+    let publication = Publication {
+        community_id: rig.registration.community_id.clone(),
+        channel_id: Uuid::new_v4().to_string(),
+        audience_policy: "synthetic-private".into(),
+        audience_revision: "audience-1".into(),
+        release_ref: Uuid::new_v4().to_string(),
+        text: "Original exact link".into(),
+        text_sha256: sha256(b"Original exact link"),
+        copy_mode: CopyMode::SummaryLink,
+        attachments: vec![],
+        reply_to_event: None,
+    };
+    let command = rig.command(
+        "publish",
+        rig.resource(&publication.release_ref, 1),
+        &publication,
+    );
+    let (body, signed) = signed_publication(&rig, &command);
+    let admitted = rig
+        .p
+        .admit_publication(&body, signed.headers())
+        .await
+        .unwrap();
+    let identity = Uuid::parse_str(&admitted.receipt.operation_id).unwrap();
+    // Cleartext loopback models the existing trusted HTTPS terminator only.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let router = llull_buzz_provider::api::publication_routes(rig.p.clone(), publisher);
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let client = reqwest::Client::new();
+    for mutation in [
+        "none",
+        "query",
+        "body",
+        "head",
+        "post",
+        "oversize-body",
+        "compact-uuid",
+    ] {
+        let h = publication_evidence_headers(&rig, identity, "module-a");
+        let raw_identity = if mutation == "compact-uuid" {
+            identity.simple().to_string()
+        } else {
+            identity.to_string()
+        };
+        let path = format!(
+            "http://{address}/integration/v1/publications/{raw_identity}/evidence{}",
+            if mutation == "query" { "?extra=1" } else { "" }
+        );
+        let request = if mutation == "head" {
+            client.head(&path)
+        } else if mutation == "post" {
+            client.post(&path)
+        } else {
+            client.get(&path)
+        };
+        let request = request
+            .header("Authorization", h.headers().authorization)
+            .header("X-Llull-Invocation", h.headers().invocation)
+            .header("X-Llull-Consumer", &command.consumer_id);
+        let response = if mutation == "body" {
+            request.body("{}").send().await.unwrap()
+        } else if mutation == "oversize-body" {
+            request
+                .body(vec![b' '; llull_buzz_wire::MAX_BYTES + 1])
+                .send()
+                .await
+                .unwrap()
+        } else {
+            request.send().await.unwrap()
+        };
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+        assert_eq!(
+            response.status().is_success(),
+            mutation == "none",
+            "{mutation}"
+        );
+        if mutation == "none" {
+            let proof: Value = response.json().await.unwrap();
+            assert_eq!(proof["format"], "llull-buzz-publication-evidence/v1");
+            assert_eq!(proof["signed_event_base64"], Value::Null);
+            assert_eq!(proof.as_object().unwrap().len(), 19);
+        }
+    }
+    server.abort();
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn publication_evidence_delayed_commit_cannot_emit_after_original_invocation_expiry() {
+    let rig = Rig::new().await;
+    let key = nostr::Keys::generate();
+    let sink = Arc::new(Sink {
+        key: key.public_key(),
+        revision: Mutex::new("audience-1".into()),
+        events: Mutex::new(BTreeMap::new()),
+        calls: AtomicUsize::new(0),
+        lose: false.into(),
+    });
+    let publisher =
+        Arc::new(Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap());
+    let publication = Publication {
+        community_id: rig.registration.community_id.clone(),
+        channel_id: Uuid::new_v4().to_string(),
+        audience_policy: "synthetic-private".into(),
+        audience_revision: "audience-1".into(),
+        release_ref: Uuid::new_v4().to_string(),
+        text: "Original admitted link".into(),
+        text_sha256: sha256(b"Original admitted link"),
+        copy_mode: CopyMode::SummaryLink,
+        attachments: vec![],
+        reply_to_event: None,
+    };
+    let command = rig.command(
+        "publish",
+        rig.resource(&publication.release_ref, 1),
+        &publication,
+    );
+    let (body, h) = signed_publication(&rig, &command);
+    let admitted = rig.p.admit_publication(&body, h.headers()).await.unwrap();
+    let identity = Uuid::parse_str(&admitted.receipt.operation_id).unwrap();
+    // This real deferred trigger waits only at COMMIT, after proof validation
+    // and the final fractional database-clock sample. It is fixture-owned.
+    let marker = ((identity.as_u128() & 0x7fff_ffff) as i64) + 1001;
+    sqlx::query(&format!("CREATE FUNCTION evidence_slow_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.consumer_id='{}' THEN PERFORM pg_advisory_xact_lock({marker}); PERFORM pg_sleep(4); END IF; RETURN NEW; END $$",command.consumer_id))
+        .execute(&rig.pool).await.unwrap();
+    sqlx::query("CREATE CONSTRAINT TRIGGER evidence_slow_commit AFTER INSERT ON assertion_replays DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION evidence_slow_commit()")
+        .execute(&rig.pool).await.unwrap();
+    let mut read = rig.command(
+        "observe-publication",
+        rig.resource(&identity.to_string(), 1),
+        json!({}),
+    );
+    read.intent_id = identity.to_string();
+    let mut claims = rig.claims(&read, "module-a", None, None);
+    claims.payload_sha256 = sha256(b"");
+    claims.exp = claims.iat + 3;
+    let h = rig.sign(
+        &format!("/integration/v1/publications/{identity}/evidence"),
+        "GET",
+        b"",
+        &claims,
+        INVOCATION,
+    );
+    let started = tokio::time::Instant::now();
+    let provider = rig.p.clone();
+    let consumer = command.consumer_id.clone();
+    let reader = tokio::spawn(async move {
+        provider
+            .observe_publication_evidence(&consumer, identity, h.headers(), publisher.as_ref())
+            .await
+    });
+    let maximum = started + Duration::from_secs(4);
+    loop {
+        let at_commit: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity a JOIN pg_locks l ON l.pid=a.pid WHERE l.locktype='advisory' AND l.classid=0 AND l.objid::bigint=$1 AND l.granted AND a.wait_event='PgSleep' AND a.query LIKE 'COMMIT%')")
+            .bind(marker).fetch_one(&rig.pool).await.unwrap();
+        if at_commit {
+            break;
+        }
+        assert!(
+            !reader.is_finished(),
+            "read must reach its actual scoped deferred COMMIT before denial"
+        );
+        assert!(
+            tokio::time::Instant::now() < maximum,
+            "bounded actual deferred COMMIT observation"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let result = reader.await.unwrap();
+    assert!(
+        result.is_err(),
+        "late read must return neither typed private proof nor encoded response"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "original expiry consumes commit wait"
+    );
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+    let receipts: i64 = sqlx::query_scalar("SELECT count(*) FROM commands WHERE consumer_id=$1")
+        .bind(&command.consumer_id)
+        .fetch_one(&rig.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        receipts, 1,
+        "no replacement command after unknown authentication commit"
+    );
+}
