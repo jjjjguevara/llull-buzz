@@ -41,6 +41,29 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-12 — Item 04.3/04.5 governed tool dispatch source increment. Refreshed
+local/live PR #2 at `c838c54bcdbf8354f0438b530a4faefdf7571311`, open/draft
+with no reviews. Integration owner and delegated provider implementation owner
+repair the existing typed consumer boundary: original root/worker/credential
+checks now sample database time after awaited current scope checks, and durable
+custody/commit consumes one frozen monotonic interval. A final bounded real
+PostgreSQL clock read can only shorten that interval. Expiry or unavailable
+clock preserves exact durable unknown with no consumer execute; original lookup
+never becomes a new send or inferred nonexecution. No new action/schema/ledger
+or product-specific implementation is introduced.
+
+Independent finite source review accepted the repair. Edition-2021 formatting,
+whitespace and bounded source assertions pass; all preceding PostgreSQL controls
+remain a byte-identical prefix. Three appended real-clock/row-lock/custody-trigger
+controls and compilation are **AUTHORED/UNRUN**, with commands and exact source
+hashes in [completion evidence](../../../docs/implementation/COMPLETION.md#governed-tool-dispatch-deadline-source-increment-2026-10-12).
+The source defect is established; it is not a proven diagnosis of the old native
+mention without signed reply. Actual supervised model/MCP/native publication,
+consumer composition and named-human UAT remain open. The profile stays inactive,
+the historical 15,134,720-byte physical storage deficit remains unresolved, and no
+compiler/cache allocation or runtime environment was created. Task 04 remains
+claimed; no capability or human case is accepted.
+
 2026-10-12 — Integration owner and delegated provider agent continue items
 04.1/04.2 with the consumer-neutral native navigation read. Refreshed local/live
 PR #2 at `bf3db77a3580701d80fbdf4f30052a9db8828668`, open/draft with no reviews.

@@ -10,6 +10,7 @@ use llull_buzz_wire::{
 use serde::{Deserialize, Serialize};
 use sqlx::{types::Json, Row};
 use std::time::Duration;
+use tokio::time::Instant;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -322,7 +323,6 @@ impl Provider {
         let registration = row
             .try_get::<Json<auth::Registration>, _>("registration")?
             .0;
-        let now = Self::now(&mut tx).await?;
         if !row.try_get::<bool, _>("active")?
             || registration.revision != permit.claims.registration_revision
             || Self::epoch(&mut tx).await? != permit.claims.recovery_epoch
@@ -330,9 +330,14 @@ impl Provider {
         {
             return Err(Fault::Denied.into());
         }
-        permit.claims.fresh(now.timestamp())?;
         self.scope(&mut tx, &registration, &permit.claims).await?;
         root.scope.new_work(&permit.claims)?;
+        // Enrollment/authority row waits may outlive the original worker/root.
+        // Anchor the transport deadline before sampling the real database clock;
+        // every later SQL/commit wait consumes this same remaining interval.
+        let sampled_at = Instant::now();
+        let now = Self::now(&mut tx).await?;
+        permit.claims.fresh(now.timestamp())?;
         state.worker(
             &permit.worker_id,
             permit.command.generation,
@@ -356,6 +361,7 @@ impl Provider {
             return Err(Fault::Denied.into());
         }
         let timeout = Duration::from_millis(remaining_ms as u64);
+        let deadline = sampled_at + timeout;
         // Commit uncertainty BEFORE crossing the effect boundary. After this point,
         // neither a timeout nor a process crash is permission to execute again.
         let updated=sqlx::query("UPDATE attempts SET state='effect-unknown',dispatched_at=clock_timestamp() WHERE attempt_id=$1 AND state='pending' AND generation=$2")
@@ -374,13 +380,49 @@ impl Provider {
         )
         .await?;
         tx.commit().await?;
-        let outcome = tokio::time::timeout(
-            timeout,
-            port.execute(&permit.command, &permit.body, &permit.invocation, timeout),
+        // A durable unknown records a possible send, not permission to extend
+        // its lease. If custody/commit consumed the interval, do not cross the
+        // owner boundary; retain uncertainty for original-owner lookup instead.
+        // Also recheck the real wall clock: monotonic time alone cannot detect
+        // an original credential/root expiring across a forward clock change.
+        // This read consumes the frozen interval and never extends either clock.
+        let checked_at = Instant::now();
+        let wall_deadline = root
+            .manifest
+            .expires_at
+            .min(lease)
+            .min(chrono::DateTime::from_timestamp(permit.claims.exp, 0).ok_or(Fault::Invalid)?);
+        let current_wall = tokio::time::timeout_at(
+            deadline,
+            sqlx::query_scalar::<_, chrono::DateTime<chrono::Utc>>("SELECT clock_timestamp()")
+                .fetch_one(&self.pool),
         )
         .await
         .ok()
-        .and_then(|r| r.ok());
+        .and_then(|result| result.ok());
+        let send_deadline = current_wall.and_then(|now| {
+            let remaining = wall_deadline.signed_duration_since(now).to_std().ok()?;
+            Some(deadline.min(checked_at + remaining))
+        });
+        let outcome = if let Some((send_deadline, remaining)) = send_deadline.and_then(|deadline| {
+            deadline
+                .checked_duration_since(Instant::now())
+                .map(|remaining| (deadline, remaining))
+        }) {
+            if remaining.is_zero() {
+                None
+            } else {
+                tokio::time::timeout_at(
+                    send_deadline,
+                    port.execute(&permit.command, &permit.body, &permit.invocation, remaining),
+                )
+                .await
+                .ok()
+                .and_then(|r| r.ok())
+            }
+        } else {
+            None
+        };
         self.record_outcome(
             &attempt,
             permit.command.generation,

@@ -1608,3 +1608,238 @@ async fn zz_postgres_foundation_contracts() {
     let (body, h) = rig.prepare("/integration/v1/tasks", &c, &claims);
     assert!(rig.p.start_task(&body, h.headers()).await.is_err());
 }
+
+// Exact original tool deadlines include authority row waits and durable custody.
+// Real PostgreSQL clocks/locks/triggers exercise both asynchronous boundaries;
+// these cases remain opt-in and are not vendor/native/composed evidence.
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn tool_dispatch_rechecks_original_deadline_after_enrollment_wait() {
+    let rig = Rig::new().await;
+    let (binding, _, _) = rig.enroll("module-a", &nostr::Keys::generate()).await;
+    let task = rig.start(Some(&binding), "module-a", 3).await;
+    rig.worker(&task, Some(&binding), "module-a", 1, false)
+        .await;
+    let call = rig.tool(&task, 1);
+    let admission = rig.admit(&call, Some(&binding), "module-a").await.unwrap();
+    let id = admission.reference().attempt_id;
+    let original = canonical(admission.reference()).unwrap();
+    let mut blocker = rig.pool.begin().await.unwrap();
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::query("SELECT enrollment_id FROM enrollments WHERE enrollment_id=$1 FOR UPDATE")
+        .bind(&binding.enrollment_id)
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    let consumer = Consumer::default();
+    let unblock = async {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND $1=ANY(pg_blocking_pids(pid)))")
+                    .bind(blocker_pid).fetch_one(&rig.pool).await.unwrap();
+                if waiting { break; }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }).await.expect("observe the actual current enrollment row wait");
+        let now: chrono::DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap();
+        assert!(
+            now < task.expires_at,
+            "fixture must block while the original is live"
+        );
+        let wait = (task.expires_at - now).to_std().unwrap() + Duration::from_millis(20);
+        assert!(
+            wait < Duration::from_secs(4),
+            "stay inside provider lock timeout"
+        );
+        tokio::time::sleep(wait).await;
+        assert!(
+            sqlx::query_scalar::<_, bool>("SELECT clock_timestamp()>=$1")
+                .bind(task.expires_at)
+                .fetch_one(&rig.pool)
+                .await
+                .unwrap()
+        );
+        blocker.commit().await.unwrap();
+    };
+    let (result, ()) = tokio::join!(rig.p.dispatch(permit(admission), &consumer), unblock);
+    assert!(
+        result.is_err(),
+        "expired original must not cross the effect boundary"
+    );
+    assert_eq!(consumer.calls.load(Ordering::SeqCst), 0);
+    let retained: AttemptView = sqlx::query_as("SELECT * FROM attempts WHERE attempt_id=$1")
+        .bind(id)
+        .fetch_one(&rig.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        canonical(&retained).unwrap(),
+        original,
+        "pending original remains unchanged"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn tool_dispatch_custody_wait_cannot_extend_original_or_execute_after_expiry() {
+    let rig = Rig::new().await;
+    let task = rig.start(None, "module-a", 2).await;
+    rig.worker(&task, None, "module-a", 1, false).await;
+    let call = rig.tool(&task, 1);
+    let admission = rig.admit(&call, None, "module-a").await.unwrap();
+    let original = admission.reference().clone();
+    let original_bytes: Vec<u8> =
+        sqlx::query_scalar("SELECT request_bytes FROM attempts WHERE attempt_id=$1")
+            .bind(original.attempt_id)
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap();
+    sqlx::raw_sql("CREATE FUNCTION delay_exact_tool_custody() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='effect-unknown' AND OLD.state='pending' THEN IF clock_timestamp() >= (SELECT expires_at FROM task_roots WHERE consumer_id=NEW.consumer_id AND root_task_id=NEW.root_task_id) THEN RAISE EXCEPTION 'fixture reached custody after original expiry'; END IF; PERFORM pg_sleep(2); END IF; RETURN NEW; END $$; CREATE TRIGGER synthetic_tool_custody_delay AFTER UPDATE OF state ON attempts FOR EACH ROW EXECUTE FUNCTION delay_exact_tool_custody();")
+        .execute(&rig.pool).await.unwrap();
+    let consumer = Consumer::default();
+    let result = rig.p.dispatch(permit(admission), &consumer).await.unwrap();
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT clock_timestamp()>=$1")
+            .bind(task.expires_at)
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        consumer.calls.load(Ordering::SeqCst),
+        0,
+        "durable commit cannot renew send permission"
+    );
+    assert_eq!(result.state, "effect-unknown");
+    assert_eq!(result.attempt_id, original.attempt_id);
+    assert_eq!(result.request_sha256, original.request_sha256);
+    assert_eq!(result.effect_intent_id, original.effect_intent_id);
+    assert_eq!(result.generation, original.generation);
+    assert_eq!(
+        sqlx::query_scalar::<_, Vec<u8>>("SELECT request_bytes FROM attempts WHERE attempt_id=$1")
+            .bind(result.attempt_id)
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap(),
+        original_bytes
+    );
+    let root: sqlx::types::Json<TaskState> =
+        sqlx::query_scalar("SELECT state FROM task_roots WHERE consumer_id=$1 AND root_task_id=$2")
+            .bind(&call.consumer_id)
+            .bind(&task.root_task_id)
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap();
+    assert_eq!(root.0.phase, Execution::EffectUnknown);
+    assert!(root.0.stop_new_work);
+    assert!(root.0.worker.is_none());
+    assert_eq!(root.0.generation, 1);
+    assert_eq!(root.0.spent.tool_admissions, 1);
+    assert!(rig.admit(&call, None, "module-a").await.is_err());
+    assert!(rig
+        .admit(&rig.tool(&task, 1), None, "module-a")
+        .await
+        .is_err());
+    let recovery = rig.command(
+        "reconcile-effect",
+        call.resource.clone(),
+        RecoverEffect {
+            task_id: task.task_id.clone(),
+            expected_generation: 1,
+            attempt_id: result.attempt_id,
+            effect_owner: result.effect_owner.clone(),
+            effect_intent_id: result.effect_intent_id.clone(),
+            request_sha256: result.request_sha256.clone(),
+        },
+    );
+    let claims = rig.claims(&recovery, "module-a", Some(&task.root_task_id), None);
+    let path = format!(
+        "/integration/foundation/v1/effects/{}/reconcile/{}",
+        result.attempt_id,
+        SetLabel::SCHEMA_ID
+    );
+    let (body, signed) = rig.prepare(&path, &recovery, &claims);
+    let observed = rig
+        .p
+        .recover_effect::<SetLabel, _>(result.attempt_id, &body, signed.headers(), &consumer)
+        .await
+        .unwrap();
+    assert_eq!(
+        observed.state, "effect-unknown",
+        "a lookup miss cannot invent nonexecution"
+    );
+    assert_eq!(consumer.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(consumer.lookups.load(Ordering::SeqCst), 1);
+}
+
+struct DeadlineConsumer {
+    inner: Consumer,
+    maximum: Duration,
+}
+#[async_trait]
+impl ConsumerPort<SetLabel> for DeadlineConsumer {
+    fn owner(&self) -> &str {
+        self.inner.owner()
+    }
+    async fn execute(
+        &self,
+        call: &ToolCall<SetLabel>,
+        bytes: &[u8],
+        invocation: &str,
+        timeout: Duration,
+    ) -> std::result::Result<ConsumerResult, PortError> {
+        assert!(
+            timeout > Duration::ZERO && timeout <= self.maximum,
+            "custody elapsed time must reduce the owner's wait interval"
+        );
+        self.inner.execute(call, bytes, invocation, timeout).await
+    }
+    async fn lookup(
+        &self,
+        body: &[u8],
+        invocation: &str,
+        timeout: Duration,
+    ) -> std::result::Result<ConsumerResult, PortError> {
+        self.inner.lookup(body, invocation, timeout).await
+    }
+}
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn live_tool_dispatch_consumes_custody_wait_and_preserves_exact_positive_outcome() {
+    let rig = Rig::new().await;
+    let task = rig.start(None, "module-a", 5).await;
+    rig.worker(&task, None, "module-a", 1, false).await;
+    let call = rig.tool(&task, 1);
+    let admitted = rig.admit(&call, None, "module-a").await.unwrap();
+    let original = admitted.reference().clone();
+    sqlx::raw_sql("CREATE FUNCTION bounded_exact_tool_custody() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='effect-unknown' AND OLD.state='pending' THEN PERFORM pg_sleep(0.3); END IF; RETURN NEW; END $$; CREATE TRIGGER synthetic_tool_custody_bound AFTER UPDATE OF state ON attempts FOR EACH ROW EXECUTE FUNCTION bounded_exact_tool_custody();")
+        .execute(&rig.pool).await.unwrap();
+    let now: chrono::DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+        .fetch_one(&rig.pool)
+        .await
+        .unwrap();
+    let maximum = (task.expires_at - now).to_std().unwrap() - Duration::from_millis(250);
+    let consumer = DeadlineConsumer {
+        inner: Consumer::default(),
+        maximum,
+    };
+    let result = rig.p.dispatch(permit(admitted), &consumer).await.unwrap();
+    assert_eq!(result.state, "completed");
+    assert_eq!(result.attempt_id, original.attempt_id);
+    assert_eq!(result.effect_intent_id, call.effect_intent_id);
+    assert_eq!(result.request_sha256, sha256(&canonical(&call).unwrap()));
+    assert!(result.result_ref.is_some());
+    assert_eq!(consumer.inner.calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        rig.admit(&call, None, "module-a").await.unwrap(),
+        ToolAdmission::Existing(_)
+    ));
+    assert_eq!(consumer.inner.calls.load(Ordering::SeqCst), 1);
+}

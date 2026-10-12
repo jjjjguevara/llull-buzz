@@ -5,6 +5,52 @@ The stopping criterion is the complete accepted provider and applicable qualific
 including an isolated test deployment. [Slice 1](SLICE-1.md) and
 [its validation](LOCAL-VALIDATION.md) remain historical evidence, not the current scope limit.
 
+## Governed tool dispatch deadline source increment, 2026-10-12
+
+On source based on `c838c54bcdbf8354f0438b530a4faefdf7571311`, the typed
+business-tool dispatcher now samples the real PostgreSQL clock after awaited
+current enrollment/scope checks. Previously, its worker/root and credential
+checks reused a timestamp sampled before that await. The original remaining
+root/worker/invocation interval is now anchored to monotonic time before the
+database sample; subsequent SQL, durable unknown custody and commit consume the
+same interval. Immediately before dispatch, another bounded real database clock
+read can only shorten that interval, including after a forward wall-clock change.
+An expired interval or unavailable clock causes no consumer execute call and
+preserves the exact durable unknown for original-owner lookup. A lookup miss
+does not prove nonexecution or permit another send.
+
+This repairs the existing consumer-neutral governed tool boundary. It creates no
+new action, schema, task ledger, authorization registry or worker. It does not
+establish the cause of the historical native mention without a signed reply.
+Native ACP supervision, model transport, complete MCP wiring, signed publication,
+composed consumer journeys and human UAT still require their distinct evidence.
+
+Edition-2021 formatting, whitespace and bounded source assertions pass. The
+previous `crates/buzz-provider/tests/postgres.rs` is a byte-identical prefix.
+Three appended PostgreSQL controls use real enrollment row waits and task-owned
+custody delay triggers: expiry before dispatch preserves pending/no send; expiry
+after durable custody preserves the exact unknown bytes, stopped root and lookup
+recovery/no retry; an unexpired positive dispatch consumes the custody wait,
+returns the original result once and retains its admission identity. Reproduce
+each after compiler/storage/runtime admission:
+
+```sh
+scripts/test-postgres.sh --case tool_dispatch_rechecks_original_deadline_after_enrollment_wait
+scripts/test-postgres.sh --case tool_dispatch_custody_wait_cannot_extend_original_or_execute_after_expiry
+scripts/test-postgres.sh --case live_tool_dispatch_consumes_custody_wait_and_preserves_exact_positive_outcome
+```
+
+These controls and Rust compilation remain **AUTHORED/UNRUN**. The production
+file SHA-256 is `b7ac93d92ca9ba53b34a27a5e5d6a8e1a1b979ca49b1791c897e5f9fc0d13fb4`;
+the test file SHA-256 is `12eb357130d470993ca119d80de2dc7a716310c9f1ed0454b43e1c23c2c79d75`.
+Independent finite source review accepted the boundary; it ran no compiler,
+PostgreSQL, provider or human test. No new compiler/cache allocation, runtime,
+environment or large evidence assembly was created. The historical
+15,134,720-byte compiler-custody deficit and physical storage gate remain
+unresolved; shared free-space observations do not establish reclamation. The
+profile remains inactive and no selected consumer pin is updated by this source
+increment.
+
 ## Current human native navigation source increment, 2026-10-12
 
 The optional [native handoff](../architecture/contracts/WIRE-PROFILE.md#current-human-native-navigation-extension-source-increment-2026-10-12)
