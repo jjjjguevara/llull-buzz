@@ -274,6 +274,31 @@ A fiscal result/evidence remains committed when later mail or conversation publi
 
 ## Applicability and evidence
 
+### Completed task and separately admitted native publication
+
+Task completion attests the known business effects. It stops new work and does
+not grant native output release. A completed or otherwise stopped root cannot
+perform a new root-bound publication; an admitted pending publication cannot be
+rebound by removing its original root from the assertion. Terminal delivery
+observation and original-owner recovery retain their existing meanings.
+
+A consumer may separately admit a publication under its current native policy,
+required human verdicts and exact destination/content/audience release. Its
+ordinary publisher then uses the existing rootless `publish` service action
+with that separately verified release. This is a distinct native publication
+intent, not a revived task, fresh model budget or permission inferred from a
+completed effect, model text, channel membership or a task grant. Consumer
+business completion and the publication's pending/unknown/completed status must
+remain distinct. A lost native acknowledgement retains the exact signed event
+and requires original-owner lookup; it cannot cause another submission.
+
+This clarification adds no action or schema. Two controls appended to the
+existing provider publication suite exercise completed-root denial, denied
+rebinding, independently released signed replies, exact unknown recovery,
+changed release/audience denial and unchanged completed root/budgets. They and
+compilation remain authored/unrun; source inspection is not native/consumer or
+human qualification.
+
 BZ-PF01..07 cover verification, process/ACP isolation, native release, durable/cursor faults, budgets,
 media and exact-profile evidence respectively. BZ-UAT01..05 separately judge user-visible completion,
 enrollment, evidence, publication and recovery. Example expected outcomes are design assertions;

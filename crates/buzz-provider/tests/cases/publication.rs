@@ -955,3 +955,252 @@ async fn live_relay_response_loss_reconciles_original_event_without_resend() {
         json!({"native_event_id":event_id,"original_owner_lookup":true,"relay_submissions":1})
     );
 }
+
+// A completed business root cannot be reopened to send a reply. The separately
+// admitted consumer publication uses its own exact output release, never model
+// text or an implied permission from the completed business effect.
+async fn completed_root_independent_reply(lost_ack: bool) {
+    let rig = Rig::new().await;
+    let root = rig.start(None, "module-a", 30).await;
+    rig.worker(&root, None, "module-a", 1, false).await;
+    let call = rig.tool(&root, 1);
+    let business = Consumer::default();
+    let effect = rig
+        .p
+        .dispatch(
+            permit(rig.admit(&call, None, "module-a").await.unwrap()),
+            &business,
+        )
+        .await
+        .unwrap();
+    assert_eq!(effect.state, "completed");
+    let key = nostr::Keys::generate();
+    let channel = Uuid::new_v4();
+    let parent = buzz_sdk::build_message(
+        channel,
+        "Original signed mention",
+        None,
+        &[],
+        false,
+        &[],
+        &[],
+    )
+    .unwrap()
+    .sign_with_keys(&nostr::Keys::generate())
+    .unwrap();
+    let sink = Arc::new(Sink {
+        key: key.public_key(),
+        revision: Mutex::new("audience-1".into()),
+        events: Mutex::new(BTreeMap::from([(
+            parent.id.to_hex(),
+            serde_json::to_vec(&parent).unwrap(),
+        )])),
+        calls: AtomicUsize::new(0),
+        lose: lost_ack.into(),
+    });
+    let publisher =
+        Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap();
+    let publication = Publication {
+        community_id: rig.registration.community_id.clone(),
+        channel_id: channel.to_string(),
+        audience_policy: "synthetic-private".into(),
+        audience_revision: "audience-1".into(),
+        release_ref: Uuid::new_v4().to_string(),
+        text: "https://consumer.synthetic.invalid/results/exact-owned-result".into(),
+        text_sha256: sha256(b"https://consumer.synthetic.invalid/results/exact-owned-result"),
+        copy_mode: CopyMode::SummaryLink,
+        attachments: vec![],
+        reply_to_event: Some(parent.id.to_hex()),
+    };
+    let bound = rig.command("publish", rig.resource("synthetic-result", 1), &publication);
+    let (body, headers) = signed_with_root(&rig, &bound, Some(&root.root_task_id));
+    let pending = rig
+        .p
+        .admit_publication(&body, headers.headers())
+        .await
+        .unwrap();
+    let completion = rig.command(
+        "complete-task",
+        rig.resource(&root.task_id, 1),
+        CompleteTask {
+            task_id: root.task_id.clone(),
+            expected_generation: 1,
+            completed_effects: vec![CompletedEffect {
+                attempt_id: effect.attempt_id,
+                effect_owner: effect.effect_owner.clone(),
+                effect_intent: effect.effect_intent_id.clone(),
+                request_sha256: effect.request_sha256.clone(),
+                result_ref: effect.result_ref.clone().unwrap(),
+            }],
+        },
+    );
+    let claims = rig.claims(&completion, "module-a", Some(&root.root_task_id), None);
+    let (body, headers) = rig.prepare(
+        &format!("/integration/foundation/v1/tasks/{}/complete", root.task_id),
+        &completion,
+        &claims,
+    );
+    assert_eq!(
+        rig.p
+            .complete_task(&root.task_id, &body, headers.headers())
+            .await
+            .unwrap()
+            .receipt
+            .execution,
+        Execution::Completed
+    );
+    let state_before: sqlx::types::Json<TaskState> =
+        sqlx::query_scalar("SELECT state FROM task_roots WHERE consumer_id=$1 AND root_task_id=$2")
+            .bind(&call.consumer_id)
+            .bind(&root.root_task_id)
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap();
+    assert!(state_before.0.stop_new_work && state_before.0.worker.is_none());
+    assert_eq!(state_before.0.spent.tool_admissions, 1);
+    let (body, headers) = signed_with_root(&rig, &bound, Some(&root.root_task_id));
+    assert!(rig
+        .p
+        .publish(&body, headers.headers(), &publisher)
+        .await
+        .is_err());
+    // Removing the root from an already admitted intent is not a separate grant.
+    let (body, headers) = signed_publication(&rig, &bound);
+    assert!(rig
+        .p
+        .publish(&body, headers.headers(), &publisher)
+        .await
+        .is_err());
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM publication_deliveries WHERE publication_id=$1"
+        )
+        .bind(Uuid::parse_str(&pending.receipt.operation_id).unwrap())
+        .fetch_one(&rig.pool)
+        .await
+        .unwrap(),
+        0
+    );
+
+    let mut separate = publication.clone();
+    separate.release_ref = Uuid::new_v4().to_string();
+    let command = rig.command(
+        "publish",
+        rig.resource("separate-native-publication", 1),
+        &separate,
+    );
+    let (body, headers) = signed_publication(&rig, &command);
+    let delivered = rig
+        .p
+        .publish(&body, headers.headers(), &publisher)
+        .await
+        .unwrap();
+    let id = delivered.publication.publication_id;
+    let event_id = delivered.publication.native_event_id.clone().unwrap();
+    let original: Vec<u8> = sqlx::query_scalar(
+        "SELECT signed_event FROM publication_deliveries WHERE publication_id=$1",
+    )
+    .bind(id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    let event = llull_buzz_provider::native::event(&original).unwrap();
+    assert_eq!(event.content, separate.text);
+    assert_eq!(
+        buzz_core::nip10::parse_thread_markers(&event.tags).resolve(),
+        Some((parent.id.to_hex(), parent.id.to_hex()))
+    );
+    assert_eq!(sink.events.lock().unwrap()[&event_id], original);
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        delivered.publication.state,
+        if lost_ack { "unknown" } else { "completed" }
+    );
+    let (body, headers) = signed_publication(&rig, &command);
+    let retry = rig
+        .p
+        .publish(&body, headers.headers(), &publisher)
+        .await
+        .unwrap();
+    assert_eq!(
+        retry.publication.native_event_id.as_deref(),
+        Some(event_id.as_str())
+    );
+    assert_eq!(retry.publication.state, delivered.publication.state);
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+    // A changed exact release/body cannot turn the old delivery into a new send.
+    let mut changed = command.clone();
+    changed.payload["release_ref"] = json!(Uuid::new_v4().to_string());
+    let (body, headers) = signed_publication(&rig, &changed);
+    assert!(rig
+        .p
+        .publish(&body, headers.headers(), &publisher)
+        .await
+        .is_err());
+    *sink.revision.lock().unwrap() = "audience-2".into();
+    let mut fresh = command.clone();
+    fresh.intent_id = Uuid::new_v4().to_string();
+    fresh.payload["release_ref"] = json!(Uuid::new_v4().to_string());
+    let (body, headers) = signed_publication(&rig, &fresh);
+    assert!(rig
+        .p
+        .publish(&body, headers.headers(), &publisher)
+        .await
+        .is_err());
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+    if lost_ack {
+        let recovery = rig.command(
+            "reconcile-publication",
+            rig.resource(&id.to_string(), 1),
+            json!({"publication_id":id}),
+        );
+        let claims = rig.claims(&recovery, "module-a", None, None);
+        let (body, headers) = rig.prepare(
+            &format!("/integration/v1/publications/{id}/reconcile"),
+            &recovery,
+            &claims,
+        );
+        let recovered = rig
+            .p
+            .reconcile_publication(id, &body, headers.headers(), &publisher)
+            .await
+            .unwrap();
+        assert_eq!(recovered.state, "completed");
+        assert_eq!(
+            recovered.native_event_id.as_deref(),
+            Some(event_id.as_str())
+        );
+    }
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, Vec<u8>>(
+            "SELECT signed_event FROM publication_deliveries WHERE publication_id=$1"
+        )
+        .bind(id)
+        .fetch_one(&rig.pool)
+        .await
+        .unwrap(),
+        original
+    );
+    let state_after: sqlx::types::Json<TaskState> =
+        sqlx::query_scalar("SELECT state FROM task_roots WHERE consumer_id=$1 AND root_task_id=$2")
+            .bind(&call.consumer_id)
+            .bind(&root.root_task_id)
+            .fetch_one(&rig.pool)
+            .await
+            .unwrap();
+    assert_eq!(state_after.0, state_before.0);
+    assert_eq!(state_after.0.phase, Execution::Completed);
+    assert_eq!(business.calls.load(Ordering::SeqCst), 1);
+}
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn completed_root_denies_publication_but_independent_exact_release_delivers_once() {
+    completed_root_independent_reply(false).await;
+}
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn completed_root_independent_reply_lost_ack_recovers_original_without_resend() {
+    completed_root_independent_reply(true).await;
+}

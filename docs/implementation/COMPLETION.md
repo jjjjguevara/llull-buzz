@@ -5,6 +5,39 @@ The stopping criterion is the complete accepted provider and applicable qualific
 including an isolated test deployment. [Slice 1](SLICE-1.md) and
 [its validation](LOCAL-VALIDATION.md) remain historical evidence, not the current scope limit.
 
+## Completed business root and independent reply source controls, 2026-10-12
+
+At `d06330a4d18aea4b9b9bd23245c734536a408008`, the provider already implements
+the required boundary: completing a business task stops its new root-bound
+publication authority; the independently authorized native publication service
+still uses ordinary rootless `publish` with a separate exact release. No
+production code, action, schema, grant or publisher hold changed for this
+increment. The wire clarification preserves consumer-owned policy/verdict and
+content/audience release; a completed task or model answer supplies none of
+those permissions. This is not a diagnosis of the historical missing signed
+reply or evidence that the consumer publisher seam is installed.
+
+Two controls appended to `crates/buzz-provider/tests/cases/publication.rs` use
+real signed requests, PostgreSQL and synthetic native/consumer owners. They
+complete a real typed business attempt, deny a root-bound pending send and
+root-stripping, then publish a distinct independently released summary-link
+reply to its signed original event. Normal/lost-ACK retries preserve one event
+and submit count; original-owner lookup resolves the unknown without resend.
+Changed release/audience are denied and the completed root, budgets and business
+effect remain unchanged. Reproduce after compiler/storage/runtime admission:
+
+```sh
+scripts/test-postgres.sh --case publication::completed_root_denies_publication_but_independent_exact_release_delivers_once
+scripts/test-postgres.sh --case publication::completed_root_independent_reply_lost_ack_recovers_original_without_resend
+```
+
+Both controls and compilation remain **AUTHORED/UNRUN**. Edition-2021 formatting,
+whitespace and unchanged historical test-prefix/source checks passed. No compiler,
+cache, runtime, environment or large evidence assembly was created; the historical
+15,134,720-byte storage discrepancy remains unresolved. The profile is inactive,
+selected consumer pins are unchanged, and installed/native/model/MCP/composed
+or human qualification is unproved.
+
 ## Governed tool dispatch deadline source increment, 2026-10-12
 
 On source based on `c838c54bcdbf8354f0438b530a4faefdf7571311`, the typed

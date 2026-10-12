@@ -41,6 +41,27 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-12 — Item 04.4 publication completion seam source controls. Refreshed
+local/live PR #2 at `d06330a4d18aea4b9b9bd23245c734536a408008`, open/draft,
+no reviews. Existing provider semantics are correct: a completed business root
+cannot perform a new publication, and removing its root from a pending intent
+cannot invent a separate grant. A genuinely separately native-admitted publisher
+uses ordinary rootless `publish` with current exact release, preserving native
+policy/verdict, content, audience and attachment safeguards. No production code,
+action/schema, task grant or ledger changed. This does not establish the cause
+of the historical native mention without a signed reply.
+
+Two appended existing PostgreSQL/signature controls cover completed-root denial,
+root-stripping denial, independently released original-event reply, normal and
+lost-ACK once-only delivery, original-owner lookup, changed release/audience
+denial and unchanged completed task/budgets/business effect. They and compilation
+are **AUTHORED/UNRUN**. Formatting, whitespace and historical prefix/source
+checks pass. See [completion evidence](../../../docs/implementation/COMPLETION.md#completed-business-root-and-independent-reply-source-controls-2026-10-12).
+No compiler/cache/runtime or large evidence was created; the historical physical
+storage gate remains unresolved. Profile inactive; full installed supervision,
+consumer publisher composition and named-human UAT remain unqualified; task 04
+remains claimed.
+
 2026-10-12 — Item 04.3/04.5 governed tool dispatch source increment. Refreshed
 local/live PR #2 at `c838c54bcdbf8354f0438b530a4faefdf7571311`, open/draft
 with no reviews. Integration owner and delegated provider implementation owner
