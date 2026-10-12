@@ -1718,3 +1718,232 @@ async fn publication_evidence_delayed_commit_cannot_emit_after_original_invocati
         "no replacement command after unknown authentication commit"
     );
 }
+
+fn publication_intent_evidence_headers(
+    rig: &Rig,
+    original: (&str, &str, &str),
+    module: &str,
+) -> (String, Signed) {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    let (intent, release, fingerprint) = original;
+    let mut command = rig.command("observe-publication", rig.resource(release, 1), json!({}));
+    command.intent_id = intent.into();
+    let mut claims = rig.claims(&command, module, None, None);
+    claims.payload_sha256 = fingerprint.into();
+    let path = format!(
+        "/integration/v1/publication-intents/{}/{}/{fingerprint}/evidence",
+        URL_SAFE_NO_PAD.encode(intent.as_bytes()),
+        URL_SAFE_NO_PAD.encode(release.as_bytes())
+    );
+    let signed = rig.sign(&path, "GET", b"", &claims, INVOCATION);
+    (path, signed)
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn lost_publication_admission_ack_lookup_keeps_original_identity_and_never_resends() {
+    for lost_delivery_ack in [false, true] {
+        let rig = Rig::new().await;
+        let key = nostr::Keys::generate();
+        let sink = Arc::new(Sink {
+            key: key.public_key(),
+            revision: Mutex::new("audience-1".into()),
+            events: Mutex::new(BTreeMap::new()),
+            calls: AtomicUsize::new(0),
+            lose: lost_delivery_ack.into(),
+        });
+        let publisher =
+            Publisher::new(sink.clone(), key, "https://provider.synthetic.invalid").unwrap();
+        let publication = Publication {
+            community_id: rig.registration.community_id.clone(),
+            channel_id: Uuid::new_v4().to_string(),
+            audience_policy: "synthetic-private".into(),
+            audience_revision: "audience-1".into(),
+            release_ref: "exact release/原本? bytes".into(),
+            text: "Original authorized link".into(),
+            text_sha256: sha256(b"Original authorized link"),
+            copy_mode: CopyMode::SummaryLink,
+            attachments: vec![],
+            reply_to_event: None,
+        };
+        let mut command = rig.command(
+            "publish",
+            rig.resource(&publication.release_ref, 1),
+            &publication,
+        );
+        command.intent_id = "original intent/公開? exact bytes".into();
+        let fingerprint = command.fingerprint().unwrap();
+        let original = (
+            command.intent_id.as_str(),
+            publication.release_ref.as_str(),
+            fingerprint.as_str(),
+        );
+        let (body, signed) = signed_publication(&rig, &command);
+        // The consumer deliberately discards the POST ACK, including its UUID.
+        rig.p
+            .admit_publication(&body, signed.headers())
+            .await
+            .unwrap();
+        let (_, h) = publication_intent_evidence_headers(&rig, original, "module-a");
+        let (pending, _, _) = rig
+            .p
+            .observe_publication_intent_evidence(
+                &command.consumer_id,
+                original,
+                h.headers(),
+                &publisher,
+            )
+            .await
+            .unwrap();
+        assert_eq!(pending.state, "pending");
+        assert!(pending.signed_event_base64.is_none());
+        assert_eq!(pending.intent_id, command.intent_id);
+        assert_eq!(pending.request_sha256, fingerprint);
+        let identity = pending.publication_id;
+        assert_eq!(sink.calls.load(Ordering::SeqCst), 0);
+        for change in ["intent", "release", "hash", "module", "binding"] {
+            let altered = (
+                if change == "intent" {
+                    "another intent"
+                } else {
+                    original.0
+                },
+                if change == "release" {
+                    "another release"
+                } else {
+                    original.1
+                },
+                if change == "hash" {
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                } else {
+                    original.2
+                },
+            );
+            let signed_original = if change == "binding" {
+                original
+            } else {
+                altered
+            };
+            let (_, h) = publication_intent_evidence_headers(
+                &rig,
+                signed_original,
+                if change == "module" {
+                    "module-b"
+                } else {
+                    "module-a"
+                },
+            );
+            let supplied = if change == "binding" {
+                ("changed intent", original.1, original.2)
+            } else {
+                altered
+            };
+            assert!(
+                rig.p
+                    .observe_publication_intent_evidence(
+                        &command.consumer_id,
+                        supplied,
+                        h.headers(),
+                        &publisher
+                    )
+                    .await
+                    .is_err(),
+                "{change}"
+            );
+        }
+        let (body, signed) = signed_publication(&rig, &command);
+        rig.p
+            .publish(&body, signed.headers(), &publisher)
+            .await
+            .unwrap();
+        let before: (String, String, Vec<u8>, i64) = sqlx::query_as("SELECT state,native_event_id,signed_event,revision FROM publication_deliveries WHERE publication_id=$1")
+            .bind(identity).fetch_one(&rig.pool).await.unwrap();
+        let counts: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM commands WHERE consumer_id=$1),(SELECT count(*) FROM observations WHERE consumer_id=$1)")
+            .bind(&command.consumer_id).fetch_one(&rig.pool).await.unwrap();
+        for _ in 0..2 {
+            let (_, h) = publication_intent_evidence_headers(&rig, original, "module-a");
+            let (evidence, encoded, deadline) = rig
+                .p
+                .observe_publication_intent_evidence(
+                    &command.consumer_id,
+                    original,
+                    h.headers(),
+                    &publisher,
+                )
+                .await
+                .unwrap();
+            assert_eq!(evidence.publication_id, identity);
+            assert_eq!(
+                evidence.state,
+                if lost_delivery_ack {
+                    "unknown"
+                } else {
+                    "completed"
+                }
+            );
+            assert_eq!(evidence.native_event_id.as_deref(), Some(before.1.as_str()));
+            assert_eq!(evidence.revision, before.3 as u64);
+            assert!(tokio::time::Instant::now() < deadline);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&encoded).unwrap()["publication_id"],
+                identity.to_string()
+            );
+        }
+        let after: (String, String, Vec<u8>, i64) = sqlx::query_as("SELECT state,native_event_id,signed_event,revision FROM publication_deliveries WHERE publication_id=$1")
+            .bind(identity).fetch_one(&rig.pool).await.unwrap();
+        assert_eq!(before, after);
+        assert_eq!(
+            sink.calls.load(Ordering::SeqCst),
+            1,
+            "read cannot submit another native event"
+        );
+        let after_counts: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM commands WHERE consumer_id=$1),(SELECT count(*) FROM observations WHERE consumer_id=$1)")
+            .bind(&command.consumer_id).fetch_one(&rig.pool).await.unwrap();
+        assert_eq!(counts, after_counts);
+        // A separate synthetic source lacks the original observation. Original
+        // append-only history and its immutability triggers remain untouched.
+        let unseen_identity = Uuid::new_v4();
+        let mut unseen_publication = publication.clone();
+        unseen_publication.release_ref = "unobserved release".into();
+        let mut unseen_command = command.clone();
+        unseen_command.intent_id = "unobserved original intent".into();
+        unseen_command.resource = rig.resource(&unseen_publication.release_ref, 1);
+        unseen_command.payload = serde_json::to_value(&unseen_publication).unwrap();
+        let unseen_fingerprint = unseen_command.fingerprint().unwrap();
+        sqlx::query("INSERT INTO publications(consumer_id,intent_id,publication_id,release_ref,request_sha256,publication,release,enrollment_id,recovery_epoch) SELECT consumer_id,$2,$3,$4,$5,$6,release,enrollment_id,recovery_epoch FROM publications WHERE consumer_id=$1 AND publication_id=$7")
+            .bind(&command.consumer_id).bind(&unseen_command.intent_id).bind(unseen_identity)
+            .bind(&unseen_publication.release_ref).bind(&unseen_fingerprint).bind(Json(&unseen_publication)).bind(identity)
+            .execute(&rig.pool).await.unwrap();
+        sqlx::query("INSERT INTO publication_scopes(publication_id,scope,root_task_id) SELECT $1,scope,root_task_id FROM publication_scopes WHERE publication_id=$2")
+            .bind(unseen_identity).bind(identity).execute(&rig.pool).await.unwrap();
+        let mut unseen_admission: Value = sqlx::query_scalar::<_, Json<Value>>("SELECT result FROM commands WHERE consumer_id=$1 AND operation='publish' AND intent_id=$2")
+            .bind(&command.consumer_id).bind(&command.intent_id).fetch_one(&rig.pool).await.unwrap().0;
+        unseen_admission["receipt"]["intent_id"] = json!(unseen_command.intent_id);
+        unseen_admission["receipt"]["operation_id"] = json!(unseen_identity);
+        unseen_admission["receipt"]["request_sha256"] = json!(unseen_fingerprint);
+        unseen_admission["result"]["publication_id"] = json!(unseen_identity);
+        sqlx::query("INSERT INTO commands(consumer_id,operation,intent_id,request_sha256,result) VALUES($1,'publish',$2,$3,$4)")
+            .bind(&command.consumer_id).bind(&unseen_command.intent_id).bind(&unseen_fingerprint).bind(Json(&unseen_admission))
+            .execute(&rig.pool).await.unwrap();
+        let no_original_observation: bool = sqlx::query_scalar("SELECT NOT EXISTS(SELECT 1 FROM observations WHERE consumer_id=$1 AND record->>'operation_id'=$2)")
+            .bind(&command.consumer_id).bind(unseen_identity.to_string()).fetch_one(&rig.pool).await.unwrap();
+        assert!(no_original_observation);
+        let unseen = (
+            unseen_command.intent_id.as_str(),
+            unseen_publication.release_ref.as_str(),
+            unseen_fingerprint.as_str(),
+        );
+        let (_, h) = publication_intent_evidence_headers(&rig, unseen, "module-a");
+        assert!(rig
+            .p
+            .observe_publication_intent_evidence(
+                &command.consumer_id,
+                unseen,
+                h.headers(),
+                &publisher
+            )
+            .await
+            .is_err());
+        assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+    }
+}

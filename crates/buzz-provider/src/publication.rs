@@ -8,7 +8,10 @@ use crate::{
     CommandResult, NativeEventSource, Provider, Result,
 };
 use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+    Engine,
+};
 use llull_buzz_wire::{
     hash, id, sha256, Admission, Command, Execution, Fault, Publication, Resource, CONTRACT,
     PROFILE,
@@ -213,6 +216,46 @@ pub struct PublicationEvidence {
     pub audience: Option<Audience>,
     pub completed_at: Option<i64>,
     pub publisher_public_key: String,
+}
+
+enum EvidenceLookup<'a> {
+    Identity(Uuid),
+    Original {
+        intent_id: &'a str,
+        release_ref: &'a str,
+        request_sha256: &'a str,
+    },
+}
+
+/// Canonical ASCII path components preserve the exact bounded UTF-8 wire ID.
+pub(crate) fn publication_evidence_id(encoded: &str) -> Result<String> {
+    if encoded.len() > 340 {
+        return Err(Fault::Invalid.into());
+    }
+    let bytes = URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|_| Fault::Invalid)?;
+    let value = String::from_utf8(bytes).map_err(|_| Fault::Invalid)?;
+    id(&value)?;
+    if URL_SAFE_NO_PAD.encode(value.as_bytes()) != encoded {
+        return Err(Fault::Invalid.into());
+    }
+    Ok(value)
+}
+
+pub(crate) fn publication_intent_evidence_path(
+    intent_id: &str,
+    release_ref: &str,
+    request_sha256: &str,
+) -> Result<String> {
+    id(intent_id)?;
+    id(release_ref)?;
+    hash(request_sha256)?;
+    Ok(format!(
+        "/integration/v1/publication-intents/{}/{}/{request_sha256}/evidence",
+        URL_SAFE_NO_PAD.encode(intent_id.as_bytes()),
+        URL_SAFE_NO_PAD.encode(release_ref.as_bytes()),
+    ))
 }
 
 fn verified_publication_event<P: PublicationPort>(
@@ -554,10 +597,69 @@ impl Provider {
         headers: Headers<'_>,
         publisher: &Publisher<P>,
     ) -> Result<(PublicationEvidence, Vec<u8>, tokio::time::Instant)> {
-        let identity = publication_id.to_string();
+        self.publication_evidence(
+            consumer,
+            EvidenceLookup::Identity(publication_id),
+            headers,
+            publisher,
+        )
+        .await
+    }
+
+    /// Recover the original provider identity after a lost admission ACK, never
+    /// resend or infer that an absent retained record means no effect occurred.
+    pub async fn observe_publication_intent_evidence<P: PublicationPort>(
+        &self,
+        consumer: &str,
+        original: (&str, &str, &str),
+        headers: Headers<'_>,
+        publisher: &Publisher<P>,
+    ) -> Result<(PublicationEvidence, Vec<u8>, tokio::time::Instant)> {
+        let (intent_id, release_ref, request_sha256) = original;
+        self.publication_evidence(
+            consumer,
+            EvidenceLookup::Original {
+                intent_id,
+                release_ref,
+                request_sha256,
+            },
+            headers,
+            publisher,
+        )
+        .await
+    }
+
+    async fn publication_evidence<P: PublicationPort>(
+        &self,
+        consumer: &str,
+        lookup: EvidenceLookup<'_>,
+        headers: Headers<'_>,
+        publisher: &Publisher<P>,
+    ) -> Result<(PublicationEvidence, Vec<u8>, tokio::time::Instant)> {
+        let (intent, reference, fingerprint, path) = match &lookup {
+            EvidenceLookup::Identity(publication_id) => {
+                let identity = publication_id.to_string();
+                (
+                    identity.clone(),
+                    identity.clone(),
+                    sha256(b""),
+                    format!("/integration/v1/publications/{identity}/evidence"),
+                )
+            }
+            EvidenceLookup::Original {
+                intent_id,
+                release_ref,
+                request_sha256,
+            } => (
+                (*intent_id).to_owned(),
+                (*release_ref).to_owned(),
+                (*request_sha256).to_owned(),
+                publication_intent_evidence_path(intent_id, release_ref, request_sha256)?,
+            ),
+        };
         let resource = Resource {
             namespace: consumer.into(),
-            reference: identity.clone(),
+            reference,
             revision: "1".into(),
         };
         let mut tx = self.begin().await?;
@@ -569,14 +671,14 @@ impl Provider {
                     body: b"",
                 },
                 auth::INVOCATION,
-                &format!("/integration/v1/publications/{identity}/evidence"),
+                &path,
                 "GET",
                 &Target {
                     consumer,
-                    intent: &identity,
+                    intent: &intent,
                     operation: "observe-publication",
                     resource: &resource,
-                    fingerprint: &sha256(b""),
+                    fingerprint: &fingerprint,
                     root: None,
                 },
             )
@@ -595,11 +697,20 @@ impl Provider {
         self.scope(&mut tx, &registration, &claims).await?;
         // Authorize the original observation BEFORE reading private publication,
         // audience or event bytes. Recovery compares scope, never active work.
-        let allowed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM observations WHERE consumer_id=$1 AND module_id=$2 AND context_domain=$3 AND record->>'operation'='publish' AND record->>'operation_id'=$4)")
-            .bind(consumer).bind(&claims.module_id).bind(&claims.context_domain).bind(&identity).fetch_one(&mut *tx).await?;
-        if !allowed {
-            return Err(Fault::Denied.into());
-        }
+        let publication_id = match lookup {
+            EvidenceLookup::Identity(publication_id) => {
+                let allowed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM observations WHERE consumer_id=$1 AND module_id=$2 AND context_domain=$3 AND record->>'operation'='publish' AND record->>'operation_id'=$4)")
+                    .bind(consumer).bind(&claims.module_id).bind(&claims.context_domain).bind(publication_id.to_string()).fetch_one(&mut *tx).await?;
+                if !allowed { return Err(Fault::Denied.into()); }
+                publication_id
+            }
+            EvidenceLookup::Original { intent_id, release_ref, request_sha256 } => {
+                sqlx::query_scalar("SELECT p.publication_id FROM publications p JOIN publication_scopes s USING(publication_id) WHERE p.consumer_id=$1 AND p.intent_id=$2 AND p.release_ref=$3 AND p.request_sha256=$4 AND s.scope->>'module'=$5 AND s.scope->>'context_domain'=$6 AND EXISTS(SELECT 1 FROM observations o WHERE o.consumer_id=p.consumer_id AND o.module_id=$5 AND o.context_domain=$6 AND o.record->>'operation'='publish' AND o.record->>'operation_id'=p.publication_id::text) FOR SHARE OF p,s")
+                    .bind(consumer).bind(intent_id).bind(release_ref).bind(request_sha256).bind(&claims.module_id).bind(&claims.context_domain)
+                    .fetch_optional(&mut *tx).await?.ok_or(Fault::Denied)?
+            }
+        };
+        let identity = publication_id.to_string();
         let original = sqlx::query("SELECT p.intent_id,p.release_ref,p.request_sha256,p.publication,s.scope,s.root_task_id,c.result FROM publications p JOIN publication_scopes s USING(publication_id) JOIN commands c ON c.consumer_id=p.consumer_id AND c.operation='publish' AND c.intent_id=p.intent_id AND c.request_sha256=p.request_sha256 WHERE p.consumer_id=$1 AND p.publication_id=$2 FOR SHARE OF p,s,c")
             .bind(consumer).bind(publication_id).fetch_optional(&mut *tx).await?.ok_or(Fault::Denied)?;
         let scope: crate::tasks::ScopeStamp = original.try_get::<Json<_>, _>("scope")?.0;
@@ -788,6 +899,32 @@ impl Provider {
 mod reply_tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn intent_evidence_preserves_exact_utf8_ids_and_rejects_noncanonical_paths() {
+        for value in [
+            "original:intent/with?reserved#bytes",
+            "publicación/原本",
+            " exact leading and trailing ",
+        ] {
+            let encoded = URL_SAFE_NO_PAD.encode(value.as_bytes());
+            assert_eq!(publication_evidence_id(&encoded).unwrap(), value);
+            assert_eq!(
+                publication_intent_evidence_path(value, value, &"a".repeat(64)).unwrap(),
+                format!(
+                    "/integration/v1/publication-intents/{encoded}/{encoded}/{}/evidence",
+                    "a".repeat(64)
+                )
+            );
+            assert!(publication_evidence_id(&(encoded + "=")).is_err());
+        }
+        for encoded in ["", "_w", "YQ=", "YR", "YQo"] {
+            assert!(publication_evidence_id(encoded).is_err());
+        }
+        assert!(publication_evidence_id(&URL_SAFE_NO_PAD.encode("a".repeat(256))).is_err());
+        assert!(publication_intent_evidence_path("original", "release", &"A".repeat(64)).is_err());
+        assert!(publication_intent_evidence_path("original", "release", "short").is_err());
+    }
     struct Origin {
         key: nostr::PublicKey,
         events: BTreeMap<String, Vec<u8>>,

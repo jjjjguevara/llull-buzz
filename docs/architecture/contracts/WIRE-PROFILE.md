@@ -324,6 +324,33 @@ transport bounds, not accepted business audience ceilings or permission to
 truncate, delete or replace original evidence. Compilation, PostgreSQL/HTTP,
 installed native delivery and human acceptance remain unrun for this addition.
 
+### Original-intent lookup after a lost publication admission acknowledgement
+
+`GET /integration/v1/publication-intents/{intent_base64url}/{release_base64url}/{request_sha256}/evidence`
+is an optional read-only lookup of the existing `(consumer_id, intent_id)`
+publication. Both ID components use canonical unpadded base64url of the exact
+UTF-8 wire ID (at most 255 bytes); no trimming or normalization is performed.
+The request hash is the lowercase SHA-256 of the entire original canonical wire
+command. The exact ASCII path is signed; queries, bodies, alternate encodings
+and methods other than GET are rejected with `no-store` responses.
+
+It uses the existing `observe-publication` service action and invocation purpose.
+The invocation binds the original decoded intent, original release resource
+(`namespace=consumer_id`, `ref=release_ref`, `revision="1"`), original full-command
+hash, module and context. Its `payload_sha256` targets that original command;
+the separate NIP98 payload tag binds the empty HTTP body. Root/delegation/grant,
+release capability, verdict and browser claims remain prohibited for this read.
+
+Before private payload access, the provider verifies that the exact retained
+intent/release/hash has an original scoped publication observation and scope.
+It then uses the same closed 19-field evidence response, signature/source checks,
+limits and single immutable invocation deadline as the UUID endpoint. A valid
+positive response can identify the original provider UUID; it cannot create or
+replace one. Missing, mismatched or inaccessible retained source returns denial
+and leaves the consumer's outcome unknown. Absence is never a no-effect verdict
+or permission to resend. No mutation receipt, journal entry, native network
+lookup, reconciliation, submission or work renewal is added.
+
 ### Completed task and separately admitted native publication
 
 Task completion attests the known business effects. It stops new work and does

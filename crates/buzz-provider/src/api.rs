@@ -542,6 +542,51 @@ pub fn publication_routes<P: crate::PublicationPort + 'static>(
             response
         }
     };
+    let intent_provider = provider.clone();
+    let intent_publisher = publisher.clone();
+    let intent_evidence =
+        move |Path((intent, release, request_sha256)): Path<(String, String, String)>,
+              OriginalUri(uri): OriginalUri,
+              method: Method,
+              h: HeaderMap,
+              b: Bytes| {
+            let provider = intent_provider.clone();
+            let publisher = intent_publisher.clone();
+            async move {
+                let result = async {
+                    let intent = crate::publication::publication_evidence_id(&intent)?;
+                    let release = crate::publication::publication_evidence_id(&release)?;
+                    let path = crate::publication::publication_intent_evidence_path(
+                        &intent,
+                        &release,
+                        &request_sha256,
+                    )?;
+                    if method != Method::GET
+                        || !b.is_empty()
+                        || uri.query().is_some()
+                        || uri.path() != path
+                    {
+                        return Err(ProviderError::from(Fault::Invalid));
+                    }
+                    let (_, encoded, deadline) = provider
+                        .observe_publication_intent_evidence(
+                            value(&h, "x-llull-consumer")?,
+                            (&intent, &release, &request_sha256),
+                            credentials(&h)?,
+                            publisher.as_ref(),
+                        )
+                        .await?;
+                    let response =
+                        ([("content-type", "application/json")], encoded).into_response();
+                    if tokio::time::Instant::now() >= deadline {
+                        return Err(ProviderError::from(Fault::Denied));
+                    }
+                    Ok(response)
+                }
+                .await;
+                result.into_response()
+            }
+        };
     let ep = provider.clone();
     let outgoing = publisher.clone();
     let publish = move |h: HeaderMap, b: Bytes| {
@@ -569,6 +614,7 @@ pub fn publication_routes<P: crate::PublicationPort + 'static>(
         .merge(
             Router::new()
                 .route("/integration/v1/publications/{id}/evidence", get(evidence))
+                .route("/integration/v1/publication-intents/{intent}/{release}/{request_sha256}/evidence", get(intent_evidence))
                 .route_layer(axum::middleware::from_fn(publication_evidence_no_store)),
         )
         .layer(DefaultBodyLimit::max(llull_buzz_wire::MAX_BYTES))

@@ -41,6 +41,20 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-12 — Item 04.4 lost publication admission ACK lookup source addition.
+Refreshed local/live draft PR #2 at `b51f4d8e2f6fb3e4f0b92864bcedd2bc0c698f84`.
+The optional original-intent read binds exact retained intent/release/full-command
+hash and current scoped service authority. It reuses the same 19-field immutable
+proof validator and original invocation deadline, without another POST, UUID,
+grant, registry, native lookup or journal entry. Missing source stays unknown.
+Canonical-ID and lost-ACK/repeated-read/scope controls are AUTHORED/UNRUN;
+compilation/Clippy/native/consumer runtime and human acceptance remain unrun.
+See [source boundaries](../../../docs/implementation/COMPLETION.md#lost-publication-admission-ack-original-intent-lookup--2026-10-12).
+No new environment/cache/runtime or temporary evidence is created; existing
+storage qualification remains unresolved. Task 04 remains claimed and the
+restricted profile inactive; no installed qualification or historical reply
+failure diagnosis is asserted.
+
 2026-10-12 — Item 04.4 read-only original publication evidence source addition.
 Refreshed local/live draft PR #2 at `c2032a3ccd5f75cb8b53945c361abbc77275e459`,
 open/draft with no reviews. The additive, publisher-configured evidence GET

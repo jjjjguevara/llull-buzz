@@ -1797,3 +1797,47 @@ documentation hunk was rejected before any write and then corrected. Historical
 failures and qualification limits above remain retained. No compiler cache,
 runtime environment, provider effect or temporary evidence was created; no
 disk reclamation is claimed. Existing storage qualification remains unresolved.
+
+## Lost publication admission ACK original-intent lookup — 2026-10-12
+
+Refreshed actual/live open draft PR #2 at
+`b51f4d8e2f6fb3e4f0b92864bcedd2bc0c698f84`, with no reviews. The prior UUID
+evidence read could not identify an original publication after its POST admission
+ACK was lost. The optional
+[original-intent route](../architecture/contracts/WIRE-PROFILE.md#original-intent-lookup-after-a-lost-publication-admission-acknowledgement)
+uses the existing retained publication key and exact original release/full-command
+hash. Canonical encoded IDs preserve Unicode, reserved characters and whitespace.
+It authenticates the scoped original observation before private payload access
+and delegates to the same proof validator and encode-once deadline; there is no
+second grant or fresh read interval. Existing five-field and UUID evidence routes,
+19-field proof shape, dependency/schema pins and inactive profile are preserved.
+
+One existing-module canonical-ID control and one existing PostgreSQL control are
+**AUTHORED/UNRUN**. The PostgreSQL fixture discards the original admission ACK,
+recovers its pending original UUID, then checks completed/lost-delivery-ACK frozen
+evidence without resubmission. Changed intent/release/hash/module, mismatched
+signed binding and a separate synthetic source lacking an original observation
+deny; repeated reads preserve
+delivery bytes/ID/revision and command/journal counts. Its submission counter
+measures sends only. No native lookup is a finite production source observation,
+not a counter-measured native lookup result. Missing retained proof is denial
+and remains unknown; it does not prove no effect or authorize another POST.
+Independent source review caught a fixture attempting to delete append-only
+observation history. The corrected fixture inserts separate synthetic source
+rows without an observation; original history and immutability triggers remain
+untouched. This correction is authored, not executed PostgreSQL evidence.
+
+Reproduction after the existing build/storage gate is admitted:
+
+```sh
+cargo test --locked -p llull-buzz-provider intent_evidence_
+cargo test --locked -p llull-buzz-provider --test postgres lost_publication_admission_ack_ -- --ignored
+cargo clippy --locked -p llull-buzz-provider --all-targets -- -D warnings
+```
+
+These compiler/PostgreSQL/Clippy commands remain UNRUN. Formatting and finite
+source checks do not establish Rust typing, HTTP behavior, native signed reply,
+composed consumer runtime or human acceptance. The historical missing signed
+reply cause remains unproved. Only existing source/test/document/tracker paths
+are owned; no scratch, compiler/cache, runtime, environment or temporary evidence
+is created, and no disk reclamation is claimed. Historical failures remain above.
