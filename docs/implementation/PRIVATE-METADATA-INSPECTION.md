@@ -137,7 +137,7 @@ was retired. That failure is retained; no retry or Actions dispatch was launched
 The source-leaf configured locked workspace lib tests, all-target build, clippy
 `-D warnings`, upstream build and containment gates remain required under
 separately authorized suitable capacity. Native PostgreSQL installation/privilege
-gates remain a separate admitted installed stage under .29.19, rather than a
+gates remain a separately admitted installed verification stage, rather than a
 source-leaf closure gate. Source controls here are authored,
 not passing evidence. The original five methods and added R2 methods in
 `tests/inspection_postgres.rs` are AUTHORED UNRUN and ignored by default. They additionally require
