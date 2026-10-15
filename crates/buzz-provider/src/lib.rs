@@ -10,6 +10,7 @@ mod discovery;
 mod effects;
 mod handoff;
 mod identity;
+pub mod inspection;
 mod intake;
 mod model_dispatch;
 pub mod native;

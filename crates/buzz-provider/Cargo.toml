@@ -26,6 +26,10 @@ url.workspace = true
 futures-util.workspace = true
 async-trait.workspace = true
 
+rustix = { version = "=1.1.4", features = ["fs", "process"] }
+
+nix = { version = "=0.31.3", default-features = false, features = [] }
+
 [dev-dependencies]
 # Independent ECDSA signing in test fixtures; never a production signing service.
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
