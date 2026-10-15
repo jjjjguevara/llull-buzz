@@ -1,0 +1,539 @@
+{
+  "record_type": "local execution and remediation; not independent acceptance",
+  "original_pr_candidate": "ab910b153168729f4fc8693db0a6ea7f7e81192b",
+  "baseline_main": "f3fe82e94e878eba7173aaf326085b77b9c9bc51",
+  "final_runtime_subject": "f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d",
+  "host": {
+    "os": "macOS 27.0",
+    "arch": "arm64",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8",
+    "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)",
+    "official_final_toolchain": "Rustup 1.98.1; explicit +1.98.1 and ~/.cargo/bin first in PATH"
+  },
+  "container_engine": {
+    "client": "29.8.1",
+    "server": "29.5.2",
+    "target": "aarch64-unknown-linux-gnu",
+    "kernel": "6.8.0-117-generic",
+    "scope": "task-only Colima VM with no host mounts or SSH-agent forwarding; not selected production Engine 29.8.1"
+  },
+  "dependency_outputs": {
+    "metadata_sha256": "51154fe631f28463865c0fce7ce16fb3c158c90a3672c5574f279d6c6de3032c",
+    "tree_sha256": "600cbbe8098298f6118d9f5362136a026c07f647fb8beb25d0d0d2f12e1ae9c7",
+    "inventory_path": "docs/implementation/evidence/local-cargo-inventory.json"
+  },
+  "lockfile_sha256": "669f646c3190f62d09365c27c42f855384d17e8d9b0c4b58c886fc10a6117c86",
+  "images": {
+    "rust:1.98.1-bookworm": "sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e",
+    "postgres:16": "sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6",
+    "debian:bookworm-slim": "sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251",
+    "tested_probe": "sha256:4e1c7c539db0afb8e36f14fa31125486796df1c15808468e228b635425ef8fce"
+  },
+  "commands": [
+    {
+      "command": [
+        "sh",
+        "-c",
+        "cargo +1.98.1 metadata --locked --format-version 1 > ../local-validation/metadata-final.json"
+      ],
+      "source_sha": "4dce675ada8a38ebd1017f35412308f69e3c3ef5",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T20:59:53.479151+00:00",
+      "exit": 0,
+      "finished_at": "2026-09-21T20:59:55.506243+00:00",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "record": "metadata-clean",
+      "raw_log_path": "artifacts/local-validation/metadata-clean.log",
+      "output_tail": ""
+    },
+    {
+      "command": [
+        "sh",
+        "-c",
+        "cargo +1.98.1 tree --locked > ../local-validation/dependencies-final.txt"
+      ],
+      "source_sha": "4dce675ada8a38ebd1017f35412308f69e3c3ef5",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T20:59:55.828700+00:00",
+      "exit": 0,
+      "finished_at": "2026-09-21T20:59:57.261994+00:00",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "record": "tree-clean",
+      "raw_log_path": "artifacts/local-validation/tree-clean.log",
+      "output_tail": ""
+    },
+    {
+      "command": [
+        "cargo",
+        "+1.98.1",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "source_sha": "f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T21:18:55.058239+00:00",
+      "exit": 0,
+      "finished_at": "2026-09-21T21:18:59.299421+00:00",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "record": "fmt-corrected",
+      "raw_log_path": "artifacts/local-validation/fmt-corrected.log",
+      "output_tail": ""
+    },
+    {
+      "command": [
+        "cargo",
+        "+1.98.1",
+        "test",
+        "--locked",
+        "--workspace",
+        "--lib"
+      ],
+      "source_sha": "f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T21:16:36.679993+00:00",
+      "exit": 0,
+      "finished_at": "2026-09-21T21:16:41.122667+00:00",
+      "log_sha256": "b04c9b21695c9efe010bb32bc051b008143a9b2c230a5ff321a0972e4455ff9b",
+      "record": "unit-corrected",
+      "raw_log_path": "artifacts/local-validation/unit-corrected.log",
+      "output_tail": "   Compiling llull-buzz-launch v0.1.0 (<checkout>/artifacts/review-checkout/crates/buzz-launch)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.89s\n     Running unittests src/lib.rs (<checkout>/target/debug/deps/llull_buzz_launch-870e9765103f14ce)\n\nrunning 3 tests\ntest tests::inherited_dangerous_keys_are_not_in_launch_declarations ... ok\ntest tests::authorized_probe_session_is_admitted_but_prompt_never_is ... ok\ntest tests::wire_cannot_override_mcp_command_arguments_environment_or_cwd ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n\n     Running unittests src/lib.rs (<checkout>/target/debug/deps/llull_buzz_provider-7ce05bbafbf5f1a4)\n\nrunning 1 test\ntest budget::tests::cost_rounds_up_and_never_uses_caller_dollar_estimate ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n     Running unittests src/lib.rs (<checkout>/target/debug/deps/llull_buzz_wire-6f25235135913cb4)\n\nrunning 8 tests\ntest task::tests::fence_preserves_completed_and_partial_effect_truth ... ok\ntest task::tests::positive_charge_and_exhaustion_are_atomic ... ok\ntest task::tests::cumulative_model_limits_include_outstanding_reservations ... ok\ntest task::tests::restart_never_resets_budget_or_deadline_and_old_worker_is_fenced ... ok\ntest task::tests::revocation_and_unknown_do_not_refund ... ok\ntest json::tests::rejects_ambiguity_recursively ... ok\ntest json::tests::canonical_order_not_content_normalization ... ok\ntest task::tests::revision_overflow_cannot_partially_change_worker_or_counters ... ok\n\ntest result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n"
+    },
+    {
+      "command": [
+        "cargo",
+        "+1.98.1",
+        "build",
+        "--locked",
+        "--workspace",
+        "--all-targets"
+      ],
+      "source_sha": "f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T21:20:42.462719+00:00",
+      "exit": 0,
+      "finished_at": "2026-09-21T21:21:13.294649+00:00",
+      "log_sha256": "b7048094bbfbb2ba0cb97a116b3d7379c6e85c243aa5d777dc6a34d03aaf21f5",
+      "record": "build-corrected",
+      "raw_log_path": "artifacts/local-validation/build-corrected.log",
+      "output_tail": "   Compiling llull-buzz-launch v0.1.0 (<checkout>/artifacts/review-checkout/crates/buzz-launch)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 29.90s"
+    },
+    {
+      "command": [
+        "cargo",
+        "+1.98.1",
+        "clippy",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "source_sha": "f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T21:18:22.668296+00:00",
+      "exit": 0,
+      "finished_at": "2026-09-21T21:19:02.636526+00:00",
+      "log_sha256": "4aaece813538348815dfb4280cebbeb373cfab1d79bb45709bf5dcc242124e3e",
+      "record": "clippy-corrected",
+      "raw_log_path": "artifacts/local-validation/clippy-corrected.log",
+      "output_tail": "    Checking llull-buzz-launch v0.1.0 (<checkout>/artifacts/review-checkout/crates/buzz-launch)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 34.93s"
+    },
+    {
+      "command": [
+        "bash",
+        "scripts/test-postgres.sh"
+      ],
+      "source_sha": "4dce675ada8a38ebd1017f35412308f69e3c3ef5",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T20:59:13.753512+00:00",
+      "exit": 0,
+      "finished_at": "2026-09-21T21:01:09.915557+00:00",
+      "log_sha256": "2dfbe8f631a9a550b204d344acd3f3a7287fe8f79201abfc61a6d211cf377142",
+      "record": "postgres-final",
+      "raw_log_path": "artifacts/local-validation/postgres-final.log",
+      "output_tail": "127.0.0.1:5432 - accepting connections\ncandidate=4dce675ada8a38ebd1017f35412308f69e3c3ef5\nsha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6 [\"postgres@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6\"]\n   Compiling llull-buzz-wire v0.1.0 (<checkout>/artifacts/review-checkout/crates/buzz-wire)\n   Compiling llull-buzz-provider v0.1.0 (<checkout>/artifacts/review-checkout/crates/buzz-provider)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 55.72s\n     Running tests/postgres.rs (<checkout>/target/debug/deps/postgres-3c59e0b6e65feee3)\n\nrunning 1 test\ntest postgres_foundation_contracts ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 49.00s\n\nPostgreSQL restart preserved roots, reservations/effects, bindings, publication and recovery epoch: e6e0830a20780c7caf7924cf27558d79bcaf52bef140511b360268645fda66b7"
+    },
+    {
+      "command": [
+        "cargo",
+        "+1.98.1",
+        "run",
+        "--locked",
+        "-p",
+        "llull-buzz-provider",
+        "--",
+        "--help"
+      ],
+      "source_sha": "4dce675ada8a38ebd1017f35412308f69e3c3ef5",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T21:08:32.480734+00:00",
+      "exit": 0,
+      "finished_at": "2026-09-21T21:09:57.588900+00:00",
+      "log_sha256": "e2e4e700748c34ef1a7151f544b2b31374eae5ccc44c01c5d5fdf8ae7311ffa5",
+      "record": "provider-help",
+      "raw_log_path": "artifacts/local-validation/provider-help.log",
+      "output_tail": "   Compiling generic-array v0.14.9\n   Compiling signature v2.2.0\n   Compiling jsonwebtoken v10.4.0\n   Compiling crypto-common v0.1.6\n   Compiling block-buffer v0.10.4\n   Compiling block-padding v0.3.3\n   Compiling inout v0.1.4\n   Compiling digest v0.10.7\n   Compiling cipher v0.4.4\n   Compiling sha2 v0.10.9\n   Compiling chacha20 v0.9.1\n   Compiling sqlx-core v0.9.0\n   Compiling nostr v0.44.8\n   Compiling sqlx-postgres v0.9.0\n   Compiling buzz-core v0.1.0 (https://github.com/block/buzz?rev=01b6174a1cbad249e93f31df97d4b2ed1d0e8638#01b6174a)\n   Compiling buzz-auth v0.1.0 (https://github.com/block/buzz?rev=01b6174a1cbad249e93f31df97d4b2ed1d0e8638#01b6174a)\n   Compiling sqlx-macros-core v0.9.0\n   Compiling sqlx-macros v0.9.0\n   Compiling sqlx v0.9.0\n   Compiling llull-buzz-provider v0.1.0 (<checkout>/artifacts/review-checkout/crates/buzz-provider)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 23s\n     Running `<checkout>/target/debug/llull-buzz-provider --help`\nllull-buzz-provider: migrate | register FILE [EXPECTED_DIGEST] | service-active CONSUMER true|false EXPECTED_DIGEST | advance-recovery-epoch EXPECTED | serve\nRequired trusted environment: DATABASE_URL, PUBLIC_ORIGIN (https origin), EXTERNAL_RECOVERY_EPOCH. Optional BIND_ADDR (default 127.0.0.1:8080). No implicit migrations or registrations."
+    },
+    {
+      "command": [
+        "bash",
+        "scripts/test-containment.sh"
+      ],
+      "source_sha": "f40762aaff42542623abcaef4632945bac7840ad",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T21:01:19.595013+00:00",
+      "exit": 1,
+      "finished_at": "2026-09-21T21:12:46.173010+00:00",
+      "log_sha256": "2b542a13d14913b5416dfe33da779ebbfdf57992a5606fd1a97d6749ee9cdd7a",
+      "record": "containment-final",
+      "raw_log_path": "artifacts/local-validation/containment-final.log",
+      "output_tail": "bookworm-slim: Pulling from library/debian\n333125b5cee9: Pulling fs layer\n333125b5cee9: Download complete\nfc733a0be971: Download complete\n333125b5cee9: Pull complete\nDigest: sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251\nStatus: Downloaded newer image for debian:bookworm-slim\n ---> 3783cc01769c\nStep 10/18 : RUN groupadd --gid 65532 buzz && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /work/task/home buzz &&     mkdir -p /work/task && chown 65532:65532 /work/task && chmod 700 /work/task\n ---> Running in 2550c4c6d0c1\nuseradd warning: buzz's uid 65532 outside of the UID_MIN 1000 and UID_MAX 60000 range.\n ---> Removed intermediate container 2550c4c6d0c1\n ---> b33e273ee4ba\nStep 11/18 : COPY --from=build /image/ /\n ---> cb67e017ab8b\nStep 12/18 : COPY deploy/probe-entrypoint.sh /opt/llull/bin/probe-entrypoint\n ---> cfc213272fd6\nStep 13/18 : RUN chmod 755 /opt/llull/bin/probe-entrypoint\n ---> Running in a3a9b4e6e0f2\n ---> Removed intermediate container a3a9b4e6e0f2\n ---> 2a6e44ab13a9\nStep 14/18 : USER 65532:65532\n ---> Running in 6decaaf0bf17\n ---> Removed intermediate container 6decaaf0bf17\n ---> 0fcefe755e3f\nStep 15/18 : WORKDIR /work/task\n ---> Running in f6e95ad76f90\n ---> Removed intermediate container f6e95ad76f90\n ---> a7855abff0fa\nStep 16/18 : ENTRYPOINT [\"/opt/llull/bin/probe-entrypoint\"]\n ---> Running in 84bad99c5728\n ---> Removed intermediate container 84bad99c5728\n ---> 3301fccfeaed\nStep 17/18 : CMD [\"/opt/llull/bin/llull-buzz-launch\", \"probe\"]\n ---> Running in bbd0745f2873\n ---> Removed intermediate container bbd0745f2873\n ---> 5b9d17f33708\nStep 18/18 : LABEL org.opencontainers.image.revision=f40762aaff42542623abcaef4632945bac7840ad\n ---> Running in b17337c44773\n ---> Removed intermediate container b17337c44773\n ---> c0348af193ec\nSuccessfully built c0348af193ec\nSuccessfully tagged llull-buzz-probe-1790024479-6486-23075:local\nsha256:c0348af193ece74d08fa5667d3aa98f8cc4168b7b76138c921496458ad44ba81\nError: \"upstream EOF before response\""
+    },
+    {
+      "command": [
+        "bash",
+        "scripts/test-containment.sh"
+      ],
+      "source_sha": "f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d",
+      "tracked_worktree_dirty": false,
+      "started_at": "2026-09-21T21:16:36.680126+00:00",
+      "exit": 0,
+      "finished_at": "2026-09-21T21:34:57.106711+00:00",
+      "log_sha256": "0c3801f607de223ac7712a1efcaddedd4a820017a39572a72524828b73995045",
+      "record": "containment-corrected",
+      "raw_log_path": "artifacts/local-validation/containment-corrected.log",
+      "output_tail": "Step 8/19 : RUN mkdir -p /image/opt/llull/upstream /image/opt/llull/bin /image/usr/share/doc/buzz-upstream &&     cp /upstream/target/release/buzz-agent /upstream/target/release/buzz-acp /image/opt/llull/upstream/ &&     cp target/release/llull-buzz-launch target/release/llull-buzz-mcp-probe /image/opt/llull/bin/ &&     find /upstream -maxdepth 1 -type f \\( -iname 'LICENSE*' -o -iname 'NOTICE*' \\) -exec cp {} /image/usr/share/doc/buzz-upstream/ \\; &&     cp LICENSE /image/usr/share/doc/llull-buzz-LICENSE &&     python3 scripts/emit-image-identity.py /image\n ---> Running in b28946cc00a0\n ---> Removed intermediate container b28946cc00a0\n ---> 8e23033d5053\nStep 9/19 : FROM debian:bookworm-slim\n ---> 3783cc01769c\nStep 10/19 : RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*\n ---> Using cache\n ---> 01267c94c052\nStep 11/19 : RUN groupadd --gid 65532 buzz && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /work/task/home buzz &&     mkdir -p /work/task && chown 65532:65532 /work/task && chmod 700 /work/task\n ---> Using cache\n ---> 244a6e719e0c\nStep 12/19 : COPY --from=build /image/ /\n ---> f7ad54f4fcdf\nStep 13/19 : COPY deploy/probe-entrypoint.sh /opt/llull/bin/probe-entrypoint\n ---> c2c546278429\nStep 14/19 : RUN chmod 755 /opt/llull/bin/probe-entrypoint\n ---> Running in e9d2529922bb\n ---> Removed intermediate container e9d2529922bb\n ---> 7795c4c982c1\nStep 15/19 : USER 65532:65532\n ---> Running in 11e1bc65156d\n ---> Removed intermediate container 11e1bc65156d\n ---> dba9429cfbd5\nStep 16/19 : WORKDIR /work/task\n ---> Running in 6b55a8e56050\n ---> Removed intermediate container 6b55a8e56050\n ---> bba1eedf383b\nStep 17/19 : ENTRYPOINT [\"/opt/llull/bin/probe-entrypoint\"]\n ---> Running in 7d0fbbd13b70\n ---> Removed intermediate container 7d0fbbd13b70\n ---> 0d22c8726dec\nStep 18/19 : CMD [\"/opt/llull/bin/llull-buzz-launch\", \"probe\"]\n ---> Running in b852f535dea6\n ---> Removed intermediate container b852f535dea6\n ---> 5b2b03e9d23a\nStep 19/19 : LABEL org.opencontainers.image.revision=f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d\n ---> Running in 7f446dc1d086\n ---> Removed intermediate container 7f446dc1d086\n ---> 4e1c7c539db0\nSuccessfully built 4e1c7c539db0\nSuccessfully tagged llull-buzz-probe-1790025396-85063-27368:local\nsha256:4e1c7c539db0afb8e36f14fa31125486796df1c15808468e228b635425ef8fce\n{\"probe\":\"ACP2-session-MCP\",\"inheritance_checked\":true,\"model_calls\":0,\"restricted_profile_active\":false}\nprocess/filesystem/network negative probes passed"
+    }
+  ],
+  "native_upstream_build": {
+    "command": [
+      "bash",
+      "scripts/build-upstream.sh"
+    ],
+    "exit": 0,
+    "evidence_method": "tool completion observed; no wrapper start timestamp was captured",
+    "driver_script_git_blob": "05f74ffba7670ee19f932a24a75717fac8f65f56",
+    "upstream_sha": "01b6174a1cbad249e93f31df97d4b2ed1d0e8638",
+    "target": "aarch64-apple-darwin",
+    "raw_log_sha256": "3e4f9f1c53b465e30ee26c635a8caffc739ce061aee464b1f8f0e8ca35ac6092",
+    "executables": {
+      "buzz-agent": "ad0fea79d28e4298f37c4524d9276741a5061e50115401efd596ea6021696bab",
+      "buzz-acp": "cdd7ed4268dca4e34a9fb42be8b3268b8a65efe420aa470d6d6666d9a00f30e5"
+    },
+    "preserved_notices": {
+      "LICENSE": "108cb15997e51b75a8d18b0c1e2c52bd3879d051ab02118973387df1e4aab584"
+    }
+  },
+  "diagnostic_mcp_handshake": {
+    "purpose": "startup diagnosis before final authored probe; not the complete containment result",
+    "log_sha256": "28b6a65b353c9f4caeef8534e66d0323ffc5e72a79e09eff9e866b4e23187172",
+    "output": "initialize {\"id\":1,\"jsonrpc\":\"2.0\",\"result\":{\"agentCapabilities\":{\"loadSession\":false,\"mcpCapabilities\":{\"http\":false,\"sse\":false},\"promptCapabilities\":{\"audio\":false,\"embeddedContext\":false,\"image\":false}},\"agentInfo\":{\"name\":\"buzz-agent\",\"version\":\"0.1.0\"},\"protocolVersion\":2}}\n\nsession/new {\"id\":2,\"jsonrpc\":\"2.0\",\"result\":{\"models\":{\"availableModels\":[{\"modelId\":\"foundation-probe-no-model\",\"name\":\"foundation-probe-no-model\"}],\"currentModelId\":\"foundation-probe-no-model\"},\"sessionId\":\"ses_33902435495cbdde\"}}\n\nsession/cancel {\"id\":3,\"jsonrpc\":\"2.0\",\"result\":null}\n\n2026-09-21T21:15:54.746068Z  INFO serve_inner: rmcp::service: Service initialized as client peer_info=Some(InitializeResult { protocol_version: ProtocolVersion(\"2025-06-18\"), capabilities: ServerCapabilities { experimental: None, extensions: None, logging: None, completions: None, prompts: None, resources: None, tools: None, tasks: None }, server_info: Implementation { name: \"rmcp\", title: None, version: \"1.1.0\", description: None, icons: None, website_url: None }, instructions: Some(\"Foundation protocol probe only. Consequential tools and publication are unavailable.\") })\n2026-09-21T21:15:54.748689Z  INFO buzz_agent::mcp: killpg MCP llull-foundation-probe (drop) pgid=12 ok=true\n\n"
+  },
+  "postgres": {
+    "version": "16.15",
+    "snapshot_before_and_after_restart": "e6e0830a20780c7caf7924cf27558d79bcaf52bef140511b360268645fda66b7",
+    "consumer_port": "synthetic double; SQLx/PostgreSQL and both signature verifiers are real"
+  },
+  "reproduced_failure_logs": [
+    {
+      "raw_log_path": "artifacts/local-validation/fmt-initial.log",
+      "sha256": "157c29ac3f7cd966fe9424f4773fe96467e20fd139aff24cc38e5c7a657a005a",
+      "output_tail": "+    AwaitingHuman,\n+    Completed,\n+    FailedBeforeEffect,\n+    EffectUnknown,\n+    CanceledBeforeEffect,\n+}\n #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]\n #[serde(deny_unknown_fields)]\n-pub struct EffectRef { pub owner: String, pub intent_id: String, pub outcome: Execution, pub result_ref: Option<String> }\n+pub struct EffectRef {\n+    pub owner: String,\n+    pub intent_id: String,\n+    pub outcome: Execution,\n+    pub result_ref: Option<String>,\n+}\n \n /// Closed, versioned internal tool-admission frame; not a new generic `execute` tool.\n /// C must be a locally compiled consumer command. It contains no trusted principal."
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/build-initial.log",
+      "sha256": "378c629c1e40722553d103a4d6ceb1e842c3bcb9be541a1f567b61b2ec4d5c2d",
+      "output_tail": "103 |     pub fn from_base64_secret(secret: &str) -> Result<Self> {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n121 |     pub fn from_rsa_components(modulus: &str, exponent: &str) -> Result<Self> {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n131 |     pub fn from_rsa_raw_components(modulus: &[u8], exponent: &[u8]) -> Self {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nhelp: there is an associated function `from_ec_der` with a similar name\n    |\n325 -     let key = DecodingKey::from_ec_pem(pem.as_bytes()).map_err(|_| Fault::Denied)?;\n325 +     let key = DecodingKey::from_ec_der(pem.as_bytes()).map_err(|_| Fault::Denied)?;\n    |\n\nFor more information about this error, try `rustc --explain E0599`.\nerror: could not compile `llull-buzz-provider` (lib) due to 2 previous errors\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `llull-buzz-provider` (lib test) due to 2 previous errors"
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/clippy-initial.log",
+      "sha256": "0d104d0ef0526b243c2f04dd53a7056917428ea1fcf8d34a718cdf70efcaca23",
+      "output_tail": "    Checking p256 v0.13.2\nerror: field assignment outside of initializer for an instance created with Default::default()\n   --> crates/buzz-wire/src/task.rs:404:9\n    |\n404 |         s.revision = MAX_SAFE_INTEGER as u64;\n    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    |\nnote: consider initializing the variable with `task::TaskState { revision: MAX_SAFE_INTEGER as u64, ..Default::default() }` and removing relevant reassignments\n   --> crates/buzz-wire/src/task.rs:403:9\n    |\n403 |         let mut s = TaskState::default();\n    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#field_reassign_with_default\n    = note: `-D clippy::field-reassign-with-default` implied by `-D warnings`\n    = help: to override `-D warnings` add `#[allow(clippy::field_reassign_with_default)]`\n\nerror: could not compile `llull-buzz-wire` (lib test) due to 1 previous error\nwarning: build failed, waiting for other jobs to finish..."
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/postgres-initial.log",
+      "sha256": "b947635171d60711e7d588bc3e1011ab9f371ef2f24abbbd15f6f33ec3f9d18b",
+      "output_tail": "Unable to find image 'postgres:16' locally\ndocker: error getting credentials - err: exec: \"docker-credential-desktop\": executable file not found in $PATH, out: ``\n\nRun 'docker run --help' for more information"
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/postgres-second.log",
+      "sha256": "9a0d874d94d5932419c1f4ceb63d2d966bfb4d7a984b47b1c4720d214b11ad62",
+      "output_tail": "   --> crates/buzz-provider/tests/postgres.rs:972:45\n    |\n972 |       let futures = candidates.iter().map(|m| async {\n    |  _____________________________________________^\n973 | |         let c = rig.command(\"start-task\", rig.resource(\"record-a\", 1), m);\n974 | |         let claims = rig.claims(&c, \"module-b\", Some(&m.root_task_id), Some(&other));\n975 | |         let (body, h) = rig.prepare(\"/integration/v1/tasks\", &c, &claims);\n976 | |         rig.p.start_task(&body, h.headers()).await\n977 | |     });\n    | |_____^\nhelp: to force the async block to take ownership of `m` (and any other referenced variables), use the `move` keyword\n    |\n972 |     let futures = candidates.iter().map(|m| async move {\n    |                                                   ++++\n\nFor more information about this error, try `rustc --explain E0373`.\nerror: could not compile `llull-buzz-provider` (test \"postgres\") due to 1 previous error\nwarning: build failed, waiting for other jobs to finish..."
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/clippy-third.log",
+      "sha256": "d83a14049ea10e67f8b1828b7d45d12ed71c4e0d681f264d9ac2a902530c4791",
+      "output_tail": "\nerror: this function has too many arguments (8/7)\n  --> crates/buzz-provider/src/native.rs:63:1\n   |\n63 | / pub(crate) fn verify_enrollment_proof(\n64 | |     proof: &nostr::Event,\n65 | |     intended: &str,\n66 | |     bot: &str,\n...  |\n71 | |     now: i64,\n72 | | ) -> std::result::Result<(), Fault> {\n   | |___________________________________^\n   |\n   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#too_many_arguments\n\nerror: could not compile `llull-buzz-provider` (lib) due to 5 previous errors\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `llull-buzz-provider` (lib test) due to 5 previous errors"
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/clippy-fourth.log",
+      "sha256": "91a580bc3aac2392ca9a997cb247398447b33c412a775c343344ec2b2d568947",
+      "output_tail": "   --> crates/buzz-provider/src/tasks.rs:441:21\n    |\n441 |                     body: body,\n    |                     ^^^^^^^^^^ help: replace it with: `body`\n    |\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#redundant_field_names\n\nerror: redundant field names in struct initialization\n   --> crates/buzz-provider/src/tasks.rs:504:21\n    |\n504 |                     body: body,\n    |                     ^^^^^^^^^^ help: replace it with: `body`\n    |\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#redundant_field_names\n\nerror: could not compile `llull-buzz-provider` (lib) due to 12 previous errors\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `llull-buzz-provider` (lib test) due to 12 previous errors"
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/postgres-clean.log",
+      "sha256": "f18ee442b4cf890ac7577d29803f90a1d9c7e41b2d22bb807c482e8e2ec952a8",
+      "output_tail": "/var/run/postgresql:5432 - rejecting connections"
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/containment-initial.log",
+      "sha256": "6e336de446f17a15952ba9abf7b620e6686be3c29d0a092128db982b31512714",
+      "output_tail": "hint: Using 'master' as the name for the initial branch. This default branch name\nhint: is subject to change. To configure the initial branch name to use in all\nhint: of your new repositories, which will suppress this warning, call:\nhint: \nhint: \tgit config --global init.defaultBranch <name>\nhint: \nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint: \nhint: \tgit branch -m <name>\nInitialized empty Git repository in /upstream/.git/\nFrom https://github.com/block/buzz\n * branch            01b6174a1cbad249e93f31df97d4b2ed1d0e8638 -> FETCH_HEAD\nHEAD is now at 01b6174 fix(ci): don't run desktop tests for purely mobile client changes (#7709)\ninfo: syncing channel updates for 1.95.0-aarch64-unknown-linux-gnu\ninfo: latest update on 2026-04-16 for version 1.95.0 (59807616e 2026-04-14)\ninfo: downloading 6 components\nscripts/test-containment.sh: line 11: containers[@]: unbound variable"
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/agent-startup-diagnostic.log",
+      "sha256": "af9c2b02df15093e91c69e3964e25d1b6e8771bdff4cd6d244b8124c4cbc8e81",
+      "output_tail": "exit=2\n2026-09-21T21:14:00.046498Z ERROR buzz_agent: config: BUZZ_AGENT_PROVIDER is required \u2014 set it to your provider (e.g. anthropic, openai, databricks)"
+    },
+    {
+      "raw_log_path": "artifacts/local-validation/agent-protocol-diagnostic.log",
+      "sha256": "f71b1581f650d1aef44d67be70c02180ddffd3545cd56a739c724236bd99e077",
+      "output_tail": "initialize \nTraceback (most recent call last):\n  File \"<checkout>/artifacts/local-validation/diagnose-agent.py\", line 18, in <module>\n    assert line,'upstream EOF'\nAssertionError: upstream EOF"
+    }
+  ],
+  "source_files": [
+    {
+      "path": ".dockerignore",
+      "git_blob": "8481a986a8741d91252bc72928fd7e8b057b8cff",
+      "sha256": "9a0b86e0dbe64f162b1a4bcbf2f73736ea9d48bba62bf6e7295c2e2f381c8082"
+    },
+    {
+      "path": "Cargo.lock",
+      "git_blob": "8391caa18ab35e252462e751c9c95a53389d2fee",
+      "sha256": "669f646c3190f62d09365c27c42f855384d17e8d9b0c4b58c886fc10a6117c86"
+    },
+    {
+      "path": "Cargo.toml",
+      "git_blob": "84e40e91e3685683156eb44ff2467ac3799baebd",
+      "sha256": "f6ca655562be0d2389f94be0cb1239a5ab57e12648dad651274effd4e01fb3e0"
+    },
+    {
+      "path": "crates/buzz-launch/Cargo.toml",
+      "git_blob": "9a2f10bf75a856b5c54843854381e45b28e622b4",
+      "sha256": "8589463d5ae8b3d665b9eb56943275f055d6e5aa432bfd659e088fb714c17529"
+    },
+    {
+      "path": "crates/buzz-launch/src/bin/llull-buzz-mcp-probe.rs",
+      "git_blob": "a78aed6a2b9819d3531853f6d2f3c278c89e9af7",
+      "sha256": "ec07df82069376b2f262681e989eef42c22e7148aaae0415587a0dd22dce68db"
+    },
+    {
+      "path": "crates/buzz-launch/src/lib.rs",
+      "git_blob": "4b3b8ecb821091a25b2948ee43a8123edc5402de",
+      "sha256": "a1c9f0ec125781bc8255d6a97ba0faa084f5fdd457c2bb7ae5bfc42e2b7abae2"
+    },
+    {
+      "path": "crates/buzz-launch/src/main.rs",
+      "git_blob": "f9caa8966ebce4e8f9dfc88dff13c6b9bbdc423a",
+      "sha256": "be6d45e2d89c553e804265f339c7dac281666b547e6a8bc8a299047d0c35e392"
+    },
+    {
+      "path": "crates/buzz-provider/Cargo.toml",
+      "git_blob": "99feb737c54de1aa66a21fee50a4466c64f901d9",
+      "sha256": "9e17766c7de054efbf06a049e47e147bc71b099423709fba0de166fd6e3d5779"
+    },
+    {
+      "path": "crates/buzz-provider/build.rs",
+      "git_blob": "7b2b20871e75d3c58d5ebf55b3842ef4d26bdadd",
+      "sha256": "1385a3e637b290f4ad5cc91891a6ef24f95391dd514457cd67102f19da13158f"
+    },
+    {
+      "path": "crates/buzz-provider/src/api.rs",
+      "git_blob": "4e1ba9eff6a6e4dd3fd589a36be38970d1eae7eb",
+      "sha256": "7cf462bb7d89ef32116e187bf0b4daa40daf9ac0d7f814208c507498cd6aa5cc"
+    },
+    {
+      "path": "crates/buzz-provider/src/auth.rs",
+      "git_blob": "8dc2cdae579ee0e46e89e85807133873d0d5470f",
+      "sha256": "86cbf2817d30432e30fe702703ee4cb28e2c16825faa7989d5c30c492556a850"
+    },
+    {
+      "path": "crates/buzz-provider/src/budget.rs",
+      "git_blob": "97271757d63bdf420f1f3ec33293d2501e97bbc0",
+      "sha256": "776e64727e237e0fb32d7ca1b459faf38164b6ef497e35e94a376b5437f26a5e"
+    },
+    {
+      "path": "crates/buzz-provider/src/db.rs",
+      "git_blob": "5cd3aaae31c58942d999b889a1e724534d264094",
+      "sha256": "1691cf244a12f6b8edc9a38d88d4835ce775d1a0c681e30e7b3330798fc99d08"
+    },
+    {
+      "path": "crates/buzz-provider/src/effects.rs",
+      "git_blob": "a1f1a99c93d3c1e941879d149a97b5d8d74132fc",
+      "sha256": "023f2a0525d4a702e683c4cbdcf7aa7fbc28f3c24242f8e36ad70b912fb3b63d"
+    },
+    {
+      "path": "crates/buzz-provider/src/identity.rs",
+      "git_blob": "cf1d81b87540fb37f118df05ff828ee8bb3df4aa",
+      "sha256": "add31b8b0e05e653e7ba68b96e0b0eec765600e270b0e21b66f2090cb3f51736"
+    },
+    {
+      "path": "crates/buzz-provider/src/lib.rs",
+      "git_blob": "88e50251724971ecbf9a347f40d31af146f73a79",
+      "sha256": "1da6328614dfd2c0bd366075a385ea1d7aceae3a0a75afd5d19c3e237f8279c6"
+    },
+    {
+      "path": "crates/buzz-provider/src/main.rs",
+      "git_blob": "e8373e643c0723ba7fdbcfca2285de4f6c902779",
+      "sha256": "82de1763c370bc924599be9f3da8edf0bfa14477ecf8dec914fbc867b7ec6e45"
+    },
+    {
+      "path": "crates/buzz-provider/src/native.rs",
+      "git_blob": "7a290482633e5e06adc196afe0195ca3b2d7afd7",
+      "sha256": "4b3f7e53bb036daac08ed7f67762d0e8017188dbec5d3a7158c7a755d76d4497"
+    },
+    {
+      "path": "crates/buzz-provider/src/ports.rs",
+      "git_blob": "2eef1cdfcd59b622a029eb941ebc220e68b804c8",
+      "sha256": "4d29cced826d3ba113e12fb8664cbf4015810650cb83c50542c45431c5ffc5a3"
+    },
+    {
+      "path": "crates/buzz-provider/src/tasks.rs",
+      "git_blob": "f1e3e94cf25a2ec493f080c123e94cd785f627da",
+      "sha256": "e28f7b36f81f9f32b1bd543cda4a1b1ada0dbc47c1d1767db752bac4ad081496"
+    },
+    {
+      "path": "crates/buzz-provider/tests/postgres.rs",
+      "git_blob": "a49c504074ce0e776009adf7b92a5ce45e248c4d",
+      "sha256": "3a217f63a2534703d03efec3841edc08ff38cde1e87e96521622fc2c5f3280d0"
+    },
+    {
+      "path": "crates/buzz-wire/Cargo.toml",
+      "git_blob": "d90a0ff25b049409bab582a5390264311a290eaa",
+      "sha256": "9651ebfa01c319c41ea51e28d2698211020a17f210c03d25d1acd4f9294db5db"
+    },
+    {
+      "path": "crates/buzz-wire/src/json.rs",
+      "git_blob": "abb6cd8fea6efea1bbfa144b223f7ef43850789a",
+      "sha256": "d41ed9311e5d37e4f3a00d03f2303797e22a32c70a41e7ed9e87a9203a55e4a6"
+    },
+    {
+      "path": "crates/buzz-wire/src/lib.rs",
+      "git_blob": "6c55e21ff7a85189d0ace15c41a48aca53cf3b6c",
+      "sha256": "d2be10844c5e6938772da26fe7761fe2c2e183ec643204d9e46a225765f12be1"
+    },
+    {
+      "path": "crates/buzz-wire/src/task.rs",
+      "git_blob": "3b1089775ea0af23ad3ffa0d1cea47b1d606274c",
+      "sha256": "377642ce33765983321fd34df9a1838f9ba5ccd815ee0fffafb3ace6877bbb34"
+    },
+    {
+      "path": "crates/buzz-wire/src/wire.rs",
+      "git_blob": "08220c54efccc613d1ff6176d9f5766ac16c8d4c",
+      "sha256": "e3caf2d6b30ea874cdc4f774a99b30dfd50dd30232e007cea9a8d64f294a52aa"
+    },
+    {
+      "path": "deploy/Dockerfile.probe",
+      "git_blob": "1b07d6feeabd82b1c1baebddb8ce675e1060e9e2",
+      "sha256": "e849622a8675d9968b962c215cdebe8c431152bd4e862b2399226245e59efd9c"
+    },
+    {
+      "path": "deploy/probe-entrypoint.sh",
+      "git_blob": "7566a565b553dfe282393a21fe85561517ff5b45",
+      "sha256": "b59b6683afa687fc704af87f572a34e3d5af0592e05e71a9a904d007886f97cd"
+    },
+    {
+      "path": "migrations/0001_foundation.sql",
+      "git_blob": "6e40acc60f2a63c3983176b01e3c0dae5b299828",
+      "sha256": "f922774d152c2ef4948a57f45ffe030453120ee19a74654d1b3d4badb27d3f97"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "git_blob": "c3f67b6771b777215340531caf051bc25cef066c",
+      "sha256": "887f9be066a15585a2c583578e84b0fcb541126d81546276bad3d2ff00d61167"
+    },
+    {
+      "path": "scripts/build-upstream.sh",
+      "git_blob": "05f74ffba7670ee19f932a24a75717fac8f65f56",
+      "sha256": "39c04905b93832cfc6fedad2fdd254ea05ad315a2e7caa5f5915f3b1ff964fab"
+    },
+    {
+      "path": "scripts/emit-image-identity.py",
+      "git_blob": "b757e4c758dd8355c0fa6513f52ee73c1d02c25c",
+      "sha256": "4195f30466bea069fc7f7c9a6d10ed3f872489283df142b1df5a881fe50922be"
+    },
+    {
+      "path": "scripts/test-containment.sh",
+      "git_blob": "f5de2fd374bd2b0e632ffd1ceb4819ef230e1fb1",
+      "sha256": "fbb2afa290d7894a19012abe80822e4577f12ad48f277591f362ad04f0560801"
+    },
+    {
+      "path": "scripts/test-postgres.sh",
+      "git_blob": "ba2b5db3e9b1d62a8543bb72c66910152471e7a4",
+      "sha256": "81df82f8e8f67ea0bd55d66414790a01a16dbffade9f16571e55d8bcb52e12d0"
+    }
+  ],
+  "existing_hosted_check": {
+    "url": "https://github.com/jjjjguevara/llull-buzz/actions/runs/35648867633",
+    "conclusion": "failure",
+    "observed_failure": "bootstrap-only changed-document checker rejects implementation files and omits unchanged PROFILE-COVERAGE.json from its projection",
+    "dispatched_or_rerun": false,
+    "raw_log_sha256": "9fac8c5941f88cc39cc56c9b5932adaf9c09c8b615dcc7fa81c622074bc86d6d"
+  },
+  "unexecuted": [
+    "real HTTPS consumer commit-time authorization/revocation and lost-response integration",
+    "full native/media/client matrix",
+    "business MCP bridging",
+    "live models",
+    "publication delivery",
+    "cross-product integration",
+    "complete installed OS/upstream notice/license closure",
+    "arbitrary failover and full backup restoration",
+    "named human UAT"
+  ],
+  "acceptance": {
+    "task_03": "claimed",
+    "pr": "draft and unmerged",
+    "restricted_profile_active": false,
+    "independent_approval": false,
+    "human_uat_acceptance": false
+  },
+  "probe_result": "passed",
+  "linux_executable_identity": {
+    "upstream_commit": "01b6174a1cbad249e93f31df97d4b2ed1d0e8638",
+    "executable_sha256": {
+      "/opt/llull/upstream/buzz-agent": "fc788e39e8f7c619de5c385ef192fa7b161a69fc5f05cee46390f935f88cc874",
+      "/opt/llull/upstream/buzz-acp": "8646c112c8a79daf4c641481909bdc2462c3f0a2606259e0ed65249f21f7d2b7",
+      "/opt/llull/bin/llull-buzz-mcp-probe": "69a341fc8f182368718936aa3192a18d0b365ec55c697463785cf6a4ae8bf31c"
+    }
+  },
+  "linux_build_stage_image": "8e23033d5053",
+  "source_reference_checks": {
+    "command": [
+      "python3",
+      "artifacts/local-validation/check-static.py"
+    ],
+    "source_sha": "f469e8e3d0a63ba222713b98a9a0c1dbc4606c3d",
+    "tracked_worktree_dirty": true,
+    "started_at": "2026-09-21T21:36:24.913906+00:00",
+    "exit": 0,
+    "finished_at": "2026-09-21T21:36:26.580633+00:00",
+    "log_sha256": "d16ded0a21710ab83275c100ef543cd1618c8f47fc51ac7b99cbd60e1f0e8dba",
+    "output": "self-test: 6 checks passed\nself-test: 10 assertions passed\n{\n  \"shell_scripts\": 4,\n  \"toml_files\": 5,\n  \"historical_schema_expectations\": 6,\n  \"components\": 21,\n  \"capabilities\": 8,\n  \"commitments\": 14,\n  \"technical_profiles\": 7,\n  \"human_case_bindings\": 5,\n  \"scope\": \"source syntax, reference consistency, historical fixtures and unchanged checker self-tests; no human acceptance or whole-profile conformance\"\n}\n",
+    "checker_source_sha256": "35c2b75ce80d34e67adc7065e862898b233af98358fb21c9586e8874fc9aab11"
+  },
+  "cleanup": {
+    "task_profile": "llull-buzz-pr2",
+    "command": [
+      "colima",
+      "delete",
+      "llull-buzz-pr2",
+      "--data",
+      "--force"
+    ],
+    "exit": 0,
+    "remaining_containers_before_vm_deletion": 0,
+    "task_vm_and_data_deleted": true,
+    "original_docker_context": "desktop-linux",
+    "raw_log_sha256": "247671d27edb03bb6895c482603ee54bf738e0c616a05594682b262dedfe87b7",
+    "retained_local_artifacts": [
+      "Rustup toolchain and installed developer prerequisites",
+      "Cargo cache and compiled targets",
+      "native upstream executables/notices",
+      "raw validation logs and clean source worktree"
+    ]
+  }
+}

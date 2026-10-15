@@ -9,4 +9,5 @@ target/
 .venv/
 __pycache__/
 artifacts/
+docs-check/
 .DS_Store

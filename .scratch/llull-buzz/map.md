@@ -43,3 +43,27 @@ Implement the selected adapters and migrations; resolve ordinary dependency leav
 installed inventories and image/client digests; bind actual symbols, fault tests and human UAT.
 Those are implementation obligations, not unexplained language/storage/security/topology slots.
 No test, deployment, independent certification or merge is performed by this document.
+
+## Current implementation frontier — 2026-09-21
+
+[Restricted task and identity foundation](issues/03-restricted-task-foundation.md) is
+claimed by the remote implementation driver in
+[draft PR #2](https://github.com/jjjjguevara/llull-buzz/pull/2). Items 03.1–03.5 bind
+the slice to existing capability, commitment, AC, proof and human-UAT identities.
+The bootstrap paragraphs above are historical; merged PR #1 is not reopened.
+
+[Implemented surfaces](../../docs/implementation/SLICE-1.md),
+[local execution and review](../../docs/implementation/LOCAL-REVIEW.md), and
+[actual evidence](../../docs/implementation/EVIDENCE.md) are the current handoff.
+The [local continuation](../../docs/implementation/LOCAL-VALIDATION.md) records the
+lockfile, clean Rust checks, real PostgreSQL execution, remediations and exact probe limits.
+Task 03 remains claimed for reviewer acceptance. No human case, whole proof profile or
+restricted-profile activation is marked passed.
+
+## Full completion frontier
+
+[Task 04 — complete and qualify the restricted provider](issues/04-provider-completion.md)
+is claimed by the local implementation and test operator. It records the subsequent
+full-completion authorization, Codex/ChatGPT OAuth direction and independent progress
+while the counterpart lane completes. The foundation handoff above is historical;
+task 04's completion criterion is the whole accepted provider and applicable qualification.

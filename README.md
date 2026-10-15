@@ -20,7 +20,7 @@ Read [AGENTS.md](AGENTS.md), the [bootstrap contract](docs/architecture/BOOTSTRA
 The [Wayfinder map](.scratch/llull-buzz/map.md) and existing
 [local tracker](.scratch/llull-buzz/TRACKER.md) retain planning history. The
 [source register](docs/discovery/SOURCE-REGISTER.md) distinguishes inspected source,
-engineering selections and actual validation. No downstream implementation graph is created.
+engineering selections and actual validation. The implementation stage is tracked by local task 03, not a new tracker.
 
 ## Initial realization
 
@@ -35,7 +35,20 @@ identity provider, model, hosting or release choices for every future consumer. 
 shared consumer database, universal role model, extra employee password directory or synchronized
 release requirement. Consumer-owned operational Web Push is not native Buzz push.
 
-## Status and license
+## Implementation slice 1
+
+Draft [PR #2](https://github.com/jjjjguevara/llull-buzz/pull/2) contains the Rust wire,
+PostgreSQL control-plane and credential-free launch foundation. Read
+[implemented and unavailable surfaces](docs/implementation/SLICE-1.md),
+[clean-checkout/local execution](docs/implementation/LOCAL-REVIEW.md), and
+[actual evidence](docs/implementation/EVIDENCE.md). The committed lockfile, clean Rust
+checks and real PostgreSQL execution are recorded in
+[local validation](docs/implementation/LOCAL-VALIDATION.md), with exact revisions and limits.
+Native/media coverage, live model
+usage, business MCP bridging and publication delivery are unavailable. This is not an
+active restricted profile or a certified deployment.
+
+## Bootstrap history and license
 
 Documentation/schema/example consolidation for PC-BZ-01; proposed ADRs remain proposed.
 Author document checks are not runtime tests, independent review, security certification,
@@ -46,4 +59,6 @@ selected by the owner on 2026-09-21. [The licensing record](docs/bootstrap/LICEN
 links the attributable answer and defines scope. Third-party components retain their own
 licenses; hosted services and consumer data are not relicensed. The former license question
 is answered. Technical PCR1 acceptance is separate from the focused license-delta check;
-no runtime certification, implementation, deployment or merge is authorized here.
+the completed bootstrap authorization did not include implementation or deployment.
+The owner separately authorized this implementation stage on 2026-09-21; runtime
+certification and merge remain outside this implementation session.

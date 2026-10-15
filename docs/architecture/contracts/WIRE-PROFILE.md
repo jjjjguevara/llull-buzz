@@ -53,6 +53,16 @@ fails closed for new effects. Read/reconcile past results uses separately curren
 
 ## Owned routes and exact meanings
 
+Publication may include `reply_to_event`, the exact lowercase SHA-256 native
+message ID being answered. It is part of the frozen publication and release
+digest. Before signing and sending, the publisher resolves that signed kind-9
+message through its fixed native owner and checks its channel and identity. The
+selected upstream message builder adds the native reply tag. A changed or
+unavailable source cannot silently become a new channel message. Omission keeps
+the original publication serialization; historical commands and receipts are
+unchanged. Consumers must qualify the new advertised schema digest before using
+the optional field. This field supplies correlation, never release authority.
+
 The profile deliberately adds these adapter routes; it does not invent new upstream client routes.
 Path identifiers and body identifiers must agree. GET/query requests also bind method/path/query
 through resource authentication and purpose evidence where required by the registered scope.
@@ -70,7 +80,12 @@ through resource authentication and purpose evidence where required by the regis
 | `POST /integration/v1/tasks/{id}/reconcile` | `reconcile-task`; same root/attempts and original provider lookup | BZ-C05 |
 | `POST /integration/v1/publications` | `publish`; frozen native destination/audience/release/content/attachment hashes | BZ-C06 |
 | `GET /integration/v1/publications/{id}` | Durable publication intent, persisted signed native event ID and known/unknown outcome | BZ-C06 |
-| `GET /integration/v1/evidence/{id}` | Metadata/registration readiness; authorized bytes through native media release gateway | BZ-C07 |
+| `GET /integration/v1/evidence/{id}` | Original signed metadata and separate consumer registration readiness | BZ-C07 |
+| `POST /integration/v1/attachment-retentions` | `retain-attachment`; exact original intake descriptor, private-origin bytes and separate durable receipt | BZ-C03/07 |
+| `GET /integration/v1/evidence/{id}/attachments/{sha256}` | Fresh artifact-specific EvidenceAccess; retained exact bytes, no native/public share URL | BZ-C07 |
+| `POST /integration/v1/native-attachment-leases` | `lease-native-attachment`; explicit current EvidenceAccess for one original attachment and proved enrollment | BZ-C07 |
+| `POST /integration/v1/native-handoffs` | Optional `read-native-handoff`; fresh browser human, proved enrollment and current native audience; navigation only | BZ-C02/03 |
+| Native `GET/HEAD /media/{sha256}` | Same-origin Blossom identity plus one current exact attachment lease; no range, preview or upload | BZ-C07 |
 | `GET /integration/v1/observations?cursor=...&limit=...` | Maximum 100 records, scoped committed high-water mark and next cursor | BZ-C08 |
 | `POST /integration/v1/observation-acks` | `ack-observations`; consumer durable receipt and contiguous cursor prefix | BZ-C08 |
 
@@ -79,6 +94,143 @@ means invalid authentication/authority; 409 is intent or expected-revision confl
 expired cursor with explicit recovery coordinates; 422 is unsupported schema/profile. Oversize input
 is 413 before acceptance. Temporary admission unavailability is 503 with bounded retry advice and
 no claim that an external effect failed. Errors expose opaque IDs, not protected input or evidence.
+
+## Original attachment retention extension (source increment, 2026-10-10)
+
+`retain-attachment` uses a closed `{"source_id":"<intake UUID>","evidence":{...}}`
+payload and resource `{namespace: consumer_id, ref: "<intake UUID>/<sha256>", revision: "1"}`.
+It requires the registered service's current `retain-attachment` action and invocation
+purpose. The full descriptor must equal one in the immutable signed original intake
+in the same consumer/module/context. The configured native owner performs a bounded
+read from its private `/media/<sha256>` route with a short-lived exact-hash BUD-11
+`get` token. It does not fetch the sender's `imeta` URL or issue a host-wide token.
+The source must return HTTP 200, the exact declared MIME type and byte length, and
+matching SHA-256. Missing/redirected/partial/mismatched bytes do not become durable
+attachment evidence. The adopted maximum is 25 MiB per attachment, at most 32 per
+original intake; this is not a storage-capacity qualification.
+
+Migration 0007 retains verified bytes with the original source identity. The insert,
+command receipt and observation commit together. A fresh-authority replay returns
+the original receipt; another unchanged retention intent uses the same immutable
+bytes. Lost responses are retried under the same command identity, never a new source.
+Historical intake receipts retain their original `attachment_bytes_durable` value.
+A retention receipt does not create or change the consumer's evidence registration.
+
+The byte GET requires fresh NIP-98 plus `llull-evidence+jwt`, operation
+`read-attachment`, intent equal to the intake UUID, the same source/hash resource
+revision `1`, and the empty-body digest. Current service/enrollment, module, context,
+policy, recovery epoch and original retention deadline apply before bytes are read.
+The response is an attachment with `application/octet-stream`, `nosniff` and
+`no-store`; declared active media types are never rendered by this surface.
+
+This additive schema changes discovery's schema digest and must be adopted explicitly
+by consumers. The native client Blossom upload/GET/HEAD release gateway, attachment
+publication, transformations/previews and browser/native attachment journeys remain
+unqualified and unavailable through this increment. No current audience release or
+consumer evidence authority is replaced by the new retention route.
+
+## Native original-byte lease extension (source increment, 2026-10-11)
+
+This additive operation realizes the registered assertion/lease option in
+[BZ-R05](PROVIDED-REQUIRED.md). It changes the advertised schema digest and requires
+deliberate consumer adoption and explicit registration of `lease-native-attachment`.
+It does not change `read-attachment`/`retain-attachment`, activate the restricted
+profile, or qualify the complete native media gateway.
+
+The lease POST requires registered service NIP-98 plus `llull-evidence+jwt` over
+the complete immutable command. Resource: original `<intake UUID>/<sha256>`,
+revision `1`. The closed payload supplies `source_id`, exact retained `evidence`,
+existing `enrollment_id` and positive `enrollment_revision`, `audience_policy`,
+`audience_revision`, `release_ref` and absolute `expires_at`. The registered
+consumer issuer attests that this exact person, source, artifact and audience
+policy may receive these bytes now. Signed `release_ref` is consumer provenance,
+not a new provider authority registry or permission inferred from an opaque
+reference. No approval or delegated task grant is invented. Service-key possession
+without the exact current EvidenceAccess assertion cannot mint a lease.
+
+The native key comes only from the previously proved active enrollment in the
+same consumer/module. The fixed original native owner must confirm the original
+channel's current audience revision and membership, including the requester.
+Migration 0008 records immutable custody of the original assertion, enrollment
+revision/epoch, source, context, owner and expiry. Lease, command receipt and
+observation commit together. Retry preserves the original receipt and expiry;
+fresh transport never renews it. Expiry beyond the original assertion, authority
+freshness or original intake-retention deadline is rejected. The lifetime is at
+most the existing 60-second EvidenceAccess bound. Historical custody remains
+retained after expiry, without conferring access.
+
+Native GET and HEAD bind the configured relay authority, exact bare SHA-256 path
+and signed BUD-11 `get` proof. The selected CLI
+[`sign_blossom_get`](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/crates/buzz-cli/src/client.rs)
+emits a server-tagged kind-24242 proof lasting 600 seconds. It proves identity
+only; it never extends EvidenceAccess. Every request rechecks current registration,
+policy/recovery epochs, proved enrollment revision/epoch/key, original retention,
+fixed owner, actual native audience and final expiry. A foreign key, missing or
+expired lease, or multiple current leases for the key/hash denies access rather
+than guessing a consumer/source. Callers must keep the lease unambiguous; a second
+intent does not supersede or renew the first.
+
+GET returns exact digest-checked bytes as an inert download (`no-store`, `nosniff`,
+`application/octet-stream`). HEAD runs the same authority and integrity checks
+before returning length without bytes. Conditional requests, ranges, transformed
+suffixes, thumbnails, uploads and attachment publication remain unavailable.
+Frontdoor routing must reach this adapter on the configured relay origin and keep
+the private native owner inaccessible. Authored routes do not prove installed
+containment. Actual CLI, PostgreSQL, restart, revocation and composed attachment
+journeys remain unrun for this increment.
+
+## Current human native navigation extension (source increment, 2026-10-12)
+
+The optional [native-handoff-v1 schema](schemas/native-handoff-v1.schema.json)
+defines a closed Command-shaped request and a separate `response` definition.
+Consumers adopt its RFC 8785 SHA-256 digest and provider source pin explicitly.
+The historical `bz-wire-v1` schema and discovery response retain their existing
+meaning and digest. Registration must explicitly include `read-native-handoff`;
+older profiles do not acquire this action automatically. The native owner must
+also be configured. Configuration and source checks do not activate the profile.
+
+The POST uses existing service NIP-98 authentication over the exact URL and body,
+plus `X-Llull-Invocation` with purpose `llull-invocation+jwt`. The consumer issuer
+binds the exact resource/revision, payload fingerprint, module and context to
+current record access and an existing destination. Resource namespace equals
+the registered consumer. The payload is exactly `community_id`, `channel_id`,
+`audience_revision`, and explicit null or lowercase event hash `event_id`.
+It cannot create a channel, select a network origin, supply a callback, carry a
+prompt, or authorize a publication or task.
+
+This new action requires a proved active enrollment, its current revision and
+authority epoch, `represented_principal` equal to its subject, and existing
+`browser_authentication` matching its issuer/subject. Browser authentication
+must be no older than 60 seconds and unexpired; stale login requires a recent
+sign-in. `delegation_id`, `root_task_id` and `grant_revision` must all be null;
+`verdicts` must be empty and `release` null. No agent grant is invented for a
+human navigation read. Existing actions retain their delegated-authority gate.
+Registration, module issuer policy, recovery epoch, current binding, native
+audience and final invocation/browser expiry are revalidated on every request,
+including a reused intent. The read stores only existing authentication replay
+and admission evidence; it creates no mutation receipt, task or observation.
+
+The fixed native owner verifies any requested signed kind-9 event and its
+existing thread root in the exact channel, then reads the current audience last.
+The audience revision must match exactly and contain the proved native key.
+The response format is `llull-buzz-native-handoff/v1`, identifies the complete
+request/binding/destination scope, and expires at the earliest invocation expiry,
+browser expiry or browser authentication time plus 60 seconds. `verified_until`
+is Unix seconds. Consumers compare every echoed identity and reconstruct the
+expected URI; schema validation alone cannot establish that correspondence.
+
+The selected [desktop](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/desktop/src/shared/deep-link.ts)
+and [mobile](https://github.com/block/buzz/blob/01b6174a1cbad249e93f31df97d4b2ed1d0e8638/mobile/lib/shared/deeplink/deep_link.dart)
+parsers support `buzz://channel/<canonical UUID>` and
+`buzz://message?channel=<canonical UUID>&id=<lowercase hash>[&thread=<root hash>]`.
+No community selector, authentication grant, consumer data or callback is added.
+The native app uses its own current key/relay and enforces its channel access.
+The link is navigation, not an authenticated app switch or a business effect.
+The consumer keeps its original browser tab, actor, route, draft and unresolved
+command custody, provides explicit return guidance, and revalidates current
+access when the user returns. The separate native identity-binding callback
+must not be repurposed. Actual native return, PostgreSQL and composed journeys
+remain unqualified until executed against the admitted candidate.
 
 ## Typed payload rules
 
@@ -121,6 +273,108 @@ before dispatch, so a lost relay response is reconciled by the original ID or re
 A fiscal result/evidence remains committed when later mail or conversation publication fails.
 
 ## Applicability and evidence
+
+### Optional read-only publication evidence
+
+`GET /integration/v1/publications/{canonical UUID}/evidence` is mounted only
+with the configured native publisher. It uses existing `observe-publication`
+rootless service authority and signs that exact empty-body GET path; query
+parameters, noncanonical UUIDs, HEAD and request bodies are rejected. The
+existing five-field publication view is unchanged. Responses, including errors,
+are `Cache-Control: no-store`. The read preserves existing authentication replay
+evidence but creates no publication, work grant, mutation receipt, observation
+or native network request. An original root-bound publication remains readable
+under current original-consumer/module/context record access without making its
+root live again.
+
+The closed `llull-buzz-publication-evidence/v1` response has 19 fields:
+`format`, `consumer_id`, `module_id`, `context_domain`, `publication_id`,
+`intent_id`, `release_ref`, `request_sha256`, `publication`, `admission`, `state`,
+`native_event_id`, `owner`, `revision`, `event_sha256`, `signed_event_base64`,
+`audience`, `completed_at`, `publisher_public_key`. `publication` and `admission`
+are the exact original stored payload and admission; `request_sha256` binds the
+entire original command. Consumers compare these to their retained original,
+not to a reconstructed or new intent. The provider authenticates original scope
+before reading private publication, signed bytes or audience. It rechecks the
+original invocation expiry after locks, validation and serialization.
+
+`publisher_public_key` is the actual configured fixed publisher key, not the
+consumer's NIP-98 transport key. The provider verifies the frozen event's ID,
+signature, configured owner/key, kind, channel, publication UUID, exact content,
+frozen audience and original reply parent before disclosing it. Original bytes
+use canonical standard base64; `event_sha256` hashes the decoded exact bytes.
+Consumers independently verify that hash and Nostr signature/source bindings.
+Unless independently configured otherwise, publisher identity and previously
+validated reply ancestry remain provider attestations, not independent key pins
+or a new native-owner lookup performed by this read.
+
+The proof fields `native_event_id`, `owner`, `event_sha256`,
+`signed_event_base64`, `audience`, `completed_at` are null when no delivery row
+exists. A signed pending/unknown event is not completed delivery.
+`completed_at` is positive Unix seconds only for `completed`; the initial
+admission remains pending. A lost POST acknowledgement may leave the consumer
+without a provider UUID; existing scoped observation/snapshot reads can locate
+the original operation by its original resource before evidence comparison.
+Absent or malformed proof never authorizes publication or resend.
+
+This observation implementation bounds signed bytes to 262,144, retained
+audience members to 1,024 and encoded response bytes to 1,048,576. Larger
+retained sources remain unqualified for this observation surface; these are
+transport bounds, not accepted business audience ceilings or permission to
+truncate, delete or replace original evidence. Compilation, PostgreSQL/HTTP,
+installed native delivery and human acceptance remain unrun for this addition.
+
+### Original-intent lookup after a lost publication admission acknowledgement
+
+`GET /integration/v1/publication-intents/{intent_base64url}/{release_base64url}/{request_sha256}/evidence`
+is an optional read-only lookup of the existing `(consumer_id, intent_id)`
+publication. Both ID components use canonical unpadded base64url of the exact
+UTF-8 wire ID (at most 255 bytes); no trimming or normalization is performed.
+The request hash is the lowercase SHA-256 of the entire original canonical wire
+command. The exact ASCII path is signed; queries, bodies, alternate encodings
+and methods other than GET are rejected with `no-store` responses.
+
+It uses the existing `observe-publication` service action and invocation purpose.
+The invocation binds the original decoded intent, original release resource
+(`namespace=consumer_id`, `ref=release_ref`, `revision="1"`), original full-command
+hash, module and context. Its `payload_sha256` targets that original command;
+the separate NIP98 payload tag binds the empty HTTP body. Root/delegation/grant,
+release capability, verdict and browser claims remain prohibited for this read.
+
+Before private payload access, the provider verifies that the exact retained
+intent/release/hash has an original scoped publication observation and scope.
+It then uses the same closed 19-field evidence response, signature/source checks,
+limits and single immutable invocation deadline as the UUID endpoint. A valid
+positive response can identify the original provider UUID; it cannot create or
+replace one. Missing, mismatched or inaccessible retained source returns denial
+and leaves the consumer's outcome unknown. Absence is never a no-effect verdict
+or permission to resend. No mutation receipt, journal entry, native network
+lookup, reconciliation, submission or work renewal is added.
+
+### Completed task and separately admitted native publication
+
+Task completion attests the known business effects. It stops new work and does
+not grant native output release. A completed or otherwise stopped root cannot
+perform a new root-bound publication; an admitted pending publication cannot be
+rebound by removing its original root from the assertion. Terminal delivery
+observation and original-owner recovery retain their existing meanings.
+
+A consumer may separately admit a publication under its current native policy,
+required human verdicts and exact destination/content/audience release. Its
+ordinary publisher then uses the existing rootless `publish` service action
+with that separately verified release. This is a distinct native publication
+intent, not a revived task, fresh model budget or permission inferred from a
+completed effect, model text, channel membership or a task grant. Consumer
+business completion and the publication's pending/unknown/completed status must
+remain distinct. A lost native acknowledgement retains the exact signed event
+and requires original-owner lookup; it cannot cause another submission.
+
+This clarification adds no action or schema. Two controls appended to the
+existing provider publication suite exercise completed-root denial, denied
+rebinding, independently released signed replies, exact unknown recovery,
+changed release/audience denial and unchanged completed root/budgets. They and
+compilation remain authored/unrun; source inspection is not native/consumer or
+human qualification.
 
 BZ-PF01..07 cover verification, process/ACP isolation, native release, durable/cursor faults, budgets,
 media and exact-profile evidence respectively. BZ-UAT01..05 separately judge user-visible completion,
