@@ -123,18 +123,16 @@ async fn state(rig: &Rig, task: &TaskManifest) -> TaskState {
 
 async fn google_accounting_rows(rig: &Rig) -> BTreeMap<String, Vec<Value>> {
     let mut snapshot = BTreeMap::new();
-    for table in [
-        "consumer_registry",
-        "registration_history",
-        "task_roots",
-        "task_members",
-        "model_reservations",
-        "model_dispatches",
-        "commands",
+    for (table, sql) in [
+        ("consumer_registry", "SELECT to_jsonb(t) FROM consumer_registry t WHERE consumer_id=$1 ORDER BY to_jsonb(t)::text"),
+        ("registration_history", "SELECT to_jsonb(t) FROM registration_history t WHERE consumer_id=$1 ORDER BY to_jsonb(t)::text"),
+        ("task_roots", "SELECT to_jsonb(t) FROM task_roots t WHERE consumer_id=$1 ORDER BY to_jsonb(t)::text"),
+        ("task_members", "SELECT to_jsonb(t) FROM task_members t WHERE consumer_id=$1 ORDER BY to_jsonb(t)::text"),
+        ("model_reservations", "SELECT to_jsonb(t) FROM model_reservations t WHERE consumer_id=$1 ORDER BY to_jsonb(t)::text"),
+        ("model_dispatches", "SELECT to_jsonb(t) FROM model_dispatches t WHERE consumer_id=$1 ORDER BY to_jsonb(t)::text"),
+        ("commands", "SELECT to_jsonb(t) FROM commands t WHERE consumer_id=$1 ORDER BY to_jsonb(t)::text"),
     ] {
-        let rows = sqlx::query_scalar::<_, sqlx::types::Json<Value>>(&format!(
-            "SELECT to_jsonb(t) FROM {table} t WHERE consumer_id=$1 ORDER BY to_jsonb(t)::text"
-        ))
+        let rows = sqlx::query_scalar::<_, sqlx::types::Json<Value>>(sql)
         .bind(&rig.registration.consumer_id)
         .fetch_all(&rig.pool)
         .await
