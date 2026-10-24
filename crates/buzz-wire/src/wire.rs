@@ -154,7 +154,10 @@ impl TaskManifest {
         ] {
             id(s)?;
         }
-        if self.model_profile != "sonnet-5-adaptive-bounded-v1" {
+        if !matches!(
+            self.model_profile.as_str(),
+            "sonnet-5-adaptive-bounded-v1" | crate::GOOGLE_FREE_PROFILE
+        ) {
             return Err(Fault::Unavailable);
         }
         let remaining = self.expires_at.signed_duration_since(now);
@@ -178,7 +181,7 @@ impl TaskManifest {
                 return Err(Fault::Invalid);
             }
         }
-        self.budgets.validate()
+        self.budgets.validate_for_profile(&self.model_profile)
     }
     pub fn check_child(&self, root: &Self) -> Result<()> {
         if self.task_id == root.task_id
@@ -350,6 +353,80 @@ pub struct ToolCall<C> {
     pub action: String,
     pub resource: Resource,
     pub arguments: C,
+}
+
+#[cfg(test)]
+mod task_profile_tests {
+    use super::*;
+
+    fn manifest() -> TaskManifest {
+        TaskManifest {
+            task_id: "root".into(),
+            root_task_id: "root".into(),
+            task_schema_id: "typed-v1".into(),
+            context_domain: "scope".into(),
+            model_profile: crate::GOOGLE_FREE_PROFILE.into(),
+            expires_at: DateTime::from_timestamp(1600, 0).unwrap(),
+            tools: vec![Tool {
+                schema_id: "tool-v1".into(),
+                schema_sha256: "a".repeat(64),
+                action: "read".into(),
+                resources: vec![Resource {
+                    namespace: "consumer".into(),
+                    reference: "resource".into(),
+                    revision: "1".into(),
+                }],
+            }],
+            budgets: crate::Budgets {
+                model_attempts: 8,
+                tool_admissions: 32,
+                input_tokens_per_generation: 32_000,
+                input_tokens_total: 128_000,
+                output_tokens_total: 16_000,
+                usd_micros: 0,
+                automatic_restarts: 3,
+            },
+            verdict_refs: vec![],
+        }
+    }
+
+    #[test]
+    fn google_manifest_binds_exact_free_profile_and_preserves_legacy_validation() {
+        let now = DateTime::from_timestamp(1000, 0).unwrap();
+        let mut value = manifest();
+        value.validate("consumer", now).unwrap();
+        assert_eq!(crate::GOOGLE_FREE_MODEL, "gemini-3.5-flash-lite");
+        value.budgets.usd_micros = 1;
+        assert_eq!(value.validate("consumer", now), Err(Fault::Invalid));
+        value.model_profile = "sonnet-5-adaptive-bounded-v1".into();
+        value.validate("consumer", now).unwrap();
+        value.budgets.usd_micros = 0;
+        assert_eq!(value.validate("consumer", now), Err(Fault::Invalid));
+        value.model_profile = "google-gemini-3.5-flash-lite-free/v2".into();
+        assert_eq!(value.validate("consumer", now), Err(Fault::Unavailable));
+    }
+
+    #[test]
+    fn google_manifest_keeps_lifetime_tool_authority_and_child_boundaries() {
+        let now = DateTime::from_timestamp(1000, 0).unwrap();
+        let root = manifest();
+        let mut value = root.clone();
+        value.expires_at = now;
+        assert_eq!(value.validate("consumer", now), Err(Fault::Exhausted));
+        value.expires_at = DateTime::from_timestamp(1601, 0).unwrap();
+        assert_eq!(value.validate("consumer", now), Err(Fault::Exhausted));
+        value = root.clone();
+        value.tools[0].resources[0].namespace = "foreign".into();
+        assert_eq!(value.validate("consumer", now), Err(Fault::Denied));
+        value = root.clone();
+        value.tools.push(value.tools[0].clone());
+        assert_eq!(value.validate("consumer", now), Err(Fault::Invalid));
+        let mut child = root.clone();
+        child.task_id = "child".into();
+        child.check_child(&root).unwrap();
+        child.model_profile = "sonnet-5-adaptive-bounded-v1".into();
+        assert_eq!(child.check_child(&root), Err(Fault::Conflict));
+    }
 }
 
 #[cfg(test)]

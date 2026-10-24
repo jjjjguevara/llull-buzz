@@ -3,6 +3,10 @@ use crate::{Execution, Fault, Result, TaskManifest, MAX_SAFE_INTEGER};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Exact Google Developer API free route; never a paid or model-alias fallback.
+pub const GOOGLE_FREE_PROFILE: &str = "google-gemini-3.5-flash-lite-free/v1";
+pub const GOOGLE_FREE_MODEL: &str = "gemini-3.5-flash-lite";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Budgets {
@@ -27,6 +31,26 @@ impl Budgets {
             return Err(Fault::Invalid);
         }
         Ok(())
+    }
+
+    pub fn validate_for_profile(&self, profile: &str) -> Result<()> {
+        match profile {
+            "sonnet-5-adaptive-bounded-v1" => self.validate(),
+            GOOGLE_FREE_PROFILE => {
+                if !(1..=8).contains(&self.model_attempts)
+                    || !(1..=32).contains(&self.tool_admissions)
+                    || !(1..=32_000).contains(&self.input_tokens_per_generation)
+                    || !(1..=128_000).contains(&self.input_tokens_total)
+                    || !(1..=16_000).contains(&self.output_tokens_total)
+                    || self.usd_micros != 0
+                    || self.automatic_restarts > 3
+                {
+                    return Err(Fault::Invalid);
+                }
+                Ok(())
+            }
+            _ => Err(Fault::Unavailable),
+        }
     }
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -66,7 +90,7 @@ impl Spent {
             } => {
                 if *input_tokens == 0
                     || *output_tokens == 0
-                    || *usd_micros == 0
+                    || (*usd_micros == 0 && cap.usd_micros != 0)
                     || *input_tokens > cap.input_tokens_per_generation
                 {
                     return Err(Fault::Exhausted);
@@ -306,6 +330,118 @@ mod tests {
     }
     fn at(t: i64) -> DateTime<Utc> {
         DateTime::from_timestamp(t, 0).unwrap()
+    }
+    #[test]
+    fn google_free_profile_requires_zero_cost_without_widening_other_caps() {
+        let mut cap = task().budgets;
+        cap.usd_micros = 0;
+        assert_eq!(cap.validate_for_profile(GOOGLE_FREE_PROFILE), Ok(()));
+        assert_eq!(cap.validate(), Err(Fault::Invalid));
+        assert_eq!(
+            cap.validate_for_profile("sonnet-5-adaptive-bounded-v1"),
+            Err(Fault::Invalid)
+        );
+        assert_eq!(
+            cap.validate_for_profile("unknown-free"),
+            Err(Fault::Unavailable)
+        );
+        for dimension in 0..6 {
+            let mut invalid = cap.clone();
+            match dimension {
+                0 => invalid.model_attempts = 9,
+                1 => invalid.tool_admissions = 33,
+                2 => invalid.input_tokens_per_generation = 32_001,
+                3 => invalid.input_tokens_total = 128_001,
+                4 => invalid.output_tokens_total = 16_001,
+                _ => invalid.automatic_restarts = 4,
+            }
+            assert_eq!(
+                invalid.validate_for_profile(GOOGLE_FREE_PROFILE),
+                Err(Fault::Invalid)
+            );
+        }
+        cap.usd_micros = 1;
+        assert_eq!(
+            cap.validate_for_profile(GOOGLE_FREE_PROFILE),
+            Err(Fault::Invalid)
+        );
+        assert_eq!(cap.validate(), Ok(()));
+    }
+    #[test]
+    fn zero_cost_model_reservations_still_charge_real_tokens_and_attempts_atomically() {
+        let mut t = task();
+        t.model_profile = GOOGLE_FREE_PROFILE.into();
+        t.budgets.usd_micros = 0;
+        t.budgets.validate_for_profile(&t.model_profile).unwrap();
+        let mut state = TaskState::default();
+        state.acquire("w", &t, at(1000)).unwrap();
+        let initial = crate::canonical(&state).unwrap();
+        assert_eq!(
+            state.reserve(
+                "w",
+                1,
+                &t,
+                &Charge::Model {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    usd_micros: 1
+                },
+                at(1001)
+            ),
+            Err(Fault::Exhausted)
+        );
+        assert_eq!(crate::canonical(&state).unwrap(), initial);
+        let charge = Charge::Model {
+            input_tokens: 32_000,
+            output_tokens: 4_000,
+            usd_micros: 0,
+        };
+        for _ in 0..4 {
+            state.reserve("w", 1, &t, &charge, at(1001)).unwrap();
+        }
+        assert_eq!(state.spent.model_attempts, 4);
+        assert_eq!(state.spent.input_tokens, 128_000);
+        assert_eq!(state.spent.output_tokens, 16_000);
+        assert_eq!(state.spent.usd_micros, 0);
+        let before = crate::canonical(&state).unwrap();
+        for charge in [
+            Charge::Model {
+                input_tokens: 1,
+                output_tokens: 1,
+                usd_micros: 0,
+            },
+            Charge::Model {
+                input_tokens: 1,
+                output_tokens: 1,
+                usd_micros: 1,
+            },
+        ] {
+            assert_eq!(
+                state.reserve("w", 1, &t, &charge, at(1002)),
+                Err(Fault::Exhausted)
+            );
+            assert_eq!(crate::canonical(&state).unwrap(), before);
+        }
+        // A historical commercial root cannot charge zero, even with tokens left.
+        let commercial = task();
+        let mut legacy = TaskState::default();
+        legacy.acquire("w", &commercial, at(1000)).unwrap();
+        let before = crate::canonical(&legacy).unwrap();
+        assert_eq!(
+            legacy.reserve(
+                "w",
+                1,
+                &commercial,
+                &Charge::Model {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    usd_micros: 0
+                },
+                at(1001)
+            ),
+            Err(Fault::Exhausted)
+        );
+        assert_eq!(crate::canonical(&legacy).unwrap(), before);
     }
     #[test]
     fn positive_charge_and_exhaustion_are_atomic() {

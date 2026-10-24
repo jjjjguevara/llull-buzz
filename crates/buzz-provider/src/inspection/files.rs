@@ -48,7 +48,20 @@ fn identity(s: &Stat) -> Identity {
         changed: (s.st_ctime, s.st_ctime_nsec as i64),
     }
 }
-#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+#[cfg(target_os = "macos")]
+fn identity(s: &Stat) -> Identity {
+    Identity {
+        dev: s.st_dev as u64,
+        inode: s.st_ino,
+        owner: s.st_uid,
+        mode: s.st_mode as u32,
+        links: s.st_nlink as u64,
+        size: s.st_size,
+        modified: (s.st_mtime, s.st_mtime_nsec),
+        changed: (s.st_ctime, s.st_ctime_nsec),
+    }
+}
+#[cfg(not(any(target_os = "macos", all(target_os = "linux", target_arch = "aarch64"))))]
 fn identity(s: &Stat) -> Identity {
     Identity {
         dev: s.st_dev as u64,

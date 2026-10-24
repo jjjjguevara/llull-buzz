@@ -22,10 +22,17 @@ pub struct Pricing {
 impl Pricing {
     pub fn validate(&self) -> llull_buzz_wire::Result<()> {
         llull_buzz_wire::id(&self.revision)?;
-        if self.model_profile != "sonnet-5-adaptive-bounded-v1"
+        let valid_rates = match self.model_profile.as_str() {
+            llull_buzz_wire::GOOGLE_FREE_PROFILE => {
+                self.input_usd_micros_per_million == 0 && self.output_usd_micros_per_million == 0
+            }
+            "sonnet-5-adaptive-bounded-v1" => {
+                self.input_usd_micros_per_million > 0 && self.output_usd_micros_per_million > 0
+            }
+            _ => false,
+        };
+        if !valid_rates
             || self.checked_at >= self.valid_until
-            || self.input_usd_micros_per_million == 0
-            || self.output_usd_micros_per_million == 0
             || self.input_usd_micros_per_million > 1_000_000_000
             || self.output_usd_micros_per_million > 1_000_000_000
         {
@@ -201,6 +208,80 @@ impl Provider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn free_pricing() -> Pricing {
+        Pricing {
+            revision: "synthetic-free".into(),
+            model_profile: llull_buzz_wire::GOOGLE_FREE_PROFILE.into(),
+            checked_at: DateTime::from_timestamp(100, 0).unwrap(),
+            valid_until: DateTime::from_timestamp(1000, 0).unwrap(),
+            input_usd_micros_per_million: 0,
+            output_usd_micros_per_million: 0,
+        }
+    }
+    #[test]
+    fn google_free_pricing_requires_both_zero_rates_and_preserves_dates() {
+        let mut pricing = free_pricing();
+        pricing.validate().unwrap();
+        assert_eq!(pricing.cost(32_000, 16_000).unwrap(), 0);
+        for (input, output) in [(1, 0), (0, 1), (1, 1)] {
+            pricing.input_usd_micros_per_million = input;
+            pricing.output_usd_micros_per_million = output;
+            assert_eq!(pricing.validate(), Err(Fault::Invalid));
+        }
+        pricing = free_pricing();
+        pricing.valid_until = pricing.checked_at;
+        assert_eq!(pricing.validate(), Err(Fault::Invalid));
+        pricing = free_pricing();
+        pricing.checked_at = pricing.valid_until + chrono::Duration::seconds(1);
+        assert_eq!(pricing.validate(), Err(Fault::Invalid));
+        pricing = free_pricing();
+        pricing.model_profile = "unknown-free".into();
+        assert_eq!(pricing.validate(), Err(Fault::Invalid));
+    }
+    #[test]
+    fn commercial_pricing_still_refuses_any_zero_rate_or_excess_rate() {
+        for (input, output) in [
+            (0, 0),
+            (1, 0),
+            (0, 1),
+            (1_000_000_001, 1),
+            (1, 1_000_000_001),
+        ] {
+            let mut pricing = free_pricing();
+            pricing.model_profile = "sonnet-5-adaptive-bounded-v1".into();
+            pricing.input_usd_micros_per_million = input;
+            pricing.output_usd_micros_per_million = output;
+            assert_eq!(pricing.validate(), Err(Fault::Invalid));
+        }
+    }
+    #[test]
+    fn zero_cost_settlement_dto_keeps_real_token_and_safe_integer_bounds() {
+        let mut settlement = SettleModelDispatch {
+            reservation_id: uuid::Uuid::nil(),
+            task_id: "root".into(),
+            expected_generation: 1,
+            model_owner: "gateway".into(),
+            request_sha256: "a".repeat(64),
+            outcome_sha256: "b".repeat(64),
+            usage: ModelUsage {
+                input_tokens: 123,
+                output_tokens: 45,
+                observed_usd_micros: 0,
+            },
+        };
+        settlement.validate().unwrap();
+        assert_eq!(
+            free_pricing()
+                .cost(
+                    settlement.usage.input_tokens,
+                    settlement.usage.output_tokens
+                )
+                .unwrap(),
+            0
+        );
+        settlement.usage.input_tokens = llull_buzz_wire::MAX_SAFE_INTEGER as u64 + 1;
+        assert_eq!(settlement.validate(), Err(Fault::Invalid));
+    }
     #[test]
     fn cost_rounds_up_and_never_uses_caller_dollar_estimate() {
         let p = Pricing {
