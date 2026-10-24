@@ -9,8 +9,16 @@ const BEGIN: &str = "/integration/foundation/v1/model-dispatches";
 const SETTLE: &str = "/integration/foundation/v1/model-settlements";
 
 async fn reserve(rig: &Rig, task: &TaskManifest) -> Command {
-    let request_sha256 =
-        digest(&json!({"model":"synthetic","input":"hello","max_output_tokens":100})).unwrap();
+    reserve_recorded(rig, task).await.1
+}
+
+async fn reserve_recorded(rig: &Rig, task: &TaskManifest) -> (Command, Command) {
+    let request_sha256 = digest(
+        &json!({"model": if task.model_profile == llull_buzz_wire::GOOGLE_FREE_PROFILE {
+            llull_buzz_wire::GOOGLE_FREE_MODEL
+        } else { "synthetic" },"input":"hello","max_output_tokens":100}),
+    )
+    .unwrap();
     let request = ModelReservation {
         task_id: task.task_id.clone(),
         expected_generation: 1,
@@ -36,7 +44,7 @@ async fn reserve(rig: &Rig, task: &TaskManifest) -> Command {
         .reserve_model_budget(&body, headers.headers())
         .await
         .unwrap();
-    rig.command(
+    let dispatch = rig.command(
         "begin-model-dispatch",
         rig.resource(&task.task_id, 1),
         BeginModelDispatch {
@@ -50,7 +58,8 @@ async fn reserve(rig: &Rig, task: &TaskManifest) -> Command {
             counted_input_tokens: 80,
             output_upper_bound: 100,
         },
-    )
+    );
+    (command, dispatch)
 }
 
 async fn begin(
@@ -78,7 +87,13 @@ fn settlement(rig: &Rig, begin: &Command, output_tokens: u64) -> Command {
             usage: ModelUsage {
                 input_tokens: 80,
                 output_tokens,
-                observed_usd_micros: 900,
+                observed_usd_micros: if rig.registration.pricing.as_ref().unwrap().model_profile
+                    == llull_buzz_wire::GOOGLE_FREE_PROFILE
+                {
+                    0
+                } else {
+                    900
+                },
             },
         },
     )
@@ -104,6 +119,284 @@ async fn state(rig: &Rig, task: &TaskManifest) -> TaskState {
     .await
     .unwrap()
     .0
+}
+
+async fn google_accounting_rows(rig: &Rig) -> BTreeMap<String, Vec<Value>> {
+    let mut snapshot = BTreeMap::new();
+    for table in [
+        "consumer_registry",
+        "registration_history",
+        "task_roots",
+        "task_members",
+        "model_reservations",
+        "model_dispatches",
+        "commands",
+    ] {
+        let rows = sqlx::query_scalar::<_, sqlx::types::Json<Value>>(&format!(
+            "SELECT to_jsonb(t) FROM {table} t WHERE consumer_id=$1 ORDER BY to_jsonb(t)::text"
+        ))
+        .bind(&rig.registration.consumer_id)
+        .fetch_all(&rig.pool)
+        .await
+        .unwrap();
+        snapshot.insert(
+            table.to_owned(),
+            rows.into_iter().map(|row| row.0).collect(),
+        );
+    }
+    snapshot
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16 via scripts/test-postgres.sh"]
+async fn google_free_postgres_dispatch_settlement_and_unknown_recovery_preserve_zero_cost_caps() {
+    // Real provider signatures, registration, migrations and SQL custody;
+    // counts/usage are SYNTHETIC gateway evidence, not a live Google response.
+    let rig = Rig::new_with_google_free(true).await;
+    let (task, _, _) = rig.start_recorded(None, "module-a", 600).await;
+    assert_eq!(task.model_profile, llull_buzz_wire::GOOGLE_FREE_PROFILE);
+    assert_eq!(task.budgets.usd_micros, 0);
+    assert_eq!(
+        (task.budgets.model_attempts, task.budgets.tool_admissions),
+        (8, 32)
+    );
+    assert_eq!(
+        (
+            task.budgets.input_tokens_per_generation,
+            task.budgets.input_tokens_total,
+            task.budgets.output_tokens_total
+        ),
+        (32_000, 128_000, 16_000)
+    );
+    let pricing = rig.registration.pricing.as_ref().unwrap();
+    assert_eq!(
+        (
+            pricing.input_usd_micros_per_million,
+            pricing.output_usd_micros_per_million
+        ),
+        (0, 0)
+    );
+    rig.worker(&task, None, "module-a", 1, false).await;
+    let original_record: sqlx::types::Json<Value> = sqlx::query_scalar(
+        "SELECT record FROM task_roots WHERE consumer_id=$1 AND root_task_id=$2",
+    )
+    .bind(&rig.registration.consumer_id)
+    .bind(&task.root_task_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    let before = google_accounting_rows(&rig).await;
+
+    // The free profile does not admit a positive spend allocation. This is a
+    // genuine new signed StartTask request, never a raw SQL state rewrite.
+    let mut paid = task.clone();
+    paid.task_id = Uuid::new_v4().to_string();
+    paid.root_task_id = paid.task_id.clone();
+    paid.budgets.usd_micros = 1;
+    let command = rig.command("start-task", paid.tools[0].resources[0].clone(), &paid);
+    let claims = rig.claims(&command, "module-a", Some(&paid.root_task_id), None);
+    let (body, headers) = rig.prepare("/integration/v1/tasks", &command, &claims);
+    assert!(matches!(
+        rig.p.start_task(&body, headers.headers()).await,
+        Err(ProviderError::Admission(Fault::Invalid))
+    ));
+    assert_eq!(google_accounting_rows(&rig).await, before);
+
+    let mut paid_registration = rig.registration.clone();
+    paid_registration.revision += 1;
+    paid_registration
+        .pricing
+        .as_mut()
+        .unwrap()
+        .input_usd_micros_per_million = 1;
+    let old_digest = digest(&rig.registration).unwrap();
+    assert!(matches!(
+        rig.p.register(paid_registration, Some(&old_digest)).await,
+        Err(ProviderError::Admission(Fault::Invalid))
+    ));
+    assert_eq!(google_accounting_rows(&rig).await, before);
+
+    let wrong = rig.command(
+        "reserve-model-budget",
+        rig.resource(&task.task_id, 1),
+        ModelReservation {
+            task_id: task.task_id.clone(),
+            expected_generation: 1,
+            worker_id: "synthetic-worker".into(),
+            pricing_revision: "foreign-paid-pricing".into(),
+            prompt_sha256: sha256(b"synthetic mismatch"),
+            input_upper_bound: 100,
+            output_upper_bound: 100,
+        },
+    );
+    let claims = rig.claims(&wrong, "module-a", Some(&task.root_task_id), None);
+    let (body, headers) = rig.prepare(
+        "/integration/foundation/v1/model-reservations",
+        &wrong,
+        &claims,
+    );
+    assert!(matches!(
+        rig.p.reserve_model_budget(&body, headers.headers()).await,
+        Err(ProviderError::Admission(Fault::Denied))
+    ));
+    assert_eq!(google_accounting_rows(&rig).await, before);
+
+    let (reservation, command) = reserve_recorded(&rig, &task).await;
+    let dispatch: BeginModelDispatch = command.payload().unwrap();
+    let held = state(&rig, &task).await;
+    assert_eq!(
+        (
+            held.spent.model_attempts,
+            held.spent.input_tokens,
+            held.spent.output_tokens,
+            held.spent.usd_micros
+        ),
+        (1, 100, 100, 0)
+    );
+    let charge: sqlx::types::Json<Value> = sqlx::query_scalar(
+        "SELECT charge FROM model_reservations WHERE reservation_id=$1 AND consumer_id=$2",
+    )
+    .bind(dispatch.reservation_id)
+    .bind(&rig.registration.consumer_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        charge.0,
+        json!({"kind":"model","input_tokens":100,"output_tokens":100,"usd_micros":0})
+    );
+    let reserved_rows = google_accounting_rows(&rig).await;
+    let claims = rig.claims(&reservation, "module-a", Some(&task.root_task_id), None);
+    let (body, headers) = rig.prepare(
+        "/integration/foundation/v1/model-reservations",
+        &reservation,
+        &claims,
+    );
+    let repeated = rig
+        .p
+        .reserve_model_budget(&body, headers.headers())
+        .await
+        .unwrap();
+    assert_eq!(
+        repeated.result["reservation_id"],
+        json!(dispatch.reservation_id)
+    );
+    assert_eq!(google_accounting_rows(&rig).await, reserved_rows);
+
+    let admitted = begin(&rig, &task, &command).await.unwrap();
+    assert_eq!(admitted.result["dispatch_permitted"], true);
+    assert_eq!(admitted.result["dispatch"]["state"], "unknown");
+    let dispatched_rows = google_accounting_rows(&rig).await;
+    let retry = begin(&rig, &task, &command).await.unwrap();
+    assert_eq!(retry.result["dispatch_permitted"], false);
+    assert_eq!(
+        retry.result["dispatch"]["dispatch_deadline"],
+        admitted.result["dispatch"]["dispatch_deadline"]
+    );
+    assert_eq!(google_accounting_rows(&rig).await, dispatched_rows);
+    let stored_pricing: sqlx::types::Json<Pricing> = sqlx::query_scalar(
+        "SELECT pricing FROM model_dispatches WHERE consumer_id=$1 AND reservation_id=$2",
+    )
+    .bind(&rig.registration.consumer_id)
+    .bind(dispatch.reservation_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(stored_pricing.0).unwrap(),
+        serde_json::to_value(pricing).unwrap()
+    );
+    let usage = settlement(&rig, &command, 60);
+    assert_eq!(
+        usage.payload["usage"],
+        json!({"input_tokens":80,"output_tokens":60,"observed_usd_micros":0})
+    );
+    let settled = settle(&rig, &task, &usage).await.unwrap();
+    assert_eq!(settled.result["dispatch"]["state"], "settled");
+    assert_eq!(
+        state(&rig, &task).await.spent,
+        held.spent,
+        "observed usage cannot refund maxima"
+    );
+    let settled_rows = google_accounting_rows(&rig).await;
+    assert_eq!(
+        settle(&rig, &task, &usage).await.unwrap().result,
+        settled.result
+    );
+    assert_eq!(google_accounting_rows(&rig).await, settled_rows);
+
+    // A second real reservation/dispatch remains held while its outcome is
+    // unknown. Cancellation/recovery keeps the SAME root, generation and cap.
+    let unknown = reserve(&rig, &task).await;
+    begin(&rig, &task, &unknown).await.unwrap();
+    let held = state(&rig, &task).await;
+    assert_eq!(
+        (
+            held.spent.model_attempts,
+            held.spent.input_tokens,
+            held.spent.output_tokens,
+            held.spent.usd_micros
+        ),
+        (2, 200, 200, 0)
+    );
+    let unknown_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM model_dispatches WHERE consumer_id=$1 AND root_task_id=$2 AND state='unknown' AND settlement IS NULL"
+    ).bind(&rig.registration.consumer_id).bind(&task.root_task_id)
+        .fetch_one(&rig.pool).await.unwrap();
+    assert_eq!(unknown_count, 1);
+    rig.cancel(&task, None, "module-a", 1).await;
+    let fenced = state(&rig, &task).await;
+    assert_eq!(fenced.phase, Execution::EffectUnknown);
+    assert!(fenced.stop_new_work);
+    assert!(fenced.worker.is_none());
+    assert_eq!(fenced.spent, held.spent);
+    assert_eq!(
+        begin(&rig, &task, &unknown).await.unwrap().result["dispatch_permitted"],
+        false
+    );
+    let late = settlement(&rig, &unknown, 60);
+    assert_eq!(
+        settle(&rig, &task, &late).await.unwrap().result["dispatch"]["state"],
+        "settled"
+    );
+    let known = state(&rig, &task).await;
+    assert_eq!(known.phase, Execution::Pending);
+    assert!(known.stop_new_work);
+    assert!(known.worker.is_none());
+    assert_eq!(known.generation, fenced.generation);
+    assert_eq!(known.spent, held.spent);
+    let before_refusal = google_accounting_rows(&rig).await;
+    // Fresh intent, but no new root/renewed standing: new work stays denied.
+    let mut next = reservation.clone();
+    next.intent_id = Uuid::new_v4().to_string();
+    let claims = rig.claims(&next, "module-a", Some(&task.root_task_id), None);
+    let (body, headers) = rig.prepare(
+        "/integration/foundation/v1/model-reservations",
+        &next,
+        &claims,
+    );
+    assert!(matches!(
+        rig.p.reserve_model_budget(&body, headers.headers()).await,
+        Err(ProviderError::Admission(Fault::Denied))
+    ));
+    assert_eq!(google_accounting_rows(&rig).await, before_refusal);
+    let current_record: sqlx::types::Json<Value> = sqlx::query_scalar(
+        "SELECT record FROM task_roots WHERE consumer_id=$1 AND root_task_id=$2",
+    )
+    .bind(&rig.registration.consumer_id)
+    .bind(&task.root_task_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(current_record.0, original_record.0);
+    let rows = google_accounting_rows(&rig).await;
+    assert_eq!(rows["task_roots"].len(), 1);
+    assert_eq!(rows["task_members"].len(), 1);
+    assert_eq!(rows["model_reservations"].len(), 2);
+    assert_eq!(rows["model_dispatches"].len(), 2);
+    assert!(rows["model_dispatches"]
+        .iter()
+        .all(|row| row["state"] == "settled"));
 }
 
 #[tokio::test]

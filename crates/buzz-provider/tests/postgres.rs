@@ -64,6 +64,9 @@ struct Rig {
 }
 impl Rig {
     async fn new() -> Self {
+        Self::new_with_google_free(false).await
+    }
+    async fn new_with_google_free(google_free: bool) -> Self {
         let dsn = std::env::var("TEST_DATABASE_URL")
             .expect("use scripts/test-postgres.sh with a disposable PostgreSQL 16 database");
         assert_eq!(
@@ -179,11 +182,16 @@ impl Rig {
             },
             pricing: Some(Pricing {
                 revision: "synthetic-not-a-vendor-quote".into(),
-                model_profile: "sonnet-5-adaptive-bounded-v1".into(),
+                model_profile: if google_free {
+                    llull_buzz_wire::GOOGLE_FREE_PROFILE
+                } else {
+                    "sonnet-5-adaptive-bounded-v1"
+                }
+                .into(),
                 checked_at: Utc::now() - CD::seconds(1),
                 valid_until: Utc::now() + CD::hours(1),
-                input_usd_micros_per_million: 2_000_000,
-                output_usd_micros_per_million: 10_000_000,
+                input_usd_micros_per_million: if google_free { 0 } else { 2_000_000 },
+                output_usd_micros_per_million: if google_free { 0 } else { 10_000_000 },
             }),
         };
         let p = Provider::new(pool.clone(), "https://provider.synthetic.invalid", 1).unwrap();
@@ -396,7 +404,13 @@ impl Rig {
             root_task_id: root.clone(),
             task_schema_id: "synthetic-task-v1".into(),
             context_domain: "synthetic-domain".into(),
-            model_profile: "sonnet-5-adaptive-bounded-v1".into(),
+            model_profile: self
+                .registration
+                .pricing
+                .as_ref()
+                .unwrap()
+                .model_profile
+                .clone(),
             expires_at: Utc::now() + CD::seconds(lifetime),
             tools: vec![Tool {
                 schema_id: SetLabel::SCHEMA_ID.into(),
@@ -413,7 +427,13 @@ impl Rig {
                 input_tokens_per_generation: 32_000,
                 input_tokens_total: 128_000,
                 output_tokens_total: 16_000,
-                usd_micros: 1_000_000,
+                usd_micros: if self.registration.pricing.as_ref().unwrap().model_profile
+                    == llull_buzz_wire::GOOGLE_FREE_PROFILE
+                {
+                    0
+                } else {
+                    1_000_000
+                },
                 automatic_restarts: 3,
             },
             verdict_refs: vec![],
