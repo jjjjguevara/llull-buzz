@@ -140,3 +140,40 @@ rejection and all retained budget bounds.
 These are library/schema results. Google model calls, new-profile installed
 PostgreSQL settlement, provider activation and a productive downstream task
 remain unrun here; existing qualification and human acceptance remain separate.
+# Google free-profile database execution — 2026-10-24
+
+At `bcb729f00cda1def108100e7f7f0c72b79f4fa50`, the new
+`model_dispatch::google_free_postgres_dispatch_settlement_and_unknown_recovery_preserve_zero_cost_caps`
+case passed against a new disposable PostgreSQL 16 database (2.36 seconds,
+one selected case, 42 filtered). It uses actual migrations, provider signatures
+and SQL, with explicitly synthetic gateway counts and usage. No Google count
+or generation call was made.
+
+```sh
+# TEST_DATABASE_URL points only to the owned disposable PostgreSQL 16 database.
+CARGO_BUILD_JOBS=2 cargo test --locked -p llull-buzz-provider --test postgres \
+  model_dispatch::google_free_postgres_dispatch_settlement_and_unknown_recovery_preserve_zero_cost_caps \
+  -- --ignored --exact --test-threads=1
+```
+
+The actual case preserves positive finite attempts/token caps with exactly zero
+dollar allocation, refuses paid or mismatched pricing without accounting
+changes, and joins reserve/dispatch/settlement through exact signed retries.
+Unknown dispatch keeps its maxima through cancellation and late settlement;
+neither generation, immutable root record nor stopped authority is reset.
+All 31 public tables remained identical across a physical PostgreSQL restart:
+one root/member, two model reservations/dispatches, nine commands. The final
+181,695-byte dump was retained and its listing checked; restoration is unrun.
+Only the new database container and its own loopback forward were retired. The
+four previous application containers remained stopped.
+
+The first attempt failed compilation because SQLx 0.9 refused dynamic query
+text. The snapshot now uses seven literal SQL statements, without bypassing
+the guard. The second attempt's forward ended with its previous compile-failed
+parent and the pool timed out before migrations; the third verified an actual
+connection and empty database before execution. Both failures remain retained.
+Independent source/result/cleanup review accepted this bounded result. It does
+not qualify provider HTTP, the selected agent, live model usage, native Akita
+composition or broader recovery. Production source remains the existing
+`46beff7f` library tree; these two commits change only the test harness/case.
+
