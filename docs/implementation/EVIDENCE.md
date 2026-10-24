@@ -137,9 +137,11 @@ generic fallback unchanged. Twenty-one actual JSON Schema cases passed,
 including Google zero-cost acceptance, paid-cost rejection, legacy zero-cost
 rejection and all retained budget bounds.
 
-These are library/schema results. Google model calls, new-profile installed
-PostgreSQL settlement, provider activation and a productive downstream task
-remain unrun here; existing qualification and human acceptance remain separate.
+Those were library/schema-only results. At that checkpoint, Google model calls,
+new-profile installed PostgreSQL settlement, provider activation and a productive
+downstream task remained unrun; existing qualification and human acceptance
+remain separate.
+
 # Google free-profile database execution — 2026-10-24
 
 At `bcb729f00cda1def108100e7f7f0c72b79f4fa50`, the new
