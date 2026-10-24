@@ -275,10 +275,8 @@ fn find<'a>(rows: &'a [Row], keys: &[(&str, &str)]) -> Result<Option<&'a Row>> {
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .all(|v| v);
-        if matched {
-            if found.replace(row).is_some() {
-                return Err(deny("inventory_duplicate_binding"));
-            }
+        if matched && found.replace(row).is_some() {
+            return Err(deny("inventory_duplicate_binding"));
         }
     }
     Ok(found)
@@ -684,7 +682,7 @@ pub(crate) fn verify_complete(
                     let record: ObservationMetadata = row.embedded("record_metadata")?;
                     let key = (record.operation, record.operation_id);
                     let candidate = (sequence, row.text("original_record_sha256")?);
-                    if latest.get(&key).map_or(true, |old| old.0 < sequence) {
+                    if latest.get(&key).is_none_or(|old| old.0 < sequence) {
                         latest.insert(key, candidate);
                     }
                 }

@@ -33,6 +33,22 @@ struct Identity {
     modified: (i64, i64),
     changed: (i64, i64),
 }
+// The selected Linux arm64 Stat already has these canonical widths. Other
+// Unix ABIs (including Darwin dev/mode) retain the original conversions below.
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+fn identity(s: &Stat) -> Identity {
+    Identity {
+        dev: s.st_dev,
+        inode: s.st_ino,
+        owner: s.st_uid,
+        mode: s.st_mode,
+        links: s.st_nlink as u64,
+        size: s.st_size,
+        modified: (s.st_mtime, s.st_mtime_nsec as i64),
+        changed: (s.st_ctime, s.st_ctime_nsec as i64),
+    }
+}
+#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 fn identity(s: &Stat) -> Identity {
     Identity {
         dev: s.st_dev as u64,
@@ -450,7 +466,7 @@ impl PrivateDirectory {
                     .0
                     .len()
                     .checked_add(count)
-                    .map_or(true, |len| len > before.size as usize)
+                    .is_none_or(|len| len > before.size as usize)
                 {
                     return Err(deny("private_output_read_bound"));
                 }

@@ -47,7 +47,9 @@ fn key_thumbprint(key: &DecodingKey) -> Result<String> {
     let hex = llull_buzz_wire::sha256(jwk.as_bytes());
     let bytes = hex
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             std::str::from_utf8(pair)
                 .ok()

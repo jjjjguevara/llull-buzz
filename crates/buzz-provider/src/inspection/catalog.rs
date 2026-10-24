@@ -352,14 +352,12 @@ fn verify_enforcement(
                 .iter()
                 .any(|r| r.name == string(row, "name").unwrap_or(""))
                 || INTERVENING_TABLES.contains(&string(row, "name").unwrap_or("")))
-        {
-            if string(row, "kind")? != "r"
+            && (string(row, "kind")? != "r"
                 || tables
                     .insert(string(row, "name")?, oid(row, "oid")?)
-                    .is_some()
-            {
-                return Err(deny("inspection_original_relation"));
-            }
+                    .is_some())
+        {
+            return Err(deny("inspection_original_relation"));
         }
     }
     if tables.len() != super::relations::RELATIONS.len() + INTERVENING_TABLES.len() {
@@ -558,8 +556,8 @@ fn verify_enforcement(
             return Err(deny("inspection_original_trigger_disabled"));
         }
         if !row.get("qualification").is_some_and(|v| v.is_null())
-            || string(row, "arguments")? != ""
-            || string(row, "columns")? != ""
+            || !string(row, "arguments")?.is_empty()
+            || !string(row, "columns")?.is_empty()
             || boolean(row, "deferrable")?
             || boolean(row, "initially_deferred")?
             || !row.get("old_transition").is_some_and(|v| v.is_null())
@@ -615,7 +613,7 @@ fn verify_enforcement(
         if functions.len() != 1
             || string(functions[0], "schema")? != "public"
             || string(functions[0], "name")? != spec.function
-            || string(functions[0], "arguments")? != ""
+            || !string(functions[0], "arguments")?.is_empty()
             || boolean(functions[0], "security_definer")?
             || ORIGINAL_FUNCTION_BODIES
                 .iter()
