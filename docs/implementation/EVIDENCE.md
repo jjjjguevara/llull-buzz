@@ -176,4 +176,3 @@ Independent source/result/cleanup review accepted this bounded result. It does
 not qualify provider HTTP, the selected agent, live model usage, native Akita
 composition or broader recovery. Production source remains the existing
 `46beff7f` library tree; these two commits change only the test harness/case.
-
