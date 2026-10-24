@@ -41,6 +41,19 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-24 — Bounded private-metadata source leaf execution at
+`518f880e3b1f3cfdc6fa703ad49b16d20e5f7d34`: locked all-target build, strict
+Clippy, all 61 runnable library methods, ten focused source/history methods,
+the selected upstream build and original containment script passed on the local
+Linux arm64 profile. Actual ACP2/MCP negotiation and kernel negative probes used
+zero model calls. Minimal observed compiler/lint/legacy-test repairs preserve
+pins, complete assertions and authority boundaries. Seven native PostgreSQL
+methods remain authored/UNRUN; no inspection installation or complete provider
+standing is claimed. Owned compiler scratch was hashed and retired; product
+executables and old provider data remain retained. See the
+[exact commands, source and limits](../../../docs/implementation/PRIVATE-METADATA-INSPECTION.md#linux-source-execution-2026-10-24).
+This source-leaf result does not close task 04 or change reviewer-owned task 03.
+
 2026-10-12 — Item 04.4 lost publication admission ACK lookup source addition.
 Refreshed local/live draft PR #2 at `b51f4d8e2f6fb3e4f0b92864bcedd2bc0c698f84`.
 The optional original-intent read binds exact retained intent/release/full-command
