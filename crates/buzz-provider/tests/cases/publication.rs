@@ -2,6 +2,7 @@
 //! separate from the pinned relay/client integration scenario.
 use super::*;
 use llull_buzz_provider::{Audience, NativeEventSource, PublicationPort, Publisher};
+use sqlx::types::Json;
 use std::sync::{atomic::AtomicBool, Arc};
 
 struct Sink {
@@ -1190,7 +1191,10 @@ async fn completed_root_independent_reply(lost_ack: bool) {
             .fetch_one(&rig.pool)
             .await
             .unwrap();
-    assert_eq!(state_after.0, state_before.0);
+    assert_eq!(
+        serde_json::to_value(&state_after.0).unwrap(),
+        serde_json::to_value(&state_before.0).unwrap()
+    );
     assert_eq!(state_after.0.phase, Execution::Completed);
     assert_eq!(business.calls.load(Ordering::SeqCst), 1);
 }
@@ -1653,7 +1657,9 @@ async fn publication_evidence_delayed_commit_cannot_emit_after_original_invocati
     // This real deferred trigger waits only at COMMIT, after proof validation
     // and the final fractional database-clock sample. It is fixture-owned.
     let marker = ((identity.as_u128() & 0x7fff_ffff) as i64) + 1001;
-    sqlx::query(&format!("CREATE FUNCTION evidence_slow_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.consumer_id='{}' THEN PERFORM pg_advisory_xact_lock({marker}); PERFORM pg_sleep(4); END IF; RETURN NEW; END $$",command.consumer_id))
+    // Rig supplies a synthetic UUID consumer; marker is an integer derived
+    // above from the fixture publication UUID. No request SQL enters this DDL.
+    sqlx::query(sqlx::AssertSqlSafe(format!("CREATE FUNCTION evidence_slow_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.consumer_id='{}' THEN PERFORM pg_advisory_xact_lock({marker}); PERFORM pg_sleep(4); END IF; RETURN NEW; END $$",command.consumer_id)))
         .execute(&rig.pool).await.unwrap();
     sqlx::query("CREATE CONSTRAINT TRIGGER evidence_slow_commit AFTER INSERT ON assertion_replays DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION evidence_slow_commit()")
         .execute(&rig.pool).await.unwrap();
