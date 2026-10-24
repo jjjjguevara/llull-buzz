@@ -2820,7 +2820,11 @@ mod tests {
                 .sample(super::super::clock::now())
                 .map_err(|_| sqlx::Error::Protocol("catalog clock refused".into()))?;
             let preflight=format!("SELECT count(*)::bigint AS rows,coalesce(sum(octet_length(raw)),0)::bigint AS bytes FROM ({}) c",query.sql);
-            let count = sqlx::query(&preflight).fetch_one(&mut *sql).await?;
+            // query.sql is a literal from the closed QUERIES registry; no
+            // native fixture data is interpolated into these catalog statements.
+            let count = sqlx::query(sqlx::AssertSqlSafe(preflight))
+                .fetch_one(&mut *sql)
+                .await?;
             let rows = count.get::<i64, _>("rows");
             let bytes = count.get::<i64, _>("bytes");
             if rows < 0 || bytes < 0 {
@@ -2837,7 +2841,9 @@ mod tests {
                 "SELECT raw FROM ({}) c ORDER BY raw COLLATE \"C\"",
                 query.sql
             );
-            let values = sqlx::query(&statement).fetch_all(&mut *sql).await?;
+            let values = sqlx::query(sqlx::AssertSqlSafe(statement))
+                .fetch_all(&mut *sql)
+                .await?;
             let values: Vec<Vec<u8>> = values
                 .into_iter()
                 .map(|v| v.get::<String, _>("raw").into_bytes())
@@ -2947,7 +2953,11 @@ mod tests {
                 sqlx::raw_sql("SET LOCAL statement_timeout='20000'; SET LOCAL lock_timeout='1000'")
                     .execute(&mut sql)
                     .await?;
-                sqlx::raw_sql(&statement).execute(&mut sql).await?;
+                // The cases are fixed DDL plus current_database() quoted as an
+                // SQL identifier above, never an unescaped fixture/request value.
+                sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
+                    .execute(&mut sql)
+                    .await?;
                 sql.execute("SET LOCAL ROLE buzz_recovery_inspector")
                     .await?;
                 let raw = native_catalog(&mut sql).await?;

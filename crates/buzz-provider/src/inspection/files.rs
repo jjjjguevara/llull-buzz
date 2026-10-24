@@ -141,7 +141,7 @@ impl PrivateDirectory {
                 tick()?;
                 let fd = openat(
                     result.leaf()?,
-                    name,
+                    *name,
                     OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
                     Mode::empty(),
                 )

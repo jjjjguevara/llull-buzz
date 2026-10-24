@@ -200,11 +200,7 @@ impl NativeSession {
             .as_mut()
             .ok_or_else(|| deny("inspection_connection_closed"))
     }
-    pub(crate) async fn execute(
-        &mut self,
-        sql: &str,
-        budget: &mut super::clock::Budget,
-    ) -> Result<()> {
+    async fn execute(&mut self, sql: &str, budget: &mut super::clock::Budget) -> Result<()> {
         budget.sample(super::clock::now())?;
         let remaining = budget.remaining()?;
         if sql.starts_with("BEGIN ") {
@@ -222,10 +218,14 @@ impl NativeSession {
             }
             return Ok(());
         }
+        // All callers are inside this module: literals, fixed-registry relation
+        // names, or declare_sql/catalog_declare_sql with checked integer bounds.
+        // No request value, predicate or caller-supplied SQL enters this boundary.
+        let statement = sqlx::AssertSqlSafe(sql);
         tokio::select! {
             biased;
             _ = budget.cancellation() => return Err(unknown("inspection_cancelled")),
-            result = tokio::time::timeout(remaining, sqlx::query(sql).execute(self.connection()?)) => {
+            result = tokio::time::timeout(remaining, sqlx::query(statement).execute(self.connection()?)) => {
                 result.map_err(|_| unknown("inspection_sql_timeout"))?.map_err(|_| unknown("inspection_sql"))?;
             }
         }
@@ -235,11 +235,13 @@ impl NativeSession {
         }
         Ok(())
     }
-    pub(crate) async fn scalar(
+    pub(crate) async fn session_metadata(
         &mut self,
-        sql: &str,
         budget: &mut super::clock::Budget,
     ) -> Result<String> {
+        self.scalar(super::catalog::SESSION_SQL, budget).await
+    }
+    async fn scalar(&mut self, sql: &str, budget: &mut super::clock::Budget) -> Result<String> {
         budget.sample(super::clock::now())?;
         let remaining = budget.remaining()?;
         #[cfg(test)]
@@ -251,10 +253,13 @@ impl NativeSession {
             budget.sample(super::clock::now())?;
             return Ok(value);
         }
+        // Only fixed session/snapshot text or preflight_sql/catalog_preflight_sql
+        // from the closed source registries reach this private method.
+        let statement = sqlx::AssertSqlSafe(sql);
         let value: String = tokio::select! {
             biased;
             _ = budget.cancellation() => return Err(unknown("inspection_cancelled")),
-            result = tokio::time::timeout(remaining, sqlx::query_scalar(sql).fetch_one(self.connection()?)) =>
+            result = tokio::time::timeout(remaining, sqlx::query_scalar(statement).fetch_one(self.connection()?)) =>
                 result.map_err(|_| unknown("inspection_sql_timeout"))?.map_err(|_| unknown("inspection_scalar"))?,
         };
         // Scalar queries themselves are fixed projections; no inventory body is
@@ -265,7 +270,7 @@ impl NativeSession {
         budget.sample(super::clock::now())?;
         Ok(value)
     }
-    async fn cleanup_command(&mut self, sql: &str) -> bool {
+    async fn cleanup_command(&mut self, sql: &'static str) -> bool {
         #[cfg(test)]
         if let Some(inert) = &mut self.inert {
             return inert.execute(sql).is_ok();
@@ -552,7 +557,8 @@ impl NativeSession {
         &mut self,
         budget: &mut super::clock::Budget,
     ) -> Result<std::collections::BTreeMap<String, Preflight>> {
-        let mut facts = std::collections::BTreeMap::new();
+        let mut facts: std::collections::BTreeMap<String, Preflight> =
+            std::collections::BTreeMap::new();
         for relation in relations::RELATIONS {
             let raw = self.scalar(&preflight_sql(relation.name)?, budget).await?;
             let fact: Preflight = super::json::decode(raw.as_bytes())?;

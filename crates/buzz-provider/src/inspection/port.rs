@@ -302,8 +302,7 @@ async fn observe(
     String,
     Vec<String>,
 )> {
-    let session: catalog::Session =
-        json::decode(sql.scalar(catalog::SESSION_SQL, budget).await?.as_bytes())?;
+    let session: catalog::Session = json::decode(sql.session_metadata(budget).await?.as_bytes())?;
     session.verify(&auth.profile().database)?;
     // Every fixed metadata relation and every privilege catalog gets a genuine
     // scalar preflight before any payload/catalog body is transferred.

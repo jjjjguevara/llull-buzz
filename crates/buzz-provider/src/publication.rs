@@ -1069,8 +1069,8 @@ mod reply_tests {
         .unwrap();
         let identity = Uuid::new_v4();
         let thread = buzz_sdk::ThreadRef {
-            root_event_id: nostr::EventId::from_hex("a".repeat(64)).unwrap(),
-            parent_event_id: nostr::EventId::from_hex("b".repeat(64)).unwrap(),
+            root_event_id: nostr::EventId::from_hex(&"a".repeat(64)).unwrap(),
+            parent_event_id: nostr::EventId::from_hex(&"b".repeat(64)).unwrap(),
         };
         let mut publication = Publication {
             community_id: "community-one".into(),
