@@ -109,3 +109,34 @@ BZ-UAT01/02/04/05 identify obligations, not completed whole profiles or human ca
 Do not approve, merge, mark the restricted profile active, or resolve reviewer findings
 in the implementation session. Return corrections through this same draft PR with
 revision-bound regression evidence.
+
+## Explicit Google free accounting profile — 2026-10-24
+
+Source `46beff7f5b9b79ef83165b3dce4bdb1f3bb7dc69` adds
+`google-gemini-3.5-flash-lite-free/v1` for `gemini-3.5-flash-lite`.
+This profile requires a zero USD manifest cap and both registered token rates
+exactly zero. Real attempts and input/output tokens still consume their finite
+budgets. Positive-cost profiles retain their original validation; a zero-cost
+charge cannot enter their positive-cost manifests. The provider does not decide
+whether a caller currently qualifies for Google's free tier.
+
+The published JSON schema now describes the same separate profile/budget
+branches. Its actual SHA256 is
+`e1703a76bd086c45d010b0eccfab1a72f41620592822e6c5c78ea4ff3e154e9b`;
+rebuilt discovery advertises those bytes. Retained discovery observations keep
+their original hashes. No installed provider image is relabeled by this change.
+
+Actual local Rust 1.98.1 checks used `CARGO_BUILD_JOBS=2` and the unchanged lock:
+`cargo test --locked --workspace --lib` passed 68 tests, with the existing
+native catalog test explicitly ignored because it requires its separate isolated
+PostgreSQL roles/migrations. `cargo clippy --locked --workspace --all-targets
+-- -D warnings` and formatting passed. Initial Darwin Clippy found six redundant
+casts in the retained file-identity implementation; the narrow Darwin branch
+preserves all identity fields and meaningful conversions, leaving Linux and the
+generic fallback unchanged. Twenty-one actual JSON Schema cases passed,
+including Google zero-cost acceptance, paid-cost rejection, legacy zero-cost
+rejection and all retained budget bounds.
+
+These are library/schema results. Google model calls, new-profile installed
+PostgreSQL settlement, provider activation and a productive downstream task
+remain unrun here; existing qualification and human acceptance remain separate.
