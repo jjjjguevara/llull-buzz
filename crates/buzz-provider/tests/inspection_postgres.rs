@@ -73,7 +73,11 @@ async fn installed_inspector_cannot_read_secrets_mutate_create_or_set_owner_role
             "SELECT row_sha256,row_key,metadata FROM buzz_inspection.v_{} LIMIT 0",
             relation.name
         );
-        sql.execute(statement.as_str()).await.unwrap();
+        // Identifiers come only from the fixed relation registry above.
+        sqlx::query(sqlx::AssertSqlSafe(statement))
+            .execute(&mut sql)
+            .await
+            .unwrap();
     }
     sql.close().await.unwrap();
 }
