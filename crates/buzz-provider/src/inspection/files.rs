@@ -106,9 +106,21 @@ fn with_cleanup<T>(first: Result<T>, faults: Vec<&'static str>) -> Result<T> {
         })
     }
 }
+pub(crate) fn native_cleanup<T>(first: Result<T>, faults: Vec<&'static str>) -> Result<T> {
+    with_cleanup(first, faults)
+}
 impl PrivateDirectory {
     pub(crate) fn open(budget: &mut Budget) -> Result<Self> {
         Self::open_path(Path::new(ROOT), budget)
+    }
+    // Native custody uses the same held-parent/no-follow checks. This is crate
+    // private and cannot alter the fixed public inspection command's root.
+    pub(crate) fn open_native_custody(path: &Path) -> Result<Self> {
+        Self::open_checked(path, || Ok(()))
+    }
+    pub(crate) fn native_descriptor(&self) -> Result<&OwnedFd> {
+        self.check_chain()?;
+        self.leaf()
     }
     #[cfg(test)]
     pub(super) fn open_synthetic_fixture(path: &Path, budget: &mut Budget) -> Result<Self> {
@@ -584,7 +596,16 @@ impl PrivateDirectory {
         faults
     }
     pub(crate) fn close(mut self) -> Vec<&'static str> {
-        self.close_faults()
+        let faults = self.close_faults();
+        #[cfg(test)]
+        let faults = {
+            let mut faults = faults;
+            if test_fault("native-close") {
+                faults.push("inert_native_close");
+            }
+            faults
+        };
+        faults
     }
 }
 impl Drop for PrivateDirectory {

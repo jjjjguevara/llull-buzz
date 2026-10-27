@@ -43,13 +43,22 @@ pub trait PublicationPort: NativeEventSource {
 }
 pub struct Publisher<P: PublicationPort> {
     port: Arc<P>,
-    key: nostr::Keys,
+    key: crate::native_custody::NativeSigner,
     media_origin: url::Url,
 }
 impl<P: PublicationPort> Publisher<P> {
     pub fn new(port: Arc<P>, key: nostr::Keys, media_origin: &str) -> Result<Self> {
+        Self::with_signer(port, key.into(), media_origin)
+    }
+    pub fn with_signer(
+        port: Arc<P>,
+        key: crate::native_custody::NativeSigner,
+        media_origin: &str,
+    ) -> Result<Self> {
         id(port.owner())?;
         auth::https_origin(media_origin)?;
+        key.bind_public_origin(media_origin)
+            .map_err(|_| Fault::Denied)?;
         if port.public_key() != key.public_key() {
             return Err(Fault::Denied.into());
         }
@@ -161,13 +170,16 @@ impl<P: PublicationPort> Publisher<P> {
         if p.reply_to_event.as_deref() != thread.map(|t| t.parent_event_id.to_hex()).as_deref() {
             return Err(Fault::Denied.into());
         }
-        let event = buzz_sdk::build_message(channel, &p.text, thread, &[], false, &media, &[])
-            .map_err(|_| Fault::Invalid)?
-            .tag(
-                nostr::Tag::parse(["llull-publication", id.to_string().as_str()])
-                    .map_err(|_| Fault::Invalid)?,
+        let event = self
+            .key
+            .sign(
+                buzz_sdk::build_message(channel, &p.text, thread, &[], false, &media, &[])
+                    .map_err(|_| Fault::Invalid)?
+                    .tag(
+                        nostr::Tag::parse(["llull-publication", id.to_string().as_str()])
+                            .map_err(|_| Fault::Invalid)?,
+                    ),
             )
-            .sign_with_keys(&self.key)
             .map_err(|_| Fault::Denied)?;
         serde_json::to_vec(&event).map_err(|_| Fault::Invalid.into())
     }

@@ -67,7 +67,7 @@ pub struct HttpConsumer<C: ConsumerCommand> {
     owner: String,
     command_url: url::Url,
     lookup_url: url::Url,
-    key: nostr::Keys,
+    key: crate::native_custody::NativeSigner,
     client: reqwest::Client,
     marker: PhantomData<C>,
 }
@@ -89,9 +89,20 @@ impl<C: ConsumerCommand> HttpConsumer<C> {
         key: nostr::Keys,
         roots: Vec<reqwest::Certificate>,
     ) -> std::result::Result<Self, PortError> {
+        Self::with_signer_and_roots(owner, command_url, lookup_url, key.into(), roots)
+    }
+    pub fn with_signer_and_roots(
+        owner: String,
+        command_url: &str,
+        lookup_url: &str,
+        key: crate::native_custody::NativeSigner,
+        roots: Vec<reqwest::Certificate>,
+    ) -> std::result::Result<Self, PortError> {
         llull_buzz_wire::id(&owner).map_err(|_| PortError)?;
         let command_url = endpoint(command_url)?;
         let lookup_url = endpoint(lookup_url)?;
+        key.bind_public_origin(command_url.as_str())?;
+        key.bind_public_origin(lookup_url.as_str())?;
         if command_url.origin() != lookup_url.origin() || command_url == lookup_url {
             return Err(PortError);
         }
@@ -128,10 +139,9 @@ impl<C: ConsumerCommand> HttpConsumer<C> {
             nostr::Tag::parse(["nonce", uuid::Uuid::new_v4().to_string().as_str()])
                 .map_err(|_| PortError)?,
         ];
-        let event = nostr::EventBuilder::new(nostr::Kind::HttpAuth, "")
-            .tags(tags)
-            .sign_with_keys(&self.key)
-            .map_err(|_| PortError)?;
+        let event = self
+            .key
+            .sign(nostr::EventBuilder::new(nostr::Kind::HttpAuth, "").tags(tags))?;
         let authorization = format!(
             "Nostr {}",
             STANDARD.encode(serde_json::to_vec(&event).map_err(|_| PortError)?)

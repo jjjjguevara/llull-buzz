@@ -67,6 +67,8 @@ struct Receipt {
     snapshot: String,
     relations: Vec<RelationReceipt>,
     unresolved: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    native_standing: Option<super::standing::StandingObservation>,
 }
 /// Only the filename is returned. Original metadata and credentials are never
 /// printed to stdout; an authorized operator reads the held-mode private files.
@@ -220,6 +222,7 @@ fn receipt_body(
         snapshot: session.snapshot.clone(),
         relations: relation_receipts,
         unresolved,
+        native_standing: None,
     }
 }
 async fn retain(
@@ -388,7 +391,14 @@ async fn run_owned(
             &mut budget,
         )
         .await?;
-        let body = receipt_body(&auth, &session, catalog_digest, receipts, gaps);
+        let mut body = receipt_body(&auth, &session, catalog_digest, receipts, gaps);
+        if let Some(profile) = &auth.profile().native_standing {
+            let standing = super::standing::collect(profile, &auth, &mut budget)?;
+            body.kind = "llull-buzz-private-metadata-receipt/v2".into();
+            // Local facts are supplied alongside their exact original scope;
+            // unresolved remote authority remains explicit and cannot be erased.
+            body.native_standing = Some(standing);
+        }
         let filename =
             signed_file(body, &auth, &inputs, &directory, &mut outputs, &mut budget).await?;
         inputs.current(&directory, &mut budget)?;

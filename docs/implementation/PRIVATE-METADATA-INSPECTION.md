@@ -308,3 +308,79 @@ publication carries the tested code bytes forward; it is not a second execution.
 No migration,
 inspection role/profile installation, live provider/model effect, full restricted
 profile activation or named human acceptance is established by this record.
+
+## Instrumented native credential custody (source extension)
+
+The optional, private `Profile.native_standing` extension is
+`llull-buzz-native-standing-profile/v1`. A profile without that field retains the
+v1 receipt and its four unresolved standing scopes. The new inspector emits
+`llull-buzz-private-metadata-receipt/v2` only when the separately root-signed
+profile selects the extension. Existing public routes, request authentication,
+SQL relations, membership and metadata contracts do not change.
+
+This extension observes the provider's instrumented native service credential.
+It is not a complete inventory of consumer credentials, model gateways or remote
+provider authority. Neither a local `RETIRED` observation nor a successful native
+read proves that a relay has revoked a key, discarded a token or erased copies.
+The response remains `PARTIAL`, with `external-authority-unverified` retained.
+The outer receipt also retains the original unresolved-scope list, so an older
+consumer cannot mistake an additive local observation for complete standing.
+
+Before the original native key load, an operator supplies `NATIVE_ORIGIN_CONFIG`
+with its existing fields plus `custody: NativeCustodyScope`. The scope binds the
+installation, exact source/implementation and static membership commitments,
+original operation/configuration/generation/source and target copies, native
+community/origins/relay key, original credential public key and protected key
+pathname. `custody_id` is a fresh lowercase 32-hex identity. The operator provisions
+`/var/lib/llull-buzz/native-custody` and the key parent as owner-only directories;
+this source does not install profiles, grant privileges or create credentials.
+The configured community/origins/relay must equal the existing native configuration.
+
+The actual acquisition uses a no-follow, owner-only regular key file. Before any
+signing capability is returned, the daemon creates a new, exclusive
+`<custody_id>.jsonl` and durably appends the original acquisition. It never resumes,
+truncates or reconstructs an earlier log. One in-memory native key allocation
+supplies named `native-http`, `native-publication` and optional `consumer-http`
+aliases. The typed HTTP consumer adapter has an additive tracked constructor;
+its original command/lookup origin must match the tracked scope. Legacy supplied-key
+constructors cannot claim prior acquisition history. Real NIP98,
+artifact-scoped attachment authorization and publication signatures enter the log
+before their bytes are returned to the existing transport. Aliases close before
+the final key release is logged. Failure to append refuses the signing operation;
+a failed/drop-time release is not converted into a successful cleanup assertion.
+The legacy constructors remain available and do not acquire standing by inference.
+
+The authenticated profile lists every original scope and a `retained_anchors` map
+keyed by `custody_id`. Each anchor contains the independently retained original
+`acquisition_sha256`, positive `prefix_records`, and `prefix_head_sha256`. A new
+request/challenge cannot supply a replacement beginning or erase an exposed
+prefix. Records use RFC 8785 canonical JSON without Unicode normalization, one
+record per newline. Each record hashes the prior canonical record without its
+newline; the complete-history hash includes all original newline bytes.
+
+The inspector reads the complete physical directory and requires its filenames
+to equal the signed scope inventory. Missing, extra, truncated, replaced, linked,
+mis-moded or oversized history refuses the observation. It retains all records
+within the bounded selected path; no “latest N” history or metadata membership
+inference is substituted. Each file is limited to 4 MiB; over-limit histories are
+unqualified, not truncated. The existing overall response-size and invocation
+budget can impose a smaller compositional bound, which also refuses rather than
+silently omitting records.
+
+Current owner facts come from Linux machine/boot identity, PID birth ticks,
+UID and the exact PID/mount/user/network namespaces. Current socket inode owners
+are read from that same stable process incarnation. A PID in another machine,
+boot or PID namespace, an inaccessible kernel observation, or an ownership race
+stays unknown. An original protected key pathname still present is a live local
+exposure even after the signing aliases closed. Local `RETIRED` requires the
+original process absent or replaced, the original key pathname absent, no open
+tracked capabilities and a genuine final release record. The inspector only
+reads: it never stops an owner, deletes a key, closes another process's channel,
+validates credentials at a remote provider, revokes a token or sends a native event.
+
+Source controls use genuine synthetic keys, signed separate-root profiles and
+requests, the real acquisition/signing/release code, real protected files and the
+same inspection fold. On the local non-Linux test host, only the final Linux
+process/socket lookup is an explicit inert seam. This does not qualify Linux
+installation, a remote relay, current live standing, provider IAM or human acceptance.
+Installed kernel controls and independent result review remain separate.

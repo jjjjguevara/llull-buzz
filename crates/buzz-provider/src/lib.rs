@@ -14,6 +14,7 @@ pub mod inspection;
 mod intake;
 mod model_dispatch;
 pub mod native;
+pub mod native_custody;
 mod native_media;
 mod native_origin;
 mod observations;

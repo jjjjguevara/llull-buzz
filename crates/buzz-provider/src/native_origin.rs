@@ -18,7 +18,7 @@ pub struct HttpNativeOrigin {
     community: String,
     private_origin: Url,
     public_origin: Url,
-    key: nostr::Keys,
+    key: crate::native_custody::NativeSigner,
     relay_key: nostr::PublicKey,
     owner: String,
     client: reqwest::Client,
@@ -31,7 +31,28 @@ impl HttpNativeOrigin {
         key: nostr::Keys,
         relay_key: nostr::PublicKey,
     ) -> std::result::Result<Self, PortError> {
+        Self::with_signer(
+            community,
+            private_origin,
+            public_origin,
+            key.into(),
+            relay_key,
+        )
+    }
+    pub fn with_signer(
+        community: String,
+        private_origin: &str,
+        public_origin: &str,
+        key: crate::native_custody::NativeSigner,
+        relay_key: nostr::PublicKey,
+    ) -> std::result::Result<Self, PortError> {
         id(&community).map_err(|_| PortError)?;
+        key.bind_native(
+            &community,
+            private_origin,
+            public_origin,
+            &relay_key.to_hex(),
+        )?;
         let private_origin = origin(private_origin, false)?;
         let public_origin = origin(public_origin, true)?;
         let owner=format!("native:{}",llull_buzz_wire::digest(&json!({"community":community,"origin":public_origin.as_str(),"sender":key.public_key().to_hex(),"relay":relay_key.to_hex()})).map_err(|_|PortError)?);
@@ -59,16 +80,15 @@ impl HttpNativeOrigin {
         let public_url = self.public_origin.join(path).map_err(|_| PortError)?;
         let private_url = self.private_origin.join(path).map_err(|_| PortError)?;
         let digest = sha256(body);
-        let event = nostr::EventBuilder::new(nostr::Kind::HttpAuth, "")
-            .tags([
+        let event = self.key.sign(
+            nostr::EventBuilder::new(nostr::Kind::HttpAuth, "").tags([
                 nostr::Tag::parse(["u", public_url.as_str()]).map_err(|_| PortError)?,
                 nostr::Tag::parse(["method", "POST"]).map_err(|_| PortError)?,
                 nostr::Tag::parse(["payload", digest.as_str()]).map_err(|_| PortError)?,
                 nostr::Tag::parse(["nonce", uuid::Uuid::new_v4().to_string().as_str()])
                     .map_err(|_| PortError)?,
-            ])
-            .sign_with_keys(&self.key)
-            .map_err(|_| PortError)?;
+            ]),
+        )?;
         let authorization = format!(
             "Nostr {}",
             STANDARD.encode(serde_json::to_vec(&event).map_err(|_| PortError)?)
@@ -132,7 +152,7 @@ impl HttpNativeOrigin {
 }
 /// BUD-11 read authorization is exact-hash scoped; no host-wide `server` tag.
 fn attachment_auth(
-    key: &nostr::Keys,
+    key: &crate::native_custody::NativeSigner,
     evidence: &Evidence,
 ) -> std::result::Result<String, PortError> {
     llull_buzz_wire::hash(&evidence.sha256).map_err(|_| PortError)?;
@@ -141,14 +161,13 @@ fn attachment_auth(
         return Err(PortError);
     }
     let expiration = (nostr::Timestamp::now().as_secs() + 30).to_string();
-    let event = nostr::EventBuilder::new(nostr::Kind::Custom(24242), "Read original attachment")
-        .tags([
+    let event = key.sign(
+        nostr::EventBuilder::new(nostr::Kind::Custom(24242), "Read original attachment").tags([
             nostr::Tag::parse(["t", "get"]).map_err(|_| PortError)?,
             nostr::Tag::parse(["x", &evidence.sha256]).map_err(|_| PortError)?,
             nostr::Tag::parse(["expiration", &expiration]).map_err(|_| PortError)?,
-        ])
-        .sign_with_keys(key)
-        .map_err(|_| PortError)?;
+        ]),
+    )?;
     Ok(format!(
         "Nostr {}",
         URL_SAFE_NO_PAD.encode(serde_json::to_vec(&event).map_err(|_| PortError)?)
@@ -363,7 +382,7 @@ mod tests {
             size_bytes: 8,
             release_ref: "release".into(),
         };
-        let header = attachment_auth(&key, &evidence).unwrap();
+        let header = attachment_auth(&key.clone().into(), &evidence).unwrap();
         let bytes = URL_SAFE_NO_PAD
             .decode(header.strip_prefix("Nostr ").unwrap())
             .unwrap();
@@ -383,10 +402,10 @@ mod tests {
             .iter()
             .any(|t| t.as_slice().first().is_some_and(|s| s == "server")));
         evidence.sha256 = "../foreign".into();
-        assert!(attachment_auth(&key, &evidence).is_err());
+        assert!(attachment_auth(&key.clone().into(), &evidence).is_err());
         evidence.sha256 = sha256(b"original");
         evidence.size_bytes = MAX_ATTACHMENT_BYTES as u64 + 1;
-        assert!(attachment_auth(&key, &evidence).is_err());
+        assert!(attachment_auth(&key.clone().into(), &evidence).is_err());
     }
     #[tokio::test]
     async fn attachment_fixed_origin_rejects_redirect_mime_length_and_digest_substitution() {

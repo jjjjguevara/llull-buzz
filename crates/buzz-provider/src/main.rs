@@ -12,8 +12,17 @@ struct NativeConfiguration {
     public_origin: String,
     service_key_file: std::path::PathBuf,
     relay_public_key: String,
+    #[serde(default)]
+    custody: Option<llull_buzz_provider::native_custody::NativeCustodyScope>,
 }
-async fn native_origin() -> Result<(String, HttpNativeOrigin, nostr::Keys), Box<dyn Error>> {
+async fn native_origin() -> Result<
+    (
+        String,
+        HttpNativeOrigin,
+        llull_buzz_provider::native_custody::NativeSigner,
+    ),
+    Box<dyn Error>,
+> {
     let config: NativeConfiguration =
         llull_buzz_wire::parse(&tokio::fs::read(env::var("NATIVE_ORIGIN_CONFIG")?).await?)?;
     use std::os::unix::fs::PermissionsExt;
@@ -21,17 +30,36 @@ async fn native_origin() -> Result<(String, HttpNativeOrigin, nostr::Keys), Box<
     if !metadata.is_file() || metadata.len() > 1024 || metadata.permissions().mode() & 0o077 != 0 {
         return Err("native service key must be an owner-only regular file".into());
     }
-    let secret = tokio::fs::read_to_string(config.service_key_file).await?;
-    let key = nostr::Keys::parse(secret.trim()).map_err(|_| "invalid native service key")?;
-    let source = HttpNativeOrigin::new(
+    let (http_key, publisher_key) = if let Some(scope) = config.custody {
+        if scope.community_id != config.community_id
+            || scope.private_origin != config.private_origin
+            || scope.public_origin != config.public_origin
+            || scope.relay_public_key != config.relay_public_key
+        {
+            return Err("native custody configuration mismatch".into());
+        }
+        let credential = llull_buzz_provider::native_custody::NativeCredential::acquire(
+            scope,
+            &config.service_key_file,
+        )?;
+        (
+            credential.signer("native-http")?,
+            credential.signer("native-publication")?,
+        )
+    } else {
+        let secret = tokio::fs::read_to_string(config.service_key_file).await?;
+        let key = nostr::Keys::parse(secret.trim()).map_err(|_| "invalid native service key")?;
+        (key.clone().into(), key.into())
+    };
+    let source = HttpNativeOrigin::with_signer(
         config.community_id.clone(),
         &config.private_origin,
         &config.public_origin,
-        key.clone(),
+        http_key,
         nostr::PublicKey::from_hex(&config.relay_public_key)
             .map_err(|_| "invalid native relay public key")?,
     )?;
-    Ok((config.community_id, source, key))
+    Ok((config.community_id, source, publisher_key))
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -98,7 +126,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     source.clone(),
                     source.public_origin().as_str(),
                 )?);
-                let publisher = std::sync::Arc::new(Publisher::new(
+                let publisher = std::sync::Arc::new(Publisher::with_signer(
                     source.clone(),
                     key,
                     source.public_origin().as_str(),

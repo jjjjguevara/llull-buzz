@@ -120,6 +120,8 @@ pub(crate) struct Profile {
     pub implementation_sha256: String,
     pub members: Vec<Member>,
     pub membership_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_standing: Option<super::standing::StandingProfile>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -348,6 +350,9 @@ impl Authenticated {
         // Final scalar freshness follows genuine hashing, key import, signatures
         // and descriptor construction; none of that work follows this sample.
         auth.current(budget.sample(super::clock::now())?)?;
+        if let Some(standing) = &auth.profile.body.native_standing {
+            standing.authenticate(&auth)?;
+        }
         Ok(auth)
     }
     pub(crate) fn current(&self, now: i64) -> Result<()> {
@@ -454,6 +459,12 @@ pub(super) fn synthetic_port_inputs() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i6
     tests::port_inputs()
 }
 
+#[cfg(test)]
+pub(super) fn synthetic_native_standing_inputs(
+    native: super::standing::StandingProfile,
+) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64) {
+    tests::native_standing_inputs(native)
+}
 #[cfg(test)]
 pub(super) fn synthetic_database() -> Database {
     tests::complete_database()
@@ -571,6 +582,7 @@ mod tests {
             implementation_sha256: super::super::relations::implementation_sha256(),
             members,
             membership_sha256: membership_sha256.clone(),
+            native_standing: None,
         };
         let profile = token(profile, &root_key, "root", PROFILE_PURPOSE, now);
         let trust = serde_json::to_vec(&Trust {
@@ -620,6 +632,26 @@ mod tests {
     }
     pub(super) fn port_inputs() -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64) {
         let f = fixture();
+        (
+            f.trust,
+            f.profile,
+            f.request,
+            f.response_key.into_bytes(),
+            f.now,
+        )
+    }
+    pub(super) fn native_standing_inputs(
+        native: super::super::standing::StandingProfile,
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64) {
+        let mut f = fixture();
+        let mut profile = verify::<Profile>(&f.profile, &keys(1, "root").0, PROFILE_PURPOSE)
+            .unwrap()
+            .body;
+        profile.native_standing = Some(native);
+        f.profile = token(profile, &keys(1, "root").1, "root", PROFILE_PURPOSE, f.now);
+        let mut trust: Trust = llull_buzz_wire::parse(&f.trust).unwrap();
+        trust.profile_sha256 = llull_buzz_wire::sha256(&f.profile);
+        f.trust = serde_json::to_vec(&trust).unwrap();
         (
             f.trust,
             f.profile,

@@ -343,6 +343,12 @@ pub(crate) fn implementation_sha256() -> String {
         ("inspection/catalog.rs", include_bytes!("catalog.rs")),
         ("inspection/history.rs", include_bytes!("history.rs")),
         ("inspection/port.rs", include_bytes!("port.rs")),
+        ("inspection/standing.rs", include_bytes!("standing.rs")),
+        ("native_custody.rs", include_bytes!("../native_custody.rs")),
+        ("native_origin.rs", include_bytes!("../native_origin.rs")),
+        ("publication.rs", include_bytes!("../publication.rs")),
+        ("main.rs", include_bytes!("../main.rs")),
+        ("ports.rs", include_bytes!("../ports.rs")),
         (
             "bin/buzz-inspection.rs",
             include_bytes!("../bin/buzz-inspection.rs"),
