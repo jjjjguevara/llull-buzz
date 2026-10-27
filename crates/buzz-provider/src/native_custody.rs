@@ -256,10 +256,220 @@ pub enum CustodyEvent {
         kind: u16,
         explicit_expiration: Option<u64>,
     },
+    /// Public claims captured from the actual signed event before transport.
+    /// The separate variant never upgrades older, incomplete journal records.
+    CredentialIssuedV2 {
+        capability: String,
+        event_id: String,
+        token_sha256: String,
+        kind: u16,
+        public_claims: Box<PublicCredentialClaims>,
+    },
     CapabilityClosed {
         capability: String,
     },
     Released,
+}
+/// A non-reusable description, not the signed event or a bearer credential.
+/// Lifetime is a signed claim; receiver enforcement remains independently unknown.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PublicCredentialClaims {
+    pub kind: String,
+    pub public_key: String,
+    pub created_at: u64,
+    pub content_sha256: String,
+    pub tags_sha256: String,
+    pub scope: PublicCredentialScope,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum PublicCredentialScope {
+    Nip98 {
+        url: String,
+        method: String,
+        payload_sha256: String,
+        nonce_sha256: Option<String>,
+    },
+    MediaGet {
+        blob_sha256: String,
+        expiration: u64,
+    },
+    Publication {
+        channel_id: String,
+        publication_id: String,
+        thread: BTreeMap<String, String>,
+    },
+}
+impl PublicCredentialClaims {
+    fn from_event(event: &nostr::Event) -> Result<Self> {
+        let tags = event
+            .tags
+            .iter()
+            .map(|t| t.as_slice().to_vec())
+            .collect::<Vec<_>>();
+        let one = |name: &str| -> Result<String> {
+            let matches = tags
+                .iter()
+                .filter(|t| t.first().is_some_and(|v| v == name))
+                .collect::<Vec<_>>();
+            match matches.as_slice() {
+                [tag] if tag.len() == 2 => Ok(tag[1].clone()),
+                _ => Err(deny("native_custody_public_claims")),
+            }
+        };
+        let allowed = |names: &[&str]| {
+            tags.iter()
+                .all(|t| t.first().is_some_and(|n| names.contains(&n.as_str())))
+        };
+        let scope = match event.kind.as_u16() {
+            27235 if event.content.is_empty() && allowed(&["u", "method", "payload", "nonce"]) => {
+                let nonce_sha256 = if tags.iter().any(|t| t.first().is_some_and(|v| v == "nonce")) {
+                    Some(sha256(one("nonce")?.as_bytes()))
+                } else {
+                    None
+                };
+                PublicCredentialScope::Nip98 {
+                    url: one("u")?,
+                    method: one("method")?,
+                    payload_sha256: one("payload")?,
+                    nonce_sha256,
+                }
+            }
+            24242
+                if !event.content.trim().is_empty()
+                    && allowed(&["t", "x", "expiration"])
+                    && one("t")? == "get" =>
+            {
+                let expiration = one("expiration")?;
+                let parsed = expiration
+                    .parse::<u64>()
+                    .map_err(|_| deny("native_custody_public_claims"))?;
+                if parsed.to_string() != expiration {
+                    return Err(deny("native_custody_public_claims"));
+                }
+                PublicCredentialScope::MediaGet {
+                    blob_sha256: one("x")?,
+                    expiration: parsed,
+                }
+            }
+            9 if allowed(&["h", "llull-publication", "e"]) => {
+                let mut thread = BTreeMap::new();
+                for tag in tags.iter().filter(|t| t.first().is_some_and(|v| v == "e")) {
+                    if tag.len() != 4
+                        || !tag[2].is_empty()
+                        || !matches!(tag[3].as_str(), "root" | "reply")
+                        || thread.insert(tag[3].clone(), tag[1].clone()).is_some()
+                    {
+                        return Err(deny("native_custody_public_claims"));
+                    }
+                }
+                PublicCredentialScope::Publication {
+                    channel_id: one("h")?,
+                    publication_id: one("llull-publication")?,
+                    thread,
+                }
+            }
+            _ => return Err(deny("native_custody_public_claims")),
+        };
+        Ok(Self {
+            kind: "llull-buzz-native-public-claims/v1".into(),
+            public_key: event.pubkey.to_hex(),
+            created_at: event.created_at.as_secs(),
+            content_sha256: sha256(event.content.as_bytes()),
+            tags_sha256: digest(&tags).map_err(|_| deny("native_custody_public_claims"))?,
+            scope,
+        })
+    }
+    pub(crate) fn validate(
+        &self,
+        scope: &NativeCustodyScope,
+        capability: &str,
+        kind: u16,
+    ) -> Result<()> {
+        if self.kind != "llull-buzz-native-public-claims/v1"
+            || self.public_key != scope.credential_public_key
+            || self.created_at > 9_007_199_254_740_991
+        {
+            return Err(deny("native_custody_public_claims"));
+        }
+        for value in [&self.public_key, &self.content_sha256, &self.tags_sha256] {
+            hash(value).map_err(|_| deny("native_custody_public_claims"))?;
+        }
+        match &self.scope {
+            PublicCredentialScope::Nip98 {
+                url,
+                method,
+                payload_sha256,
+                nonce_sha256,
+            } => {
+                let actual =
+                    url::Url::parse(url).map_err(|_| deny("native_custody_public_claims"))?;
+                let origin = url::Url::parse(&scope.public_origin)
+                    .map_err(|_| deny("native_custody_public_claims"))?;
+                if kind != 27235
+                    || !matches!(capability, "native-http" | "consumer-http")
+                    || method != "POST"
+                    || self.content_sha256 != sha256(b"")
+                    || actual.origin() != origin.origin()
+                    || !actual.username().is_empty()
+                    || actual.password().is_some()
+                    || actual.query().is_some()
+                    || actual.fragment().is_some()
+                    || (capability == "native-http"
+                        && !matches!(actual.path(), "/query" | "/events"))
+                {
+                    return Err(deny("native_custody_public_claims"));
+                }
+                hash(payload_sha256).map_err(|_| deny("native_custody_public_claims"))?;
+                if let Some(nonce) = nonce_sha256 {
+                    hash(nonce).map_err(|_| deny("native_custody_public_claims"))?;
+                }
+            }
+            PublicCredentialScope::MediaGet {
+                blob_sha256,
+                expiration,
+            } => {
+                if kind != 24242
+                    || capability != "native-http"
+                    || *expiration > 9_007_199_254_740_991
+                    || self.content_sha256 == sha256(b"")
+                {
+                    return Err(deny("native_custody_public_claims"));
+                }
+                hash(blob_sha256).map_err(|_| deny("native_custody_public_claims"))?;
+            }
+            PublicCredentialScope::Publication {
+                channel_id,
+                publication_id,
+                thread,
+            } => {
+                if kind != 9
+                    || capability != "native-publication"
+                    || thread.len() > 2
+                    || (thread.contains_key("root") && !thread.contains_key("reply"))
+                {
+                    return Err(deny("native_custody_public_claims"));
+                }
+                for value in [channel_id, publication_id] {
+                    if uuid::Uuid::parse_str(value)
+                        .map_err(|_| deny("native_custody_public_claims"))?
+                        .to_string()
+                        != *value
+                    {
+                        return Err(deny("native_custody_public_claims"));
+                    }
+                }
+                for (marker, event_id) in thread {
+                    if !matches!(marker.as_str(), "root" | "reply") {
+                        return Err(deny("native_custody_public_claims"));
+                    }
+                    hash(event_id).map_err(|_| deny("native_custody_public_claims"))?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -593,31 +803,23 @@ impl NativeSigner {
             ) {
                 return Err(crate::ports::PortError);
             }
-            let expires = event
-                .tags
-                .iter()
-                .filter_map(|tag| {
-                    let fields = tag.as_slice();
-                    (fields.len() == 2 && fields[0] == "expiration")
-                        .then(|| fields[1].parse::<u64>())
-                        .and_then(std::result::Result::ok)
-                })
-                .collect::<Vec<_>>();
-            if expires.len() > 1 {
-                return Err(crate::ports::PortError);
-            }
+            let public_claims =
+                PublicCredentialClaims::from_event(&event).map_err(|_| crate::ports::PortError)?;
+            public_claims
+                .validate(&owner.scope, capability, event.kind.as_u16())
+                .map_err(|_| crate::ports::PortError)?;
             owner
                 .journal
                 .lock()
                 .map_err(|_| crate::ports::PortError)?
-                .append(CustodyEvent::CredentialIssued {
+                .append(CustodyEvent::CredentialIssuedV2 {
                     capability: capability.clone(),
                     event_id: event.id.to_hex(),
                     token_sha256: sha256(
                         &serde_json::to_vec(&event).map_err(|_| crate::ports::PortError)?,
                     ),
                     kind: event.kind.as_u16(),
-                    explicit_expiration: expires.first().copied(),
+                    public_claims: Box::new(public_claims),
                 })
                 .map_err(|_| crate::ports::PortError)?;
         }

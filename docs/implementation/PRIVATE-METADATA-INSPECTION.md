@@ -350,6 +350,37 @@ the final key release is logged. Failure to append refuses the signing operation
 a failed/drop-time release is not converted into a successful cleanup assertion.
 The legacy constructors remain available and do not acquire standing by inference.
 
+New instrumented signatures use the distinct `CredentialIssuedV2` journal event.
+Its `public_claims.kind` is `llull-buzz-native-public-claims/v1`: signer public key,
+creation timestamp, exact UTF8 content hash, and RFC 8785 tag-array hash. The
+closed `scope.type` selects one of:
+
+- `nip98`: exact public URL, method, payload SHA256 and optional nonce SHA256;
+- `media-get`: exact blob SHA256 and claimed expiration;
+- `publication`: channel UUID, original publication UUID and root/reply event IDs.
+
+These fields come from the actual signed event before transport, not a later
+operator assertion. The existing original custody scope binds the key, operation,
+configuration, copies and configured origin. The tracked signer refuses missing,
+duplicate, foreign or unaccounted tags instead of emitting an incomplete scope.
+No reusable signature, bearer encoding, nonce plaintext or publication text enters
+the inspection journal. Event and complete-token hashes remain commitments, not
+independent rederivations of the undisclosed signed bytes. Historical
+`CredentialIssued` records remain parseable and retain the explicit unresolved
+`credential-public-claims-unavailable`; they are never relabelled as V2 records.
+
+Claims do not establish current receiver policy. At the selected upstream
+`01b6174a1cbad249e93f31df97d4b2ed1d0e8638`, `buzz-auth::verify_nip98_event`
+checks a ±60-second creation-time window. The upstream media GET route passes a
+3600-second maximum age to `verify_blossom_get_auth`, while this provider's local
+native-media requester uses a 600-second age check; both separately enforce
+expiration and scope. An `x`-only token has no signed server restriction, even
+though its transport uses the configured origin. Neither implementation read is
+a current remote installation readback. Publication has no demonstrated expiry
+or remote deletion guarantee. Consequently the collector retains
+`external-authority-unverified` for every V2 issuance, including expired claims;
+local process/key retirement does not retire signed remote capabilities.
+
 The authenticated profile lists every original scope and a `retained_anchors` map
 keyed by `custody_id`. Each anchor contains the independently retained original
 `acquisition_sha256`, positive `prefix_records`, and `prefix_head_sha256`. A new

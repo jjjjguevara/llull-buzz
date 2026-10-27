@@ -122,6 +122,7 @@ fn fold(
     let mut original = None;
     let mut capabilities = BTreeMap::<String, u64>::new();
     let mut released = false;
+    let mut legacy_issuance = false;
     let mut last_us = 0;
     for (sequence, line) in raw[..raw.len() - 1].split(|b| *b == b'\n').enumerate() {
         let record: CustodyRecord =
@@ -188,6 +189,22 @@ fn fold(
                 llull_buzz_wire::hash(event_id).map_err(|_| deny("native_standing_issuance"))?;
                 llull_buzz_wire::hash(token_sha256)
                     .map_err(|_| deny("native_standing_issuance"))?;
+                legacy_issuance = true;
+            }
+            CustodyEvent::CredentialIssuedV2 {
+                capability,
+                event_id,
+                token_sha256,
+                kind,
+                public_claims,
+            } => {
+                if capabilities.get(capability).copied().unwrap_or(0) == 0 {
+                    return Err(deny("native_standing_issuance"));
+                }
+                llull_buzz_wire::hash(event_id).map_err(|_| deny("native_standing_issuance"))?;
+                llull_buzz_wire::hash(token_sha256)
+                    .map_err(|_| deny("native_standing_issuance"))?;
+                public_claims.validate(scope, capability, *kind)?;
             }
             CustodyEvent::CapabilityClosed { capability } => {
                 let count = capabilities
@@ -232,7 +249,14 @@ fn fold(
         local_status: "UNKNOWN".into(),
         // NIP98 does not prove remote invalidation. Even an expired explicit
         // token is not a remote server configuration or key-revocation readback.
-        unresolved: vec!["external-authority-unverified".into()],
+        unresolved: if legacy_issuance {
+            vec![
+                "external-authority-unverified".into(),
+                "credential-public-claims-unavailable".into(),
+            ]
+        } else {
+            vec!["external-authority-unverified".into()]
+        },
     })
 }
 fn process_state(original: &ProcessIncarnation) -> Result<(String, Option<ProcessIncarnation>)> {
@@ -708,7 +732,13 @@ mod tests {
         assert_eq!(view.history_sha256, llull_buzz_wire::sha256(&raw));
         assert!(view.open_capabilities.is_empty());
         assert_eq!(view.local_status, "UNKNOWN"); // folding is not kernel observation.
-        assert_eq!(view.unresolved, ["external-authority-unverified"]);
+        assert_eq!(
+            view.unresolved,
+            [
+                "external-authority-unverified",
+                "credential-public-claims-unavailable"
+            ]
+        );
         assert_eq!(view.original_process, process());
     }
     #[test]
@@ -957,16 +987,35 @@ mod tests {
         assert!(credential.signer("unregistered-channel").is_err());
         let event = http
             .sign(
-                nostr::EventBuilder::new(nostr::Kind::Custom(24242), "synthetic read")
-                    .tag(nostr::Tag::parse(["expiration", "30"]).unwrap()),
+                nostr::EventBuilder::new(nostr::Kind::Custom(24242), "synthetic read").tags([
+                    nostr::Tag::parse([
+                        "expiration",
+                        &(nostr::Timestamp::now().as_secs() + 30).to_string(),
+                    ])
+                    .unwrap(),
+                    nostr::Tag::parse(["t", "get"]).unwrap(),
+                    nostr::Tag::parse(["x", &"b".repeat(64)]).unwrap(),
+                ]),
             )
             .unwrap();
         event.verify().unwrap();
         let publication = publisher
-            .sign(nostr::EventBuilder::new(
-                nostr::Kind::Custom(9),
-                "synthetic text",
-            ))
+            .sign(
+                buzz_sdk::build_message(
+                    uuid::Uuid::nil(),
+                    "synthetic text",
+                    None,
+                    &[],
+                    false,
+                    &[],
+                    &[],
+                )
+                .unwrap()
+                .tag(
+                    nostr::Tag::parse(["llull-publication", &uuid::Uuid::nil().to_string()])
+                        .unwrap(),
+                ),
+            )
             .unwrap();
         publication.verify().unwrap();
         consumer
@@ -1049,6 +1098,312 @@ mod tests {
         auth.verify_response(&signed, &body_digest, super::super::clock::now())
             .unwrap();
         assert!(!String::from_utf8(signed).unwrap().contains("PRIVATE KEY"));
+    }
+    #[test]
+    fn native_standing_public_claims_capture_actual_signed_scope_without_reusable_event() {
+        use crate::native_custody::{NativeCredential, PublicCredentialScope};
+        let f = Fixture::new();
+        let key = nostr::Keys::generate();
+        let secret = key.secret_key().to_secret_hex();
+        let scope = fixture_scope(&f, &key.public_key().to_hex());
+        f.file(Path::new(&scope.credential_file), secret.as_bytes());
+        let credential = NativeCredential::acquire_synthetic_fixture(
+            scope.clone(),
+            Path::new(&scope.credential_file),
+            &f.logs,
+            inert_process,
+        )
+        .unwrap();
+        let channel = uuid::Uuid::new_v4();
+        let publication_id = uuid::Uuid::new_v4();
+        let expiration = nostr::Timestamp::now().as_secs() + 30;
+        let thread = buzz_sdk::ThreadRef {
+            root_event_id: nostr::EventId::from_hex(&"a".repeat(64)).unwrap(),
+            parent_event_id: nostr::EventId::from_hex(&"b".repeat(64)).unwrap(),
+        };
+        let http = |url| {
+            nostr::EventBuilder::new(nostr::Kind::HttpAuth, "").tags([
+                nostr::Tag::parse(["u", url]).unwrap(),
+                nostr::Tag::parse(["method", "POST"]).unwrap(),
+                nostr::Tag::parse(["payload", &llull_buzz_wire::sha256(b"original body")]).unwrap(),
+                nostr::Tag::parse(["nonce", "synthetic-public-nonce"]).unwrap(),
+            ])
+        };
+        let builders = [
+            (
+                "native-http",
+                http("https://native.synthetic.invalid/query"),
+            ),
+            (
+                "consumer-http",
+                http("https://native.synthetic.invalid/command"),
+            ),
+            (
+                "native-http",
+                nostr::EventBuilder::new(nostr::Kind::Custom(24242), "Read original attachment")
+                    .tags([
+                        nostr::Tag::parse(["t", "get"]).unwrap(),
+                        nostr::Tag::parse(["x", &"c".repeat(64)]).unwrap(),
+                        nostr::Tag::parse(["expiration", &expiration.to_string()]).unwrap(),
+                    ]),
+            ),
+            (
+                "native-publication",
+                buzz_sdk::build_message(
+                    channel,
+                    "original publication text",
+                    Some(&thread),
+                    &[],
+                    false,
+                    &[],
+                    &[],
+                )
+                .unwrap()
+                .tag(
+                    nostr::Tag::parse(["llull-publication", &publication_id.to_string()]).unwrap(),
+                ),
+            ),
+        ];
+        let mut signed = Vec::new();
+        for (capability, builder) in builders {
+            let signer = credential.signer(capability).unwrap();
+            let event = signer.sign(builder).unwrap();
+            event.verify().unwrap();
+            signed.push(event);
+        }
+        drop(credential);
+        let raw = std::fs::read(f.logs.join(format!("{}.jsonl", scope.custody_id))).unwrap();
+        let lines = raw[..raw.len() - 1]
+            .split(|b| *b == b'\n')
+            .collect::<Vec<_>>();
+        let anchor = HistoryAnchor {
+            acquisition_sha256: llull_buzz_wire::sha256(lines[0]),
+            prefix_records: lines.len() as u64,
+            prefix_head_sha256: llull_buzz_wire::sha256(lines[lines.len() - 1]),
+        };
+        let observation = fold(&scope, &anchor, &raw, super::super::clock::now()).unwrap();
+        let issued = observation
+            .history
+            .iter()
+            .filter_map(|r| match &r.event {
+                CustodyEvent::CredentialIssuedV2 {
+                    capability,
+                    event_id,
+                    token_sha256,
+                    kind,
+                    public_claims,
+                } => Some((capability, event_id, token_sha256, kind, public_claims)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(issued.len(), 4);
+        for ((_, id, token, kind, claims), event) in issued.iter().zip(&signed) {
+            assert_eq!(**id, event.id.to_hex());
+            assert_eq!(
+                **token,
+                llull_buzz_wire::sha256(&serde_json::to_vec(event).unwrap())
+            );
+            assert_eq!(**kind, event.kind.as_u16());
+            assert_eq!(claims.public_key, event.pubkey.to_hex());
+            assert_eq!(claims.created_at, event.created_at.as_secs());
+            assert_eq!(
+                claims.content_sha256,
+                llull_buzz_wire::sha256(event.content.as_bytes())
+            );
+            assert_eq!(
+                claims.tags_sha256,
+                llull_buzz_wire::digest(
+                    &event
+                        .tags
+                        .iter()
+                        .map(|t| t.as_slice().to_vec())
+                        .collect::<Vec<_>>()
+                )
+                .unwrap()
+            );
+            let claims_raw = llull_buzz_wire::canonical(claims).unwrap();
+            assert!(!String::from_utf8_lossy(&claims_raw).contains(&event.sig.to_string()));
+        }
+        for (event, url) in signed[..2].iter().zip([
+            "https://native.synthetic.invalid/query",
+            "https://native.synthetic.invalid/command",
+        ]) {
+            assert_eq!(
+                buzz_auth::verify_nip98_event(
+                    &serde_json::to_string(event).unwrap(),
+                    url,
+                    "POST",
+                    Some(b"original body")
+                )
+                .unwrap(),
+                key.public_key()
+            );
+            assert!(buzz_auth::verify_nip98_event(
+                &serde_json::to_string(event).unwrap(),
+                url,
+                "POST",
+                Some(b"changed body")
+            )
+            .is_err());
+        }
+        assert!(
+            matches!(&issued[0].4.scope, PublicCredentialScope::Nip98 { url, method, payload_sha256, nonce_sha256 } if url.ends_with("/query") && method == "POST" && payload_sha256 == &llull_buzz_wire::sha256(b"original body") && nonce_sha256.as_deref() == Some(llull_buzz_wire::sha256(b"synthetic-public-nonce").as_str()))
+        );
+        assert!(
+            matches!(&issued[2].4.scope, PublicCredentialScope::MediaGet { blob_sha256, expiration: actual } if blob_sha256 == &"c".repeat(64) && *actual == expiration)
+        );
+        assert!(
+            matches!(&issued[3].4.scope, PublicCredentialScope::Publication { channel_id, publication_id: id, thread: actual } if channel_id == &channel.to_string() && id == &publication_id.to_string() && actual["root"] == thread.root_event_id.to_hex() && actual["reply"] == thread.parent_event_id.to_hex())
+        );
+        let text = String::from_utf8(raw).unwrap();
+        assert!(!text.contains(&secret));
+        assert!(!text.contains("original publication text"));
+        assert!(!text.contains("synthetic-public-nonce"));
+        assert_eq!(observation.unresolved, ["external-authority-unverified"]);
+        // Expiration is retained verbatim, not turned into remote retirement.
+        assert_eq!(observation.local_status, "UNKNOWN");
+    }
+    #[test]
+    fn native_standing_public_claims_refuse_ambiguous_unbound_and_unaccounted_signatures() {
+        let f = Fixture::new();
+        let key = nostr::Keys::generate();
+        let scope = fixture_scope(&f, &key.public_key().to_hex());
+        f.file(
+            Path::new(&scope.credential_file),
+            key.secret_key().to_secret_hex().as_bytes(),
+        );
+        let credential = crate::native_custody::NativeCredential::acquire_synthetic_fixture(
+            scope.clone(),
+            Path::new(&scope.credential_file),
+            &f.logs,
+            inert_process,
+        )
+        .unwrap();
+        let signer = credential.signer("native-http").unwrap();
+        let http = |url: &str, method: &str, payload: &str| {
+            nostr::EventBuilder::new(nostr::Kind::HttpAuth, "").tags([
+                nostr::Tag::parse(["u", url]).unwrap(),
+                nostr::Tag::parse(["method", method]).unwrap(),
+                nostr::Tag::parse(["payload", payload]).unwrap(),
+            ])
+        };
+        for bad in [
+            nostr::EventBuilder::new(nostr::Kind::HttpAuth, ""),
+            http("https://foreign.invalid/query", "POST", &"a".repeat(64)),
+            http(
+                "https://native.synthetic.invalid/unregistered",
+                "POST",
+                &"a".repeat(64),
+            ),
+            http(
+                "https://native.synthetic.invalid/query",
+                "GET",
+                &"a".repeat(64),
+            ),
+            http(
+                "https://native.synthetic.invalid/query",
+                "POST",
+                "not-a-sha256",
+            ),
+            http(
+                "https://native.synthetic.invalid/query",
+                "POST",
+                &"a".repeat(64),
+            )
+            .tag(nostr::Tag::parse(["u", "https://native.synthetic.invalid/events"]).unwrap()),
+            http(
+                "https://native.synthetic.invalid/query",
+                "POST",
+                &"a".repeat(64),
+            )
+            .tag(nostr::Tag::parse(["expiration", "9000"]).unwrap()),
+            nostr::EventBuilder::new(nostr::Kind::Custom(24242), "Read").tags([
+                nostr::Tag::parse(["t", "get"]).unwrap(),
+                nostr::Tag::parse(["server", "native.synthetic.invalid"]).unwrap(),
+                nostr::Tag::parse(["expiration", "1234"]).unwrap(),
+            ]),
+            nostr::EventBuilder::new(nostr::Kind::Custom(24242), "Read").tags([
+                nostr::Tag::parse(["t", "get"]).unwrap(),
+                nostr::Tag::parse(["x", &"a".repeat(64)]).unwrap(),
+                nostr::Tag::parse(["expiration", "01234"]).unwrap(),
+            ]),
+        ] {
+            assert!(signer.sign(bad).is_err());
+        }
+        drop(signer);
+        drop(credential);
+        let raw = std::fs::read(f.logs.join(format!("{}.jsonl", scope.custody_id))).unwrap();
+        for line in raw[..raw.len() - 1].split(|b| *b == b'\n') {
+            let record: CustodyRecord = llull_buzz_wire::parse(line).unwrap();
+            assert!(!matches!(
+                record.event,
+                CustodyEvent::CredentialIssuedV2 { .. }
+            ));
+        }
+    }
+    #[test]
+    fn native_standing_public_claims_fold_rechecks_original_key_capability_and_closed_shape() {
+        let f = Fixture::new();
+        let (scope, raw) = actual_history(&f);
+        let events = raw[..raw.len() - 1]
+            .split(|b| *b == b'\n')
+            .map(|line| llull_buzz_wire::parse::<CustodyRecord>(line).unwrap().event)
+            .collect::<Vec<_>>();
+        let issuance_index = events
+            .iter()
+            .position(|event| matches!(event, CustodyEvent::CredentialIssuedV2 { .. }))
+            .unwrap();
+        let original = encode(&scope, &events);
+        let first = original.split(|b| *b == b'\n').next().unwrap();
+        let anchor = HistoryAnchor {
+            acquisition_sha256: llull_buzz_wire::sha256(first),
+            prefix_records: 1,
+            prefix_head_sha256: llull_buzz_wire::sha256(first),
+        };
+        fold(&scope, &anchor, &original, 2000).unwrap();
+        for (field, value) in [
+            ("public_key", serde_json::json!("f".repeat(64))),
+            ("kind", serde_json::json!("future-unregistered-contract/v2")),
+            ("tags_sha256", serde_json::json!("not-a-hash")),
+            (
+                "scope",
+                serde_json::json!({"type":"media-get", "blob_sha256":"bad", "expiration":30}),
+            ),
+            (
+                "scope",
+                serde_json::json!({"type":"publication", "channel_id":uuid::Uuid::nil(), "publication_id":uuid::Uuid::nil(), "thread":{}}),
+            ),
+        ] {
+            let mut altered = events.clone();
+            let CustodyEvent::CredentialIssuedV2 { public_claims, .. } =
+                &mut altered[issuance_index]
+            else {
+                panic!("actual signed issuance missing")
+            };
+            let mut body = serde_json::to_value(&*public_claims).unwrap();
+            body[field] = value;
+            *public_claims = serde_json::from_value(body).unwrap();
+            assert!(
+                fold(&scope, &anchor, &encode(&scope, &altered), 2000).is_err(),
+                "{field}"
+            );
+        }
+        let mut widened = serde_json::to_value(&events[issuance_index]).unwrap();
+        widened["public_claims"]["scope"]["server"] = "foreign.invalid".into();
+        assert!(serde_json::from_value::<CustodyEvent>(widened).is_err());
+        let CustodyEvent::CredentialIssuedV2 {
+            public_claims,
+            capability,
+            kind,
+            ..
+        } = &events[issuance_index]
+        else {
+            unreachable!()
+        };
+        let mut unsafe_number = public_claims.clone();
+        unsafe_number.created_at = 9_007_199_254_740_992;
+        assert!(unsafe_number.validate(&scope, capability, *kind).is_err());
+        assert!(llull_buzz_wire::canonical(&unsafe_number).is_err());
     }
     #[test]
     fn native_standing_actual_credential_file_and_live_or_unknown_process_never_retire() {
