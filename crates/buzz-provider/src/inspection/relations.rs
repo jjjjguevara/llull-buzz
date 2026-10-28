@@ -398,6 +398,11 @@ pub(crate) fn implementation_sha256() -> String {
         ("inspection/port.rs", include_bytes!("port.rs")),
         ("inspection/standing.rs", include_bytes!("standing.rs")),
         ("inspection/receiver.rs", include_bytes!("receiver.rs")),
+        ("inspection/membership.rs", include_bytes!("membership.rs")),
+        (
+            "native-inspection-role.sql",
+            include_bytes!("../../../../scripts/native-inspection-role.sql"),
+        ),
         ("native_custody.rs", include_bytes!("../native_custody.rs")),
         ("native_origin.rs", include_bytes!("../native_origin.rs")),
         ("publication.rs", include_bytes!("../publication.rs")),

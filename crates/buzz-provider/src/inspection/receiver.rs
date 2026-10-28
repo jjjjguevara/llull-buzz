@@ -43,6 +43,22 @@ const MAX_PROGRAM: u64 = 256 * 1024 * 1024;
 pub struct ReceiverProfile {
     pub kind: String,
     pub receivers: Vec<ReceiverSelection>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_membership"
+    )]
+    pub membership: Option<super::membership::MembershipProfile>,
+}
+// A missing forward field preserves the legacy shape. A present null is not an
+// absent selection: legacy deny_unknown_fields refused that key altogether.
+fn present_membership<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<super::membership::MembershipProfile>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    super::membership::MembershipProfile::deserialize(deserializer).map(Some)
 }
 /// Authenticated selection, not an installed source/image attestation. The
 /// protected consumer must independently join the original build/image record
@@ -119,6 +135,8 @@ pub struct ReceiverObservations {
     pub observed_us: i64,
     pub receivers: Vec<ReceiverObservation>,
     pub unresolved: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub membership: Option<super::membership::MembershipObservation>,
 }
 fn absolute(path: &str) -> bool {
     Path::new(path).is_absolute()
@@ -130,7 +148,12 @@ fn absolute(path: &str) -> bool {
 }
 impl ReceiverProfile {
     pub(crate) fn authenticate(&self, auth: &Authenticated) -> Result<()> {
-        if self.kind != "llull-buzz-native-receiver-profile/v1" || self.receivers.is_empty() {
+        if !matches!(
+            (self.kind.as_str(), self.membership.is_some()),
+            ("llull-buzz-native-receiver-profile/v1", false)
+                | ("llull-buzz-native-receiver-profile/v2", true)
+        ) || self.receivers.is_empty()
+        {
             return Err(deny("receiver_profile"));
         }
         let native = auth
@@ -160,6 +183,9 @@ impl ReceiverProfile {
                 }
             }
         }
+        if let Some(membership) = &self.membership {
+            membership.authenticate(self)?;
+        }
         Ok(())
     }
 }
@@ -168,7 +194,7 @@ use super::files::identity as file_identity;
 /// Count the actual serialized DTO before retaining another vector member.
 /// A counting writer never allocates a second large serialized body merely to
 /// discover that this invocation cannot compose its existing wire envelope.
-fn admit_composition(bytes: &mut usize, value: &impl Serialize) -> Result<()> {
+pub(super) fn admit_composition(bytes: &mut usize, value: &impl Serialize) -> Result<()> {
     struct Counter {
         bytes: usize,
     }
@@ -196,7 +222,12 @@ fn admit_composition(bytes: &mut usize, value: &impl Serialize) -> Result<()> {
 }
 /// Retain every parent descriptor; no symlink traversal, path-only re-open,
 /// unbounded allocation, FIFO blocking or unchecked descriptor close.
-fn measure(root: &Path, relative: &str, maximum: u64, budget: &mut Budget) -> Result<MeasuredFile> {
+pub(super) fn measure(
+    root: &Path,
+    relative: &str,
+    maximum: u64,
+    budget: &mut Budget,
+) -> Result<MeasuredFile> {
     measure_owned(root, relative, maximum, budget, 0)
 }
 fn measure_owned(
@@ -465,7 +496,11 @@ fn executable_matches(link: &Path, actual: &std::fs::Metadata, measured: &Measur
             measured.bytes,
         )
 }
-fn verify_executable(pid: u32, measured: &MeasuredFile, budget: &mut Budget) -> Result<()> {
+pub(super) fn verify_executable(
+    pid: u32,
+    measured: &MeasuredFile,
+    budget: &mut Budget,
+) -> Result<()> {
     budget.sample(super::clock::now())?;
     // This is a deliberate kernel magic-link read, qualified by exact process
     // birth/namespace checks around the full acquisition. Birth survives exec,
@@ -627,6 +662,7 @@ fn collect_with(
             "provider-post-snapshot-authority-unverified".into(),
             "other-recipient-and-copied-token-domains-unobserved".into(),
         ],
+        membership: None,
     };
     admit_composition(&mut 0, &observation)?;
     Ok(observation)
@@ -675,6 +711,7 @@ mod tests {
         let receivers = ReceiverProfile {
             kind: "llull-buzz-native-receiver-profile/v1".into(),
             receivers: selections,
+            membership: None,
         };
         let (trust, profile, request, signer, now) =
             super::super::authority::synthetic_receiver_inputs(native, receivers);

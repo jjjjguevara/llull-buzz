@@ -640,6 +640,10 @@ pub(super) fn synthetic_receiver_owner_at_age(age: u64) -> OwnerObservation {
     tests::receiver_owner(age)
 }
 #[cfg(test)]
+pub(super) fn synthetic_membership_owner() -> OwnerObservation {
+    tests::receiver_owner_in_community(0, Some("00000000-0000-0000-0000-000000000001"))
+}
+#[cfg(test)]
 mod tests {
     use super::*;
     fn scope() -> NativeCustodyScope {
@@ -976,15 +980,19 @@ mod tests {
         scope
     }
     fn actual_history(f: &Fixture) -> (NativeCustodyScope, Vec<u8>) {
-        actual_history_with_native(f, false, 0)
+        actual_history_with_native(f, false, 0, None)
     }
     fn actual_history_with_native(
         f: &Fixture,
         with_native_http: bool,
         age: u64,
+        community: Option<&str>,
     ) -> (NativeCustodyScope, Vec<u8>) {
         let key = nostr::Keys::generate();
-        let scope = fixture_scope(f, &key.public_key().to_hex());
+        let mut scope = fixture_scope(f, &key.public_key().to_hex());
+        if let Some(community) = community {
+            scope.community_id = community.into();
+        }
         f.file(
             Path::new(&scope.credential_file),
             key.secret_key().to_secret_hex().as_bytes(),
@@ -1081,8 +1089,14 @@ mod tests {
         (scope, raw)
     }
     pub(super) fn receiver_owner(age: u64) -> OwnerObservation {
+        receiver_owner_in_community(age, None)
+    }
+    pub(super) fn receiver_owner_in_community(
+        age: u64,
+        community: Option<&str>,
+    ) -> OwnerObservation {
         let f = Fixture::new();
-        let (scope, raw) = actual_history_with_native(&f, true, age);
+        let (scope, raw) = actual_history_with_native(&f, true, age, community);
         let (auth, _, _) = signed_profile(scope.clone(), &raw);
         fold(
             &scope,

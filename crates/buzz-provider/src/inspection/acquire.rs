@@ -106,14 +106,60 @@ impl NativeSession {
         certificate: &[u8],
         budget: &mut super::clock::Budget,
     ) -> Result<Self> {
+        Self::connect_plan(auth, password, certificate, None, budget, false).await
+    }
+    pub(crate) async fn connect_membership(
+        auth: &super::authority::Authenticated,
+        password: &[u8],
+        certificate: &[u8],
+        client: Option<(&[u8], &[u8])>,
+        budget: &mut super::clock::Budget,
+    ) -> Result<Self> {
+        Self::connect_plan(auth, password, certificate, client, budget, true).await
+    }
+    async fn connect_plan(
+        auth: &super::authority::Authenticated,
+        password: &[u8],
+        certificate: &[u8],
+        client: Option<(&[u8], &[u8])>,
+        budget: &mut super::clock::Budget,
+        native_membership: bool,
+    ) -> Result<Self> {
         use sqlx::{ConnectOptions, Connection};
         environment_closed()?;
-        let db = &auth.profile().database;
-        if db.host.is_empty()
-            || db.host.len() > 255
-            || db.host.starts_with('/')
-            || db.host.chars().any(|c| c.is_control() || c.is_whitespace())
-            || llull_buzz_wire::sha256(certificate) != db.ssl_root_sha256
+        let provider = &auth.profile().database;
+        let native = auth
+            .profile()
+            .native_receivers
+            .as_ref()
+            .and_then(|r| r.membership.as_ref());
+        let (host, port, database, root, role, search_path) = if native_membership {
+            let db = &native
+                .ok_or_else(|| deny("native_membership_profile"))?
+                .database;
+            (
+                db.host.as_str(),
+                db.port,
+                db.database.as_str(),
+                db.ssl_root_sha256.as_str(),
+                super::membership::INSPECTOR,
+                "pg_catalog, public",
+            )
+        } else {
+            (
+                provider.host.as_str(),
+                provider.port,
+                provider.database.as_str(),
+                provider.ssl_root_sha256.as_str(),
+                super::authority::INSPECTOR,
+                super::catalog::INSPECTION_SEARCH_PATH,
+            )
+        };
+        if host.is_empty()
+            || host.len() > 255
+            || host.starts_with('/')
+            || host.chars().any(|c| c.is_control() || c.is_whitespace())
+            || llull_buzz_wire::sha256(certificate) != root
         {
             return Err(deny("inspection_connection_binding"));
         }
@@ -123,10 +169,10 @@ impl NativeSession {
             return Err(deny("inspection_password_encoding"));
         }
         let options = sqlx::postgres::PgConnectOptions::new_without_pgpass()
-            .host(&db.host)
-            .port(db.port)
-            .database(&db.database)
-            .username(super::authority::INSPECTOR)
+            .host(host)
+            .port(port)
+            .database(database)
+            .username(role)
             .password(password)
             .ssl_mode(sqlx::postgres::PgSslMode::VerifyFull)
             .ssl_root_cert_from_pem(certificate.to_vec())
@@ -134,13 +180,27 @@ impl NativeSession {
             .statement_cache_capacity(0)
             .options([
                 ("default_transaction_read_only", "on"),
-                ("search_path", super::catalog::INSPECTION_SEARCH_PATH),
+                ("search_path", search_path),
                 ("client_encoding", "UTF8"),
                 ("timezone", "UTC"),
                 ("statement_timeout", "20000"),
                 ("lock_timeout", "1000"),
             ])
             .disable_statement_logging();
+        let expected_client = native
+            .filter(|_| native_membership)
+            .and_then(|p| p.database.client_certificate_sha256.as_ref());
+        let options = match (expected_client, client) {
+            (None, None) => options,
+            (Some(expected), Some((cert, key)))
+                if llull_buzz_wire::sha256(cert) == *expected && !key.is_empty() =>
+            {
+                options
+                    .ssl_client_cert_from_pem(cert)
+                    .ssl_client_key_from_pem(key)
+            }
+            _ => return Err(deny("native_membership_client_tls_binding")),
+        };
         budget.sample(super::clock::now())?;
         let remaining = budget.remaining()?;
         #[cfg(test)]
@@ -177,13 +237,22 @@ impl NativeSession {
             // Zero-row fixed view reads acquire view/base relation read locks
             // before catalog/definition qualification and before payload. No
             // original or projected record crosses this initialization boundary.
-            for relation in relations::RELATIONS {
+            if native_membership {
                 owned
                     .execute(
-                        &format!("SELECT 1 FROM buzz_inspection.v_{} LIMIT 0", relation.name),
+                        "LOCK TABLE public.relay_members IN ACCESS SHARE MODE",
                         budget,
                     )
                     .await?;
+            } else {
+                for relation in relations::RELATIONS {
+                    owned
+                        .execute(
+                            &format!("SELECT 1 FROM buzz_inspection.v_{} LIMIT 0", relation.name),
+                            budget,
+                        )
+                        .await?;
+                }
             }
             // Ambiguous admission still owns rollback and connection cleanup.
             budget.sample(super::clock::now())?;
@@ -240,6 +309,12 @@ impl NativeSession {
         budget: &mut super::clock::Budget,
     ) -> Result<String> {
         self.scalar(super::catalog::SESSION_SQL, budget).await
+    }
+    pub(crate) async fn membership_session_metadata(
+        &mut self,
+        budget: &mut super::clock::Budget,
+    ) -> Result<String> {
+        self.scalar(super::membership::SESSION_SQL, budget).await
     }
     async fn scalar(&mut self, sql: &str, budget: &mut super::clock::Budget) -> Result<String> {
         budget.sample(super::clock::now())?;
@@ -591,6 +666,9 @@ impl NativeSession {
 }
 
 fn catalog_source(name: &str) -> Result<&'static str> {
+    if let Some(source) = super::membership::source(name) {
+        return Ok(source);
+    }
     super::catalog::QUERIES
         .iter()
         .find(|q| q.name == name)
@@ -607,6 +685,72 @@ fn catalog_declare_sql(name: &str, fact: &Preflight) -> Result<String> {
     Ok(format!("DECLARE buzz_inspection_payload NO SCROLL CURSOR WITHOUT HOLD FOR WITH source AS MATERIALIZED ({}), bounds AS MATERIALIZED (SELECT count(*) AS n,coalesce(sum(octet_length(convert_to(raw,'UTF8'))),0) AS b,coalesce(max(octet_length(convert_to(raw,'UTF8'))),0) AS m FROM source), ordered AS MATERIALIZED (SELECT row_number() OVER (ORDER BY raw COLLATE \"C\") AS ordinal,convert_to(raw,'UTF8') AS raw FROM source) SELECT ordinal,offset_index AS chunk_index,(octet_length(raw)+{}-1)/{} AS chunks,octet_length(raw) AS row_bytes,encode(sha256(raw),'hex') AS payload_sha256,substring(raw FROM offset_index*{}+1 FOR {}) AS payload FROM ordered CROSS JOIN bounds CROSS JOIN LATERAL generate_series(0,(octet_length(raw)-1)/{}) AS offsets(offset_index) WHERE bounds.n={} AND bounds.b={} AND bounds.m={} AND bounds.n<={} AND bounds.b<={} ORDER BY ordinal,offset_index",catalog_source(name)?,CHUNK_BYTES,CHUNK_BYTES,CHUNK_BYTES,CHUNK_BYTES,CHUNK_BYTES,fact.count,fact.bytes,fact.largest,ROWS,RAW_BYTES))
 }
 impl NativeSession {
+    /// Native membership uses the same closed scalar preflights, aggregate
+    /// limits, chunk ledger, explicit EOF and owned SQL cleanup as provider
+    /// inspection. No externally supplied SQL or filter enters this plan.
+    pub(crate) async fn collect_membership(
+        &mut self,
+        profile: &super::membership::MembershipProfile,
+        snapshot: &str,
+        budget: &mut super::clock::Budget,
+    ) -> Result<std::collections::BTreeMap<String, Vec<Vec<u8>>>> {
+        let mut facts = std::collections::BTreeMap::new();
+        let mut rows = 0u64;
+        let mut bytes = 0u64;
+        for name in super::membership::SOURCES {
+            // Qualify the actual role/catalog and ordinary table before any
+            // table scan, including the scalar membership preflight itself.
+            if *name == "native_members" {
+                continue;
+            }
+            let fact: Preflight = super::json::decode(
+                self.scalar(&catalog_preflight_sql(name)?, budget)
+                    .await?
+                    .as_bytes(),
+            )?;
+            // Reuse the complete per-stream shape and allocation admission.
+            ChunkLedger::new(&fact)?;
+            rows = rows
+                .checked_add(fact.count)
+                .ok_or_else(|| unknown("native_membership_bounds"))?;
+            bytes = bytes
+                .checked_add(fact.bytes)
+                .ok_or_else(|| unknown("native_membership_bounds"))?;
+            if fact.snapshot != snapshot || rows > ROWS || bytes > RAW_BYTES {
+                return Err(unknown("native_membership_bounds_or_snapshot"));
+            }
+            facts.insert(*name, fact);
+        }
+        let mut raw = std::collections::BTreeMap::new();
+        for (name, fact) in facts {
+            self.check_snapshot(snapshot, budget).await?;
+            self.execute(&catalog_declare_sql(name, &fact)?, budget)
+                .await?;
+            raw.insert(name.to_owned(), self.collect_declared(&fact, budget).await?);
+        }
+        raw.insert("native_members".into(), Vec::new());
+        super::membership::verify_catalog(&raw, profile, budget)?;
+        let fact: Preflight = super::json::decode(
+            self.scalar(&catalog_preflight_sql("native_members")?, budget)
+                .await?
+                .as_bytes(),
+        )?;
+        ChunkLedger::new(&fact)?;
+        if fact.snapshot != snapshot
+            || rows.checked_add(fact.count).is_none_or(|n| n > ROWS)
+            || bytes.checked_add(fact.bytes).is_none_or(|n| n > RAW_BYTES)
+        {
+            return Err(unknown("native_membership_bounds_or_snapshot"));
+        }
+        self.check_snapshot(snapshot, budget).await?;
+        self.execute(&catalog_declare_sql("native_members", &fact)?, budget)
+            .await?;
+        raw.insert(
+            "native_members".into(),
+            self.collect_declared(&fact, budget).await?,
+        );
+        Ok(raw)
+    }
     pub(crate) async fn catalog_preflights(
         &mut self,
         budget: &mut super::clock::Budget,
@@ -884,7 +1028,7 @@ impl InertSql {
     }
     fn scalar(&mut self, sql: &str) -> Result<String> {
         self.log.borrow_mut().push(format!("scalar:{sql}"));
-        if sql == super::catalog::SESSION_SQL {
+        if sql == super::catalog::SESSION_SQL || sql == super::membership::SESSION_SQL {
             return Ok(self.session.clone());
         }
         if sql.starts_with("SELECT CASE WHEN octet_length(pg_current_snapshot()") {
@@ -902,7 +1046,12 @@ impl InertSql {
         }
         for (name, rows) in &self.catalogs {
             if sql == catalog_preflight_sql(name)? {
-                return serde_json::to_string(&Self::fact(rows)).map_err(|_| deny("inert_scalar"));
+                let mut fact = Self::fact(rows);
+                if self.fault == "oversize" {
+                    fact.bytes = RAW_BYTES + 1;
+                    fact.largest = fact.bytes;
+                }
+                return serde_json::to_string(&fact).map_err(|_| deny("inert_scalar"));
             }
         }
         Err(deny("inert_unexpected_sql"))
@@ -935,6 +1084,9 @@ impl InertSql {
                     flag.store(true, std::sync::atomic::Ordering::SeqCst);
                 }
             }
+            return Ok(());
+        }
+        if sql == "LOCK TABLE public.relay_members IN ACCESS SHARE MODE" {
             return Ok(());
         }
         if relations::RELATIONS
@@ -974,6 +1126,14 @@ impl InertSql {
         self.log.borrow_mut().push("fetch".into());
         if self.fault == "fetch" {
             return Err(unknown("inert_fetch"));
+        }
+        if self.fault == "fetch-timeout" {
+            return Err(unknown("inventory_fetch_timeout"));
+        }
+        if self.fault == "cancel-fetch" {
+            if let Some(flag) = &self.cancellation {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
         }
         if self.fault == "early-eof" {
             self.cursor.clear();

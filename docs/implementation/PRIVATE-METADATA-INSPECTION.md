@@ -606,3 +606,161 @@ This is source qualification. The actual Linux receiver path, installed
 source/image admission, PostgreSQL installation, complete provider standing and
 human acceptance remain unqualified. No VM, provider request, image build,
 deployment, profile activation or merge ran in this source check.
+
+## Current native relay key membership (forward source extension)
+
+`native_receivers.kind = llull-buzz-native-receiver-profile/v2` requires its new
+`membership` selection, of kind `llull-buzz-native-membership-profile/v1`. The
+selection names exactly one existing receiver and pins its process-environment
+and loaded `DATABASE_URL` hashes. Its native database descriptor pins host, port,
+database, the distinct **application** `runtime_role`, database and inspector OIDs,
+server IP and version, PostgreSQL system identifier, TLS root, actual
+`public.relay_members` OID and owner, and the complete native catalog digest.
+Optional `client_certificate_sha256` admits the inspection client's certificate;
+the private client key is held only in the fixed private input file. This is a
+second native database connection, never the provider's 30 metadata relations.
+
+The private port reads `native-sql-password` and `native-sql-root.pem` only after
+admitting this signed opt-in. With client-certificate selection it also reads
+`native-sql-client.pem` and `native-sql-client-key.pem`. These inputs use the same
+private descriptor custody, bounded reads, digest rechecks and zeroing drop as
+existing inputs. No path or SQL can be supplied by the request. The connection
+uses the fixed `buzz_native_recovery_inspector` role, verify-full TLS, inline held
+certificate/key bytes, read-only repeatable read, finite statement/lock timeouts,
+and the existing cancellation-aware SQL transport and unconditional cleanup.
+
+The Linux collector joins the exact admitted receiver incarnation and measured
+executable before and after acquisition, hashes the bounded loaded environment,
+and measures six additional pinned upstream source files. It admits
+`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true|1`, absent or explicit false/0
+`BUZZ_ALLOW_NIP_OA_AUTH`, and absent/blank `READ_DATABASE_URL`. It rejects duplicate
+selected variables and any ambient `PG*` options. The loaded DSN must match the
+selected host/port/database/application role. Only unique `sslmode`, `sslrootcert`,
+`sslcert`, `sslkey`, `connect_timeout` and `application_name` query keys are
+admitted; libpq endpoint/service/options overrides are refused. Secret environment
+and URL bytes are never returned. The descriptor's server IP remains a separate
+physical observation; matching a DNS label alone does not attest route identity.
+
+These restrictions follow the selected upstream at
+`01b6174a1cbad249e93f31df97d4b2ed1d0e8638`:
+
+- `api/mod.rs:80–146` permits a directly present `(community_id, pubkey)`, or a
+  delegated owner's membership when NIP-OA is enabled. A copied key can mint
+  fresh authentication events; expiry of an earlier token cannot revoke it.
+- `buzz-db/src/store/relay_members.rs:676–703` can route membership to a bounded
+  replica and fall back to the writer. This initial source contract therefore
+  refuses a configured read replica rather than infer its current membership
+  from a writer-only inspection.
+- That store's lookup uses unqualified `FROM relay_members`. The native catalog
+  requires the existing application-role-in-database setting
+  `search_path=pg_catalog, public`; startup query/ambient options cannot override
+  it in this admitted plan. An absent setting is an admission gap, not permission
+  to change the application role.
+
+Every native stream receives a genuine scalar count/byte/largest-row preflight
+before its payload is transferred. The complete bounded catalog is acquired and
+qualified before scanning membership, including its scalar preflight. Catalog
+and membership totals must fit the combined acquisition bound before membership
+payload is retained. The fixed registry comprises the complete
+actual `relay_members` table plus database, inheritance, role settings, effective
+column/index collations, roles,
+role memberships, relations, columns, schemas, functions, sequences, indexes,
+constraints, triggers and policies. All share the native snapshot, aggregate
+10,000-row/2MiB acquisition bound, existing opaque chunk and explicit EOF ledger.
+No first-200 list, qualification table, arbitrary predicate or partial table can
+produce an absence observation. The actual ordinary table, six upstream columns,
+primary key and lack of RLS/inheritance are checked. Actual `attcollation` and
+`pg_collation.collisdeterministic` are joined to the primary index's collation
+vector; unsupported nondeterministic text equality refuses before membership is
+scanned, so Rust byte equality cannot falsely prove an absent SQL-equal key.
+Mutation, CREATE/TEMP,
+role inheritance/membership, user-function EXECUTE, sequence mutation and extra
+relation/column read capabilities are refused. A root-pinned digest covers every
+original catalog byte and stream name, excluding changing membership data.
+
+The maintained operator recipe is
+[`scripts/native-inspection-role.sql`](../../scripts/native-inspection-role.sql).
+It creates only a new dedicated role and grants native table SELECT, schema
+USAGE, database CONNECT and read-only `pg_control_system()` execution. It does
+not execute from the service, create test tables, replace an existing role,
+change application-role settings or revoke PUBLIC rights. Existing shared
+privileges that would make the inspection role writable cause rollback/refusal.
+PostgreSQL cannot deny one role a capability inherited from PUBLIC: remedying
+such prerequisites requires a separately approved deployment change. The role,
+actual TLS/physical identity and complete catalog/profile pins must be installed
+and observed under their own authority; this recipe supplies no installation
+result or credentials.
+
+The outer receipt becomes `llull-buzz-private-metadata-receipt/v5` only for this
+opt-in. Its receivers DTO becomes `llull-buzz-private-native-receivers/v2` and adds
+`membership.kind = llull-buzz-private-native-membership/v1`. It retains the
+complete native table as original UTF-8 JSON row strings (so raw bytes and their
+length-prefixed digest remain replayable through JWS normalization),
+counts/bytes/largest-row, framed SHA256 and EOF, original
+custody/community/public-key decisions, physical SQL session, catalog pin,
+receiver admission reference, runtime locator/policy and acquisition/snapshot/
+completion timestamps. A present key yields `ORIGINAL_KEY_PRESENT`; complete
+absence yields `ORIGINAL_KEYS_ABSENT_AT_BOUND_SNAPSHOT`. An unknown local receiver,
+partial SQL result, role/catalog mismatch, cancellation, timeout, changed process
+or environment, or cleanup failure yields no successful membership receipt.
+Existing response-composition and signed-envelope bounds refuse oversized output
+without trimming a prefix. A present null membership selection is refused during
+deserialization; an absent field preserves legacy v1, and v2 requires a nonnull
+selection through version authentication. Legacy v1 profiles forbid that selection;
+legacy receipt and native-standing/provider-authority meanings remain unchanged.
+
+The observation retains source-to-image and TLS-route admission gaps, membership
+after the snapshot, copied-key/other-recipient domains and accepted-earlier-effect
+uncertainty. The outer status remains `PARTIAL`. Provider enrollment retirement,
+local key-file deletion, owner-process retirement and old-token cutoffs do not
+establish native key revocation. A protected consumer still needs independent
+current admitted-route/build evidence and must preserve those unresolved domains.
+
+The new inert source methods exercise the production native connection plan,
+closed scalar/chunk/EOF collection, catalog/session verification, signed response
+body, scoped absence/presence, a complete 301-row inventory, bounds, role/physical
+identity errors, cancellation/timeout protocol outcomes, cleanup failures and
+process/configuration drift. The final host acquisition and final SQL socket are
+inert; these controls do not connect to PostgreSQL, execute the role recipe,
+qualify installed TLS/routes or run a live native effect. The reproducible local
+inspection command is:
+
+```sh
+CARGO_BUILD_JOBS=2 cargo test --offline --locked -p llull-buzz-provider --lib inspection:: -- --test-threads=1
+```
+
+The 2026-10-28 `native-membership-source-r3` local campaign ran the full inspection
+filter with Rust 1.98.1, a locked offline dependency graph and two build jobs:
+79 passed, zero failed, two intentionally ignored and 16 filtered out. This
+included 12 native membership methods. The library check and strict library
+Clippy (`-D warnings`) also passed. Its membership source SHA256 was
+`138fa99eab35727e0fb770b285ccc5e20ae96edf269a1ed37039aafe624580f9`.
+
+Earlier attempts remain part of the record: r1 passed 11 focused methods and the
+library check, then strict Clippy refused six new source lints. After structural
+lint remediation and the independent collation finding, r2 ran 78 passing
+inspection methods, one failing test-log assertion and two ignored methods;
+check/Clippy were not run after that failure. The assertion accidentally counted
+a catalog cursor containing the table's regclass literal as membership payload.
+It was narrowed to the actual data query before r3. The nondeterministic
+collation regression itself passed in r2 and r3.
+
+A subsequent finite lexical compatibility review identified a present-null
+profile-field regression. The explicit nonnull deserializer and actual serde
+legacy/v2 missing/null controls were then exercised in the separate final
+`native-membership-source-r4` campaign: 79 passed, zero failed, two intentionally
+ignored and 16 filtered out, followed by a passing library check and strict
+library Clippy. Its unchanged final source SHA256 values are:
+
+- `inspection/membership.rs`:
+  `ae29e7cb1721cb89a55541c5c03308e3635eef34ef04e1f8b092a1a0eceb4304`.
+- `inspection/receiver.rs`:
+  `f8a61c9b6210451bb5061470f085ca7c15964da3c9ef1ac49dc42b657281333b`.
+
+Each campaign retained its own source manifest, stage results and logs. Owned
+process groups were reaped and their absence checked before each resource
+release. The operator role recipe was not executed; no PostgreSQL connection,
+TLS/role installation, VM, live provider/native effect or network operation was
+part of these source controls. No source-stage result is an installed
+PostgreSQL/TLS/role qualification, source-to-image/route attestation, performance
+benchmark, independent full-standing result or human UAT.

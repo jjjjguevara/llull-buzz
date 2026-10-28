@@ -30,6 +30,7 @@ pub(crate) mod files;
 pub(crate) mod acquire;
 pub(crate) mod catalog;
 pub mod history;
+pub mod membership;
 pub mod port;
 pub mod receiver;
 pub mod standing;

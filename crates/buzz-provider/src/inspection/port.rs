@@ -86,6 +86,10 @@ struct Inputs {
     password: files::PrivateBytes,
     certificate: files::PrivateBytes,
     schema: files::PrivateBytes,
+    native_password: Option<files::PrivateBytes>,
+    native_certificate: Option<files::PrivateBytes>,
+    native_client_certificate: Option<files::PrivateBytes>,
+    native_client_key: Option<files::PrivateBytes>,
 }
 impl Inputs {
     fn read(directory: &files::PrivateDirectory, budget: &mut clock::Budget) -> Result<Self> {
@@ -97,6 +101,10 @@ impl Inputs {
             password: directory.read("sql-password", budget)?,
             certificate: directory.read("sql-root.pem", budget)?,
             schema: directory.read("schema-manifest.json", budget)?,
+            native_password: None,
+            native_certificate: None,
+            native_client_certificate: None,
+            native_client_key: None,
         })
     }
     fn current(
@@ -115,6 +123,16 @@ impl Inputs {
         ] {
             let digest = llull_buzz_wire::sha256(bytes);
             directory.current(name, &digest, budget)?;
+        }
+        for (name, bytes) in [
+            ("native-sql-password", &self.native_password),
+            ("native-sql-root.pem", &self.native_certificate),
+            ("native-sql-client.pem", &self.native_client_certificate),
+            ("native-sql-client-key.pem", &self.native_client_key),
+        ] {
+            if let Some(bytes) = bytes {
+                directory.current(name, &llull_buzz_wire::sha256(bytes.bytes()), budget)?;
+            }
         }
         budget.sample(clock::now())?;
         Ok(())
@@ -353,7 +371,7 @@ async fn run_owned(
     let mut outputs = Vec::new();
     let first = async {
         tokio::task::yield_now().await;
-        let inputs = Inputs::read(&directory, &mut budget)?;
+        let mut inputs = Inputs::read(&directory, &mut budget)?;
         let auth = authority::Authenticated::admit(
             inputs.trust.bytes(),
             inputs.profile.bytes(),
@@ -361,6 +379,21 @@ async fn run_owned(
             &mut budget,
             clock::now(),
         )?;
+        if let Some(membership) = auth
+            .profile()
+            .native_receivers
+            .as_ref()
+            .and_then(|r| r.membership.as_ref())
+        {
+            inputs.native_password = Some(directory.read("native-sql-password", &mut budget)?);
+            inputs.native_certificate = Some(directory.read("native-sql-root.pem", &mut budget)?);
+            if membership.database.client_certificate_sha256.is_some() {
+                inputs.native_client_certificate =
+                    Some(directory.read("native-sql-client.pem", &mut budget)?);
+                inputs.native_client_key =
+                    Some(directory.read("native-sql-client-key.pem", &mut budget)?);
+            }
+        }
         if llull_buzz_wire::sha256(inputs.schema.bytes())
             != auth.profile().database.schema_manifest_sha256
         {
@@ -420,13 +453,41 @@ async fn run_owned(
                 .as_ref()
                 .ok_or_else(|| deny("receiver_original_scopes"))?
                 .scopes;
-            body.native_receivers = Some(super::receiver::collect(
-                profile,
-                owners,
-                &auth,
-                &mut budget,
-            )?);
+            let mut receivers = super::receiver::collect(profile, owners, &auth, &mut budget)?;
             body.kind = "llull-buzz-private-metadata-receipt/v4".into();
+            if let Some(membership) = &profile.membership {
+                receivers.membership = Some(
+                    super::membership::collect(
+                        membership,
+                        &receivers,
+                        owners,
+                        &auth,
+                        super::membership::SqlCredentials {
+                            password: inputs
+                                .native_password
+                                .as_ref()
+                                .ok_or_else(|| deny("native_membership_password"))?
+                                .bytes(),
+                            certificate: inputs
+                                .native_certificate
+                                .as_ref()
+                                .ok_or_else(|| deny("native_membership_certificate"))?
+                                .bytes(),
+                            client: inputs
+                                .native_client_certificate
+                                .as_ref()
+                                .zip(inputs.native_client_key.as_ref())
+                                .map(|(cert, key)| (cert.bytes(), key.bytes())),
+                        },
+                        &mut budget,
+                    )
+                    .await?,
+                );
+                receivers.kind = "llull-buzz-private-native-receivers/v2".into();
+                super::receiver::admit_composition(&mut 0, &receivers)?;
+                body.kind = "llull-buzz-private-metadata-receipt/v5".into();
+            }
+            body.native_receivers = Some(receivers);
         }
         let filename =
             signed_file(body, &auth, &inputs, &directory, &mut outputs, &mut budget).await?;
