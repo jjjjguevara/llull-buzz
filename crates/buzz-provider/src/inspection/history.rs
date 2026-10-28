@@ -39,6 +39,13 @@ fn extras(name: &str) -> &'static [&'static str] {
         "task_members" => &["original_manifest_sha256"],
         "attempts" => &["original_request_bytes_sha256", "original_charge_sha256"],
         "model_reservations" => &["original_reservation_sha256", "original_charge_sha256"],
+        "model_dispatches" => &[
+            "original_request_sha256",
+            "original_pricing_sha256",
+            "original_settlement_sha256",
+        ],
+        "native_attachments" => &["original_evidence_sha256", "original_bytes_sha256"],
+        "native_attachment_leases" => &["original_request_sha256", "original_claims_sha256"],
         "publications" => &["original_publication_sha256", "original_release_sha256"],
         "publication_scopes" => &["original_scope_sha256"],
         "publication_deliveries" => &["original_signed_event_sha256", "original_audience_sha256"],
@@ -281,6 +288,193 @@ fn find<'a>(rows: &'a [Row], keys: &[(&str, &str)]) -> Result<Option<&'a Row>> {
     }
     Ok(found)
 }
+fn timestamp(text: &str) -> Result<chrono::DateTime<chrono::FixedOffset>> {
+    chrono::DateTime::parse_from_rfc3339(text).map_err(|_| deny("inventory_authority_time"))
+}
+
+/// A source-derived view of this provider's own admission and retained effect
+/// ledger. It never claims remote revocation, remote process absence or erasure.
+#[derive(Debug, serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProviderAuthority {
+    pub kind: String,
+    pub request_sha256: String,
+    pub snapshot: String,
+    pub observed_us: i64,
+    pub status: String,
+    pub members: Vec<MemberAuthority>,
+    pub unresolved: Vec<String>,
+}
+#[derive(Debug, serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MemberAuthority {
+    pub consumer_id: String,
+    pub registration_revision: u64,
+    pub authority_epoch: u64,
+    pub recovery_epoch: u64,
+    pub registration_active: bool,
+    pub row_sha256: String,
+    pub status: String,
+    pub blockers: Vec<String>,
+}
+/// Called only after complete catalog, membership, EOF and history verification.
+/// The root consumer must independently rederive these facts from signed rows.
+/// Only this invocation's already acquired metadata chooses the result.
+pub(crate) fn provider_authority(
+    raw: &BTreeMap<String, Vec<Vec<u8>>>,
+    auth: &super::authority::Authenticated,
+    snapshot: &str,
+    budget: &mut super::clock::Budget,
+) -> Result<ProviderAuthority> {
+    let mut parsed = BTreeMap::new();
+    for relation in relations::RELATIONS {
+        let rows = raw
+            .get(relation.name)
+            .ok_or_else(|| deny("inventory_authority_scope"))?
+            .iter()
+            .map(|raw| Row::parse(raw, relation.name))
+            .collect::<Result<Vec<_>>>()?;
+        verify_unique(&rows)?;
+        parsed.insert(relation.name, rows);
+    }
+    if parsed.len() != raw.len() {
+        return Err(deny("inventory_authority_scope"));
+    }
+    // An uncertain original record without an independently selected member
+    // cannot be silently excluded from every member's authority disposition.
+    let unattributed_uncertainty = parsed
+        .values()
+        .flatten()
+        .any(|row| !row.uncertainties.is_empty() && !row.metadata.contains_key("consumer_id"));
+    let now = budget.sample(super::clock::now())?;
+    let mut members = Vec::new();
+    for member in &auth.profile().members {
+        let registry = find(
+            &parsed["consumer_registry"],
+            &[("consumer_id", &member.consumer_id)],
+        )?
+        .ok_or_else(|| deny("inventory_authority_membership"))?;
+        let registration: RegistrationMetadata = registry.embedded("registration_metadata")?;
+        let active: bool = registry.value("active")?;
+        let mut blockers = BTreeSet::new();
+        if unattributed_uncertainty {
+            blockers.insert("original-metadata-unknown".to_owned());
+        }
+        if active {
+            blockers.insert("registration-active".to_owned());
+        }
+        for (relation, rows) in &parsed {
+            for row in rows {
+                budget.sample(super::clock::now())?;
+                if !row.metadata.contains_key("consumer_id")
+                    || row.text("consumer_id")? != member.consumer_id
+                {
+                    continue;
+                }
+                if !row.uncertainties.is_empty() {
+                    blockers.insert("original-metadata-unknown".into());
+                }
+                match *relation {
+                    "enrollments"
+                        if row.value::<bool>("active")? && !row.value::<bool>("key_retired")? =>
+                    {
+                        blockers.insert("enrollment-active".into());
+                    }
+                    "task_roots" if !row.value::<bool>("closed")? => {
+                        blockers.insert("task-root-not-closed".into());
+                    }
+                    "task_roots" => {
+                        let state: StateMetadata = row.embedded("state")?;
+                        if state
+                            .worker
+                            .as_ref()
+                            .is_some_and(|worker| worker.lease_until.timestamp_micros() > now)
+                        {
+                            blockers.insert("worker-lease-current".into());
+                        }
+                    }
+                    "attempts"
+                        if matches!(row.text("state")?.as_str(), "pending" | "effect-unknown") =>
+                    {
+                        blockers.insert("consumer-effect-unresolved".into());
+                    }
+                    "model_reservations" => {
+                        let dispatch = find(
+                            &parsed["model_dispatches"],
+                            &[("reservation_id", &row.text("reservation_id")?)],
+                        )?;
+                        if dispatch.is_none_or(|row| {
+                            row.text("state").map_or(true, |state| state != "settled")
+                        }) {
+                            blockers.insert("model-effect-unresolved".into());
+                        }
+                    }
+                    "model_dispatches" if row.text("state")? != "settled" => {
+                        blockers.insert("model-effect-unresolved".into());
+                    }
+                    "publications" => {
+                        let delivery = find(
+                            &parsed["publication_deliveries"],
+                            &[("publication_id", &row.text("publication_id")?)],
+                        )?;
+                        if delivery.is_none_or(|row| {
+                            row.text("state").map_or(true, |state| {
+                                !matches!(state.as_str(), "completed" | "denied")
+                            })
+                        }) {
+                            blockers.insert("publication-effect-unresolved".into());
+                        }
+                    }
+                    "publication_deliveries"
+                        if !matches!(row.text("state")?.as_str(), "completed" | "denied") =>
+                    {
+                        blockers.insert("publication-effect-unresolved".into());
+                    }
+                    "native_attachment_leases"
+                        if timestamp(&row.text("expires_at")?)?.timestamp_micros() > now =>
+                    {
+                        blockers.insert("media-lease-current".into());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        members.push(MemberAuthority {
+            consumer_id: member.consumer_id.clone(),
+            registration_revision: registry.integer("revision")?,
+            authority_epoch: registration.authority_epoch,
+            recovery_epoch: auth.request().recovery_epoch,
+            registration_active: active,
+            row_sha256: registry.original_sha256().into(),
+            status: if blockers.is_empty() {
+                "QUIESCENT"
+            } else {
+                "LIVE_OR_UNRESOLVED"
+            }
+            .into(),
+            blockers: blockers.into_iter().collect(),
+        });
+    }
+    auth.current(budget.sample(super::clock::now())?)?;
+    Ok(ProviderAuthority {
+        kind: "llull-buzz-private-provider-authority/v1".into(),
+        request_sha256: auth.request_hash().into(),
+        snapshot: snapshot.into(),
+        observed_us: now,
+        status: if members.iter().all(|m| m.status == "QUIESCENT") {
+            "QUIESCENT"
+        } else {
+            "LIVE_OR_UNRESOLVED"
+        }
+        .into(),
+        members,
+        unresolved: vec![
+            "provider-post-snapshot-authority-unverified".into(),
+            "remote-consumer-native-relay-authority-unverified".into(),
+        ],
+    })
+}
+
 /// Full metadata acquisition scope and cross-bindings. Retained historical rows
 /// remain evidence even when their current-work row has lawfully disappeared.
 /// Missing/uncertain current ancestry is explicitly partial, never deduplicated.
@@ -569,7 +763,135 @@ pub(crate) fn verify_complete(
         } else {
             gaps.insert("inventory-historical-reservation-task-missing".into());
         }
-        gaps.insert("inventory-model-reservation-outcome-unobserved".into());
+        if find(
+            &parsed["model_dispatches"],
+            &[("reservation_id", &reservation.text("reservation_id")?)],
+        )?
+        .is_none()
+        {
+            gaps.insert("inventory-model-reservation-outcome-unobserved".into());
+        }
+    }
+    for dispatch in &parsed["model_dispatches"] {
+        let reservation = find(
+            &parsed["model_reservations"],
+            &[("reservation_id", &dispatch.text("reservation_id")?)],
+        )?
+        .ok_or_else(|| deny("inventory_model_dispatch_reservation"))?;
+        for key in ["consumer_id", "root_task_id", "task_id", "generation"] {
+            dispatch.same(key, reservation, key)?;
+        }
+        let state = dispatch.text("state")?;
+        let settled: Option<String> = dispatch.value("settled_at")?;
+        let settlement: Option<String> = dispatch.value("original_settlement_sha256")?;
+        let sent = timestamp(&dispatch.text("dispatched_at")?)?;
+        let deadline = timestamp(&dispatch.text("dispatch_deadline")?)?;
+        if !matches!(state.as_str(), "unknown" | "settled" | "incident")
+            || (state == "unknown") != settled.is_none()
+            || (state == "unknown") != settlement.is_none()
+            || dispatch.integer("generation")? == 0
+            || deadline <= sent
+        {
+            return Err(deny("inventory_model_dispatch_outcome"));
+        }
+        if let Some(ended) = settled {
+            if timestamp(&ended)? < sent {
+                return Err(deny("inventory_model_dispatch_outcome"));
+            }
+        }
+        if state != "settled" {
+            // A deadline cannot prove a vendor call did not happen or finish.
+            gaps.insert("inventory-model-dispatch-outcome-unresolved".into());
+        }
+    }
+    for attachment in &parsed["native_attachments"] {
+        let input = find(
+            &parsed["native_inputs"],
+            &[
+                ("consumer_id", &attachment.text("consumer_id")?),
+                ("source_id", &attachment.text("source_id")?),
+            ],
+        )?
+        .ok_or_else(|| deny("inventory_attachment_intake"))?;
+        attachment.same("consumer_id", input, "consumer_id")?;
+        attachment.same("byte_sha256", attachment, "original_bytes_sha256")?;
+        if attachment.integer("byte_length")? > crate::MAX_ATTACHMENT_BYTES as u64 {
+            return Err(deny("inventory_attachment_bound"));
+        }
+        timestamp(&attachment.text("retained_at")?)?;
+    }
+    for lease in &parsed["native_attachment_leases"] {
+        let attachment = find(
+            &parsed["native_attachments"],
+            &[
+                ("consumer_id", &lease.text("consumer_id")?),
+                ("source_id", &lease.text("source_id")?),
+                ("evidence_source_id", &lease.text("evidence_source_id")?),
+            ],
+        )?
+        .ok_or_else(|| deny("inventory_lease_attachment"))?;
+        lease.same("byte_sha256", attachment, "byte_sha256")?;
+        lease.same("owner", attachment, "origin_owner")?;
+        let input = find(
+            &parsed["native_inputs"],
+            &[
+                ("consumer_id", &lease.text("consumer_id")?),
+                ("source_id", &lease.text("source_id")?),
+            ],
+        )?
+        .ok_or_else(|| deny("inventory_lease_intake"))?;
+        for key in ["module_id", "context_domain"] {
+            lease.same(key, input, key)?;
+        }
+        if lease.text("operation")? != "lease-native-attachment"
+            || lease.integer("enrollment_revision")? == 0
+            || lease.integer("binding_epoch")? == 0
+            || timestamp(&lease.text("expires_at")?)? <= timestamp(&lease.text("created_at")?)?
+            || timestamp(&lease.text("expires_at")?)? > timestamp(&input.text("retain_until")?)?
+        {
+            return Err(deny("inventory_lease_identity"));
+        }
+        llull_buzz_wire::hash(&lease.text("native_key")?)
+            .map_err(|_| deny("inventory_lease_identity"))?;
+        let enrollment_id = lease.text("enrollment_id")?;
+        let revision = lease.integer("enrollment_revision")?;
+        let mut original_binding = None;
+        for row in &parsed["enrollment_history"] {
+            budget.sample(super::clock::now())?;
+            if row.text("enrollment_id")? == enrollment_id
+                && row.integer("revision")? == revision
+                && original_binding.replace(row).is_some()
+            {
+                return Err(deny("inventory_lease_original_enrollment"));
+            }
+        }
+        let binding: EnrollmentMetadata = original_binding
+            .ok_or_else(|| deny("inventory_lease_original_enrollment"))?
+            .embedded("record_metadata")?;
+        if binding.consumer_id != lease.text("consumer_id")?
+            || binding.module_id != lease.text("module_id")?
+            || binding.native_key != lease.text("native_key")?
+            || binding.authority_epoch != lease.integer("binding_epoch")?
+            || !binding.active
+            || binding.key_retired
+        {
+            return Err(deny("inventory_lease_original_enrollment"));
+        }
+        if let Some(enrollment) = find(
+            &parsed["enrollments"],
+            &[("enrollment_id", &lease.text("enrollment_id")?)],
+        )? {
+            for key in ["consumer_id", "module_id"] {
+                lease.same(key, enrollment, key)?;
+            }
+            // The current binding may lawfully have advanced/retired after the
+            // immutable lease; retain that distinction rather than force equality.
+            if lease.integer("enrollment_revision")? > enrollment.integer("revision")? {
+                return Err(deny("inventory_lease_enrollment"));
+            }
+        } else {
+            gaps.insert("inventory-historical-lease-enrollment-missing".into());
+        }
     }
     for delivery in &parsed["publication_deliveries"] {
         let publication = delivery.text("publication_id")?;

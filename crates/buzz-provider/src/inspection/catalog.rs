@@ -1701,12 +1701,9 @@ const ORIGINAL_INDEXES: &[IndexSpec] = &[
     },
 ];
 
-// Enforcement-only current tables are NOT metadata exports or view-owner grants.
-const INTERVENING_TABLES: &[&str] = &[
-    "model_dispatches",
-    "native_attachments",
-    "native_attachment_leases",
-];
+// The three intervening tables join the closed metadata surface in 0010.
+// Their original enforcement contracts remain independently mandatory below.
+const INTERVENING_TABLES: &[&str] = &[];
 const INTERVENING_CONSTRAINTS: &[ConstraintSpec] = &[
     ConstraintSpec {
         table: "model_dispatches",
@@ -2610,8 +2607,8 @@ mod tests {
             llull_buzz_wire::sha256(body.as_bytes()),
             INTERVENING_FUNCTION_BODIES[0].1
         );
-        assert_eq!(super::super::relations::migration_pins().len(), 9);
-        assert_eq!(super::super::relations::RELATIONS.len(), 27);
+        assert_eq!(super::super::relations::migration_pins().len(), 10);
+        assert_eq!(super::super::relations::RELATIONS.len(), 30);
     }
     #[test]
     fn actual_catalog_refuses_direct_public_database_create_temp_and_dedicated_ownership() {

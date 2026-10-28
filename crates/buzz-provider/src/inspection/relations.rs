@@ -322,6 +322,59 @@ pub static RELATIONS: &[Relation] = &[
         keys: &["cursor_id"],
         sql: r###"CREATE VIEW buzz_inspection.v_observation_snapshot_cursors WITH (security_barrier = true) AS SELECT encode(sha256(convert_to(to_jsonb(r)::text,'UTF8')),'hex') AS row_sha256, jsonb_build_array(r.cursor_id) AS row_key, jsonb_build_object('cursor_id',r.cursor_id,'snapshot_id',r.snapshot_id,'through',r.through) AS metadata FROM public.observation_snapshot_cursors AS r;"###,
     },
+    Relation {
+        name: "model_dispatches",
+        fields: &[
+            "reservation_id",
+            "consumer_id",
+            "root_task_id",
+            "task_id",
+            "generation",
+            "state",
+            "dispatched_at",
+            "dispatch_deadline",
+            "settled_at",
+        ],
+        keys: &["reservation_id"],
+        sql: r###"CREATE VIEW buzz_inspection.v_model_dispatches WITH (security_barrier = true) AS SELECT encode(sha256(convert_to(to_jsonb(r)::text,'UTF8')),'hex') AS row_sha256, jsonb_build_array(r.reservation_id) AS row_key, jsonb_build_object('reservation_id',r.reservation_id,'consumer_id',r.consumer_id,'root_task_id',r.root_task_id,'task_id',r.task_id,'generation',r.generation,'state',r.state,'dispatched_at',r.dispatched_at,'dispatch_deadline',r.dispatch_deadline,'settled_at',r.settled_at,'original_request_sha256',encode(sha256(convert_to(r.request::text,'UTF8')),'hex'),'original_pricing_sha256',encode(sha256(convert_to(r.pricing::text,'UTF8')),'hex'),'original_settlement_sha256',encode(sha256(convert_to(r.settlement::text,'UTF8')),'hex')) AS metadata FROM public.model_dispatches AS r;"###,
+    },
+    Relation {
+        name: "native_attachments",
+        fields: &[
+            "consumer_id",
+            "source_id",
+            "evidence_source_id",
+            "byte_sha256",
+            "byte_length",
+            "origin_owner",
+            "retained_at",
+        ],
+        keys: &["consumer_id", "source_id", "evidence_source_id"],
+        sql: r###"CREATE VIEW buzz_inspection.v_native_attachments WITH (security_barrier = true) AS SELECT encode(sha256(convert_to(to_jsonb(r)::text,'UTF8')),'hex') AS row_sha256, jsonb_build_array(r.consumer_id,r.source_id,r.evidence_source_id) AS row_key, jsonb_build_object('consumer_id',r.consumer_id,'source_id',r.source_id,'evidence_source_id',r.evidence_source_id,'byte_sha256',r.byte_sha256,'byte_length',r.byte_length,'origin_owner',r.origin_owner,'retained_at',r.retained_at,'original_evidence_sha256',encode(sha256(convert_to(r.evidence::text,'UTF8')),'hex'),'original_bytes_sha256',encode(sha256(r.bytes),'hex')) AS metadata FROM public.native_attachments AS r;"###,
+    },
+    Relation {
+        name: "native_attachment_leases",
+        fields: &[
+            "lease_id",
+            "consumer_id",
+            "operation",
+            "intent_id",
+            "source_id",
+            "evidence_source_id",
+            "byte_sha256",
+            "enrollment_id",
+            "enrollment_revision",
+            "binding_epoch",
+            "native_key",
+            "module_id",
+            "context_domain",
+            "owner",
+            "expires_at",
+            "created_at",
+        ],
+        keys: &["lease_id"],
+        sql: r###"CREATE VIEW buzz_inspection.v_native_attachment_leases WITH (security_barrier = true) AS SELECT encode(sha256(convert_to(to_jsonb(r)::text,'UTF8')),'hex') AS row_sha256, jsonb_build_array(r.lease_id) AS row_key, jsonb_build_object('lease_id',r.lease_id,'consumer_id',r.consumer_id,'operation',r.operation,'intent_id',r.intent_id,'source_id',r.source_id,'evidence_source_id',r.evidence_source_id,'byte_sha256',r.byte_sha256,'enrollment_id',r.enrollment_id,'enrollment_revision',r.enrollment_revision,'binding_epoch',r.binding_epoch,'native_key',r.native_key,'module_id',r.module_id,'context_domain',r.context_domain,'owner',r.owner,'expires_at',r.expires_at,'created_at',r.created_at,'original_request_sha256',encode(sha256(convert_to(r.request::text,'UTF8')),'hex'),'original_claims_sha256',encode(sha256(convert_to(r.claims::text,'UTF8')),'hex')) AS metadata FROM public.native_attachment_leases AS r;"###,
+    },
 ];
 pub fn relation(name: &str) -> Result<&'static Relation> {
     RELATIONS
@@ -354,6 +407,11 @@ pub(crate) fn implementation_sha256() -> String {
             include_bytes!("../bin/buzz-inspection.rs"),
         ),
         ("auth.rs", include_bytes!("../auth.rs")),
+        ("db.rs", include_bytes!("../db.rs")),
+        ("tasks.rs", include_bytes!("../tasks.rs")),
+        ("effects.rs", include_bytes!("../effects.rs")),
+        ("model_dispatch.rs", include_bytes!("../model_dispatch.rs")),
+        ("native_media.rs", include_bytes!("../native_media.rs")),
         ("provider/Cargo.toml", include_bytes!("../../Cargo.toml")),
         (
             "workspace/Cargo.toml",
@@ -379,6 +437,10 @@ pub(crate) fn implementation_sha256() -> String {
         (
             "0009_private_metadata_inspection.sql",
             include_bytes!("../../../../migrations/0009_private_metadata_inspection.sql"),
+        ),
+        (
+            "0010_private_authority_inspection.sql",
+            include_bytes!("../../../../migrations/0010_private_authority_inspection.sql"),
         ),
         (
             "wire/lib.rs",
@@ -448,8 +510,46 @@ pub(crate) fn migration_pins() -> std::collections::BTreeMap<String, String> {
             include_bytes!("../../../../migrations/0009_private_metadata_inspection.sql")
                 .as_slice(),
         ),
+        (
+            "0010_private_authority_inspection.sql",
+            include_bytes!("../../../../migrations/0010_private_authority_inspection.sql")
+                .as_slice(),
+        ),
     ]
     .into_iter()
     .map(|(name, raw)| (name.into(), llull_buzz_wire::sha256(raw)))
     .collect()
+}
+
+#[cfg(test)]
+mod authority_projection_tests {
+    use super::*;
+    #[test]
+    fn authority_projection_forward_source_is_exact_closed_and_additive() {
+        let forward = include_str!("../../../../migrations/0010_private_authority_inspection.sql");
+        let old = include_str!("../../../../migrations/0009_private_metadata_inspection.sql");
+        for name in [
+            "model_dispatches",
+            "native_attachments",
+            "native_attachment_leases",
+        ] {
+            let relation = relation(name).unwrap();
+            assert!(forward.contains(relation.view_sql()));
+            assert!(!old.contains(relation.view_sql()));
+            assert!(forward.contains(&format!(
+                "GRANT SELECT ON public.{name} TO buzz_recovery_view_owner;"
+            )));
+            assert!(forward.contains(&format!(
+                "REVOKE ALL ON buzz_inspection.v_{name} FROM PUBLIC;"
+            )));
+            assert!(forward.contains(&format!(
+                "GRANT SELECT ON buzz_inspection.v_{name} TO buzz_recovery_inspector;"
+            )));
+        }
+        assert!(!forward.contains("CREATE TABLE"));
+        assert!(!forward.contains("INSERT INTO"));
+        assert!(!forward.contains("UPDATE "));
+        assert_eq!(migration_pins().len(), 10);
+        assert_eq!(RELATIONS.len(), 30);
+    }
 }

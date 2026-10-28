@@ -415,3 +415,76 @@ same inspection fold. On the local non-Linux test host, only the final Linux
 process/socket lookup is an explicit inert seam. This does not qualify Linux
 installation, a remote relay, current live standing, provider IAM or human acceptance.
 Installed kernel controls and independent result review remain separate.
+
+
+## Provider-owned model and media authority (forward source extension)
+
+Forward migration `0010_private_authority_inspection.sql` extends the fixed
+metadata inventory to 30 relations. Migrations 0001–0009 remain byte-identical.
+The three added security-barrier views are `model_dispatches`,
+`native_attachments` and `native_attachment_leases`. They use the same complete
+scalar preflight, aggregate bounds, named cursor/EOF, physical catalog,
+independently pinned view definitions and persisted ES256 page verification.
+The new source requires all ten migration hashes and all 30 view definitions;
+an old schema manifest cannot silently acquire the expanded scope. Original
+model/media constraints, triggers and indexes remain mandatory enforcement
+contracts. Source implementation custody now also includes the selected ordinary
+DB, task, effect, model-dispatch and native-media guards.
+
+Model projection retains the immutable reservation/consumer/root/task/generation,
+state, send/deadline/settlement times and original request/pricing/settlement
+hashes. It exports no prompt, price body or usage body. A dispatch must join its
+original reservation and retain the original generation and identities. Only an
+actual `settled` row discharges the previously unconditional unobserved-reservation
+gap. A missing dispatch, `unknown` or `incident` remains unresolved; passing a
+send deadline never proves a vendor call did not happen.
+
+Attachment projection retains exact scoped consumer/source/evidence identities,
+byte hash/length, configured origin owner and retention time with original
+evidence/byte commitments, without exporting bytes or evidence bodies. Leases
+retain their actual immutable identity, enrollment revision/epoch, native public
+key, module/context, owner and lifetime with original request/claims commitments.
+The inspector joins intake → attachment → lease and the lease's exact historical
+enrollment revision. A later current binding can have advanced or retired; it
+cannot replace the original key/epoch/consumer/module proof. A missing or
+cross-owner original binding is refused. The lease must retain its actual intake
+module/context and cannot outlive that intake's original retention deadline.
+Unattributable original metadata uncertainty blocks every selected member's
+quiescence disposition. The native SQL methods already authored
+in `tests/inspection_postgres.rs` now name both forward migrations and all 30
+views, continue denying raw model requests/media bytes/lease claims, and remain
+AUTHORED UNRUN until a genuine isolated installed execution is recorded.
+
+The new source emits `llull-buzz-private-metadata-receipt/v3` with mandatory
+`provider_authority.kind = llull-buzz-private-provider-authority/v1`. This is a
+projection of the same authenticated PostgreSQL snapshot. It binds request hash,
+snapshot, observation time and exact member registration row commitment,
+registration revision, authority epoch and recovery epoch. Its per-member
+`QUIESCENT` positive requires an inactive registration, no active nonretired
+enrollment, all retained task roots closed with no current worker lease, no
+unresolved consumer attempt, every model reservation joined to a settled dispatch,
+every admitted publication joined to a terminal delivery, and no current media
+lease. Each contrary domain emits a named blocker and `LIVE_OR_UNRESOLVED`.
+Uncertain original metadata also blocks that positive. Consumers must rederive
+these facts from the signed original rows; the projection is not a supplied
+operator policy flag or an effect authorization.
+
+This positive establishes the selected provider's own ledger conditions at the
+snapshot. It does not establish that no external process can act or that the
+snapshot remained current afterward. The DTO explicitly retains
+`provider-post-snapshot-authority-unverified` and
+`remote-consumer-native-relay-authority-unverified`; the outer receipt remains
+`PARTIAL`. Original native custody, actual current control fences, recipient and
+relay authority, and full credential exposure history remain separate obligations.
+Calling credential-bearing `POST /query` or issuing a media proof is not an
+inspector revocation check. The read-only inspector does neither, and it never
+converts signed claim expiry into a claim about installed receiver policy.
+
+Source controls use the production bounded port, catalog/history validators,
+closed parsers, ES256 signer/verifier and real protected fixture files. Only the
+final SQL socket is explicitly INERT. The populated positive contains a retired
+enrollment, closed task, settled model reservation/dispatch and expired media
+lease with original joins. Controls separately retain live registration, task,
+model and media blockers, absent dispatch/delivery uncertainty and adversarial
+cross-generation/key/epoch/owner bindings. These source methods do not replace
+installed SQL, runtime or human acceptance.

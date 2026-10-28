@@ -209,8 +209,10 @@ async fn prepared_forward_migration_preserves_existing_runtime_effective_privile
         .await
         .unwrap();
     sql.execute("BEGIN").await.unwrap();
-    let migrated = sqlx::raw_sql(include_str!(
-        "../../../migrations/0009_private_metadata_inspection.sql"
+    let migrated = sqlx::raw_sql(concat!(
+        include_str!("../../../migrations/0009_private_metadata_inspection.sql"),
+        "\n",
+        include_str!("../../../migrations/0010_private_authority_inspection.sql")
     ))
     .execute(&mut sql)
     .await;

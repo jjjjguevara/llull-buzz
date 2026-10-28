@@ -69,6 +69,7 @@ struct Receipt {
     unresolved: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     native_standing: Option<super::standing::StandingObservation>,
+    provider_authority: super::history::ProviderAuthority,
 }
 /// Only the filename is returned. Original metadata and credentials are never
 /// printed to stdout; an authorized operator reads the held-mode private files.
@@ -187,6 +188,7 @@ fn receipt_body(
     catalog_sha256: String,
     relation_receipts: Vec<RelationReceipt>,
     mut unresolved: Vec<String>,
+    provider_authority: super::history::ProviderAuthority,
 ) -> Receipt {
     unresolved.extend(super::UNRESOLVED.map(str::to_owned));
     unresolved.sort();
@@ -194,7 +196,7 @@ fn receipt_body(
     let request = auth.request();
     let db = &auth.profile().database;
     Receipt {
-        kind: "llull-buzz-private-metadata-receipt/v1".into(),
+        kind: "llull-buzz-private-metadata-receipt/v3".into(),
         status: "PARTIAL".into(),
         installation: auth.profile().installation.clone(),
         source_revision: auth.source_revision().into(),
@@ -223,6 +225,7 @@ fn receipt_body(
         relations: relation_receipts,
         unresolved,
         native_standing: None,
+        provider_authority,
     }
 }
 async fn retain(
@@ -391,10 +394,19 @@ async fn run_owned(
             &mut budget,
         )
         .await?;
-        let mut body = receipt_body(&auth, &session, catalog_digest, receipts, gaps);
+        let provider_authority =
+            history::provider_authority(&raw, &auth, &session.snapshot, &mut budget)?;
+        let mut body = receipt_body(
+            &auth,
+            &session,
+            catalog_digest,
+            receipts,
+            gaps,
+            provider_authority,
+        );
         if let Some(profile) = &auth.profile().native_standing {
             let standing = super::standing::collect(profile, &auth, &mut budget)?;
-            body.kind = "llull-buzz-private-metadata-receipt/v2".into();
+            body.kind = "llull-buzz-private-metadata-receipt/v3".into();
             // Local facts are supplied alongside their exact original scope;
             // unresolved remote authority remains explicit and cannot be erased.
             body.native_standing = Some(standing);
@@ -991,7 +1003,7 @@ mod tests {
             let decoded = URL_SAFE_NO_PAD.decode(encoded).unwrap();
             let receipt: authority::Signed<Receipt> = llull_buzz_wire::parse(&decoded).unwrap();
             assert_eq!(receipt.body.status, "PARTIAL");
-            assert_eq!(receipt.body.relations.len(), 27);
+            assert_eq!(receipt.body.relations.len(), 30);
             assert_eq!(
                 receipt
                     .body
@@ -1026,6 +1038,288 @@ mod tests {
         let mut history = CompleteFixture::new(1, with_history(complete_rows(1), false), false);
         history.run().await.unwrap();
     }
+    fn authority_rows() -> RawRows {
+        let mut rows = with_history(complete_rows(1), false);
+        mutate(&mut rows, "consumer_registry", 0, |r| {
+            r["metadata"]["active"] = serde_json::json!(false)
+        });
+        mutate(&mut rows, "registration_history", 0, |r| {
+            r["metadata"]["active"] = serde_json::json!(false)
+        });
+        let mut current: serde_json::Value =
+            serde_json::from_slice(&rows["enrollments"][0]).unwrap();
+        current["metadata"]["revision"] = serde_json::json!(4);
+        current["metadata"]["authority_epoch"] = serde_json::json!(11);
+        current["metadata"]["active"] = serde_json::json!(false);
+        current["metadata"]["key_retired"] = serde_json::json!(true);
+        let mut record = current["metadata"].clone();
+        record
+            .as_object_mut()
+            .unwrap()
+            .remove("original_proof_event_sha256");
+        put(
+            &mut rows,
+            "enrollment_history",
+            serde_json::json!(["enrollment-a", 4]),
+            serde_json::json!({"enrollment_id":"enrollment-a","revision":4,"action":"key-retired","recorded_at":"2026-10-07T00:00:00Z","record_metadata":record,"record_shape_valid":true,"original_record_sha256":"4".repeat(64)}),
+        );
+        rows.get_mut("enrollments").unwrap()[0] = serde_json::to_vec(&current).unwrap();
+        put(
+            &mut rows,
+            "task_roots",
+            serde_json::json!(["consumer-a", "root-a"]),
+            serde_json::json!({"consumer_id":"consumer-a","root_task_id":"root-a","root_intent_id":"root-intent-a","request_sha256":"a".repeat(64),"enrollment_id":"enrollment-a","created_at":"2026-10-07T00:00:00Z","expires_at":"2026-10-08T00:00:00Z","closed":true,"state":{"generation":1,"revision":2,"phase":"completed","worker":null,"stop_new_work":true},"worker_shape_valid":true,"state_shape_valid":true,"original_record_sha256":"b".repeat(64),"original_state_sha256":"c".repeat(64)}),
+        );
+        put(
+            &mut rows,
+            "task_members",
+            serde_json::json!(["consumer-a", "task-a"]),
+            serde_json::json!({"consumer_id":"consumer-a","task_id":"task-a","root_task_id":"root-a","request_sha256":"a".repeat(64),"original_manifest_sha256":"a".repeat(64)}),
+        );
+        let reservation = "00000000-0000-0000-0000-000000000002";
+        put(
+            &mut rows,
+            "model_reservations",
+            serde_json::json!([reservation]),
+            serde_json::json!({"reservation_id":reservation,"consumer_id":"consumer-a","root_task_id":"root-a","task_id":"task-a","generation":1,"intent_id":"model-a","request_sha256":"a".repeat(64),"created_at":"2026-10-07T00:00:00Z","original_reservation_sha256":"a".repeat(64),"original_charge_sha256":"b".repeat(64)}),
+        );
+        put(
+            &mut rows,
+            "model_dispatches",
+            serde_json::json!([reservation]),
+            serde_json::json!({"reservation_id":reservation,"consumer_id":"consumer-a","root_task_id":"root-a","task_id":"task-a","generation":1,"state":"settled","dispatched_at":"2026-10-07T00:00:00Z","dispatch_deadline":"2026-10-07T00:10:00Z","settled_at":"2026-10-07T00:05:00Z","original_request_sha256":"a".repeat(64),"original_pricing_sha256":"b".repeat(64),"original_settlement_sha256":"c".repeat(64)}),
+        );
+        let source = "00000000-0000-0000-0000-000000000003";
+        put(
+            &mut rows,
+            "native_inputs",
+            serde_json::json!([source]),
+            serde_json::json!({"source_id":source,"consumer_id":"consumer-a","community_id":"community-a","event_id":"a".repeat(64),"module_id":"module-a","context_domain":"context-a","channel_id":"channel-a","enrollment_id":"enrollment-a","enrollment_revision":1,"intake_sha256":"b".repeat(64),"event_sha256":"a".repeat(64),"accepted_at":"2026-10-07T00:00:00Z","retain_until":"2026-10-08T00:00:00Z","original_intake_sha256":"b".repeat(64),"original_event_bytes_sha256":"a".repeat(64)}),
+        );
+        put(
+            &mut rows,
+            "native_attachments",
+            serde_json::json!(["consumer-a", source, "evidence-a"]),
+            serde_json::json!({"consumer_id":"consumer-a","source_id":source,"evidence_source_id":"evidence-a","byte_sha256":"a".repeat(64),"byte_length":2,"origin_owner":"native-owner-a","retained_at":"2026-10-07T00:00:00Z","original_evidence_sha256":"b".repeat(64),"original_bytes_sha256":"a".repeat(64)}),
+        );
+        let lease = "00000000-0000-0000-0000-000000000004";
+        put(
+            &mut rows,
+            "native_attachment_leases",
+            serde_json::json!([lease]),
+            serde_json::json!({"lease_id":lease,"consumer_id":"consumer-a","operation":"lease-native-attachment","intent_id":"lease-a","source_id":source,"evidence_source_id":"evidence-a","byte_sha256":"a".repeat(64),"enrollment_id":"enrollment-a","enrollment_revision":1,"binding_epoch":8,"native_key":"d".repeat(64),"module_id":"module-a","context_domain":"context-a","owner":"native-owner-a","created_at":"2026-10-07T00:00:00Z","expires_at":"2026-10-07T00:10:00Z","original_request_sha256":"a".repeat(64),"original_claims_sha256":"b".repeat(64)}),
+        );
+        rows
+    }
+    async fn authority_receipt(rows: RawRows) -> Receipt {
+        let mut fixture = CompleteFixture::new(1, rows, false);
+        let receipt = fixture.run().await.unwrap();
+        let signed = std::fs::read(fixture.owned.path.join(&receipt.filename)).unwrap();
+        let decoded = URL_SAFE_NO_PAD
+            .decode(
+                std::str::from_utf8(&signed)
+                    .unwrap()
+                    .split('.')
+                    .nth(1)
+                    .unwrap(),
+            )
+            .unwrap();
+        let receipt: authority::Signed<Receipt> = llull_buzz_wire::parse(&decoded).unwrap();
+        receipt.body
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn complete_port_provider_authority_quiescent_positive_joins_real_closed_inventory() {
+        let receipt = authority_receipt(authority_rows()).await;
+        assert_eq!(receipt.kind, "llull-buzz-private-metadata-receipt/v3");
+        let facts = receipt.provider_authority;
+        assert_eq!(facts.kind, "llull-buzz-private-provider-authority/v1");
+        assert_eq!(facts.request_sha256, receipt.request_sha256);
+        assert_eq!(facts.snapshot, receipt.snapshot);
+        assert_eq!(facts.status, "QUIESCENT");
+        assert_eq!(facts.members.len(), 1);
+        assert_eq!(facts.members[0].consumer_id, "consumer-a");
+        assert_eq!(facts.members[0].status, "QUIESCENT");
+        assert!(facts.members[0].blockers.is_empty());
+        assert_eq!(
+            facts.unresolved,
+            [
+                "provider-post-snapshot-authority-unverified",
+                "remote-consumer-native-relay-authority-unverified"
+            ]
+        );
+        assert!(!receipt
+            .unresolved
+            .iter()
+            .any(|g| g == "inventory-model-reservation-outcome-unobserved"));
+        assert_eq!(receipt.status, "PARTIAL");
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn complete_port_provider_authority_each_current_domain_blocks_positive() {
+        for (relation, key, value, expected) in [
+            (
+                "consumer_registry",
+                "active",
+                serde_json::json!(true),
+                "registration-active",
+            ),
+            (
+                "task_roots",
+                "closed",
+                serde_json::json!(false),
+                "task-root-not-closed",
+            ),
+            (
+                "model_dispatches",
+                "state",
+                serde_json::json!("unknown"),
+                "model-effect-unresolved",
+            ),
+            (
+                "native_attachment_leases",
+                "expires_at",
+                serde_json::json!("2099-10-07T00:10:00Z"),
+                "media-lease-current",
+            ),
+        ] {
+            let mut rows = authority_rows();
+            mutate(&mut rows, relation, 0, |r| {
+                r["metadata"][key] = value;
+                if relation == "model_dispatches" {
+                    r["metadata"]["settled_at"] = serde_json::Value::Null;
+                    r["metadata"]["original_settlement_sha256"] = serde_json::Value::Null;
+                }
+            });
+            if relation == "consumer_registry" {
+                mutate(&mut rows, "registration_history", 0, |r| {
+                    r["metadata"]["active"] = serde_json::json!(true)
+                });
+            }
+            if relation == "native_attachment_leases" {
+                mutate(&mut rows, "native_inputs", 0, |r| {
+                    r["metadata"]["retain_until"] = serde_json::json!("2099-10-08T00:00:00Z")
+                });
+            }
+            let receipt = authority_receipt(rows).await;
+            let facts = receipt.provider_authority;
+            assert_eq!(facts.status, "LIVE_OR_UNRESOLVED", "{relation}");
+            assert!(
+                facts.members[0].blockers.iter().any(|g| g == expected),
+                "{relation}"
+            );
+        }
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn complete_port_provider_authority_unattributed_original_unknown_blocks_positive() {
+        let mut rows = authority_rows();
+        mutate(&mut rows, "enrollment_history", 0, |r| {
+            r["metadata"]["record_shape_valid"] = serde_json::json!(false)
+        });
+        let receipt = authority_receipt(rows).await;
+        assert_eq!(receipt.provider_authority.status, "LIVE_OR_UNRESOLVED");
+        assert!(receipt.provider_authority.members[0]
+            .blockers
+            .contains(&"original-metadata-unknown".into()));
+        assert!(receipt
+            .unresolved
+            .contains(&"inventory-original-shape-unknown".into()));
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn complete_port_provider_authority_missing_original_dispatch_or_delivery_stays_unresolved(
+    ) {
+        let mut rows = authority_rows();
+        rows.get_mut("model_dispatches").unwrap().clear();
+        let receipt = authority_receipt(rows).await;
+        assert_eq!(receipt.provider_authority.status, "LIVE_OR_UNRESOLVED");
+        assert!(receipt.provider_authority.members[0]
+            .blockers
+            .contains(&"model-effect-unresolved".into()));
+        let mut rows = authority_rows();
+        put(
+            &mut rows,
+            "publications",
+            serde_json::json!(["consumer-a", "publication-intent-a"]),
+            serde_json::json!({"consumer_id":"consumer-a","intent_id":"publication-intent-a","publication_id":"00000000-0000-0000-0000-000000000009","release_ref":"release-a","request_sha256":"a".repeat(64),"enrollment_id":"enrollment-a","recovery_epoch":1,"state":"pending","accepted_at":"2026-10-07T00:00:00Z","original_publication_sha256":"a".repeat(64),"original_release_sha256":"b".repeat(64)}),
+        );
+        let receipt = authority_receipt(rows).await;
+        assert_eq!(receipt.provider_authority.status, "LIVE_OR_UNRESOLVED");
+        assert!(receipt.provider_authority.members[0]
+            .blockers
+            .contains(&"publication-effect-unresolved".into()));
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn complete_port_provider_authority_cross_scope_and_false_terminal_refuse() {
+        for (relation, key, value) in [
+            ("model_dispatches", "generation", serde_json::json!(2)),
+            (
+                "model_dispatches",
+                "state",
+                serde_json::json!("settled-without-usage"),
+            ),
+            ("model_dispatches", "settled_at", serde_json::Value::Null),
+            (
+                "model_dispatches",
+                "dispatch_deadline",
+                serde_json::json!("2026-10-06T00:00:00Z"),
+            ),
+            (
+                "native_attachments",
+                "original_bytes_sha256",
+                serde_json::json!("b".repeat(64)),
+            ),
+            (
+                "native_attachments",
+                "source_id",
+                serde_json::json!("00000000-0000-0000-0000-000000000005"),
+            ),
+            (
+                "native_attachment_leases",
+                "owner",
+                serde_json::json!("different-owner"),
+            ),
+            (
+                "native_attachment_leases",
+                "native_key",
+                serde_json::json!("e".repeat(64)),
+            ),
+            (
+                "native_attachment_leases",
+                "context_domain",
+                serde_json::json!("foreign-context"),
+            ),
+            (
+                "native_attachment_leases",
+                "module_id",
+                serde_json::json!("foreign-module"),
+            ),
+            (
+                "native_attachment_leases",
+                "binding_epoch",
+                serde_json::json!(9),
+            ),
+            (
+                "native_attachment_leases",
+                "enrollment_revision",
+                serde_json::json!(5),
+            ),
+            (
+                "native_attachment_leases",
+                "expires_at",
+                serde_json::json!("invalid"),
+            ),
+            (
+                "native_attachment_leases",
+                "expires_at",
+                serde_json::json!("2026-10-09T00:00:00Z"),
+            ),
+        ] {
+            let mut rows = authority_rows();
+            mutate(&mut rows, relation, 0, |r| r["metadata"][key] = value);
+            let mut fixture = CompleteFixture::new(1, rows, false);
+            assert!(fixture.run().await.is_err(), "{relation}/{key}");
+            assert!(fixture.output_names().is_empty());
+        }
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn complete_port_authenticates_migration_pins_before_sql_or_output() {
         let mut fixture = CompleteFixture::new(1, complete_rows(1), true);
