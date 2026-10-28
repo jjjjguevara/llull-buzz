@@ -69,6 +69,8 @@ struct Receipt {
     unresolved: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     native_standing: Option<super::standing::StandingObservation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    native_receivers: Option<super::receiver::ReceiverObservations>,
     provider_authority: super::history::ProviderAuthority,
 }
 /// Only the filename is returned. Original metadata and credentials are never
@@ -225,6 +227,7 @@ fn receipt_body(
         relations: relation_receipts,
         unresolved,
         native_standing: None,
+        native_receivers: None,
         provider_authority,
     }
 }
@@ -410,6 +413,20 @@ async fn run_owned(
             // Local facts are supplied alongside their exact original scope;
             // unresolved remote authority remains explicit and cannot be erased.
             body.native_standing = Some(standing);
+        }
+        if let Some(profile) = &auth.profile().native_receivers {
+            let owners = &body
+                .native_standing
+                .as_ref()
+                .ok_or_else(|| deny("receiver_original_scopes"))?
+                .scopes;
+            body.native_receivers = Some(super::receiver::collect(
+                profile,
+                owners,
+                &auth,
+                &mut budget,
+            )?);
+            body.kind = "llull-buzz-private-metadata-receipt/v4".into();
         }
         let filename =
             signed_file(body, &auth, &inputs, &directory, &mut outputs, &mut budget).await?;

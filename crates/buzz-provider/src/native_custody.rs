@@ -114,7 +114,7 @@ pub struct ProcessIncarnation {
     pub uid: u32,
     pub namespaces: BTreeMap<String, String>,
 }
-fn bounded_read(path: &Path, maximum: u64) -> Result<Vec<u8>> {
+pub(crate) fn bounded_read(path: &Path, maximum: u64) -> Result<Vec<u8>> {
     let fd = openat(
         CWD,
         path,

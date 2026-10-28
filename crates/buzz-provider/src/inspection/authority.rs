@@ -122,6 +122,8 @@ pub(crate) struct Profile {
     pub membership_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_standing: Option<super::standing::StandingProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_receivers: Option<super::receiver::ReceiverProfile>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -353,6 +355,9 @@ impl Authenticated {
         if let Some(standing) = &auth.profile.body.native_standing {
             standing.authenticate(&auth)?;
         }
+        if let Some(receivers) = &auth.profile.body.native_receivers {
+            receivers.authenticate(&auth)?;
+        }
         Ok(auth)
     }
     pub(crate) fn current(&self, now: i64) -> Result<()> {
@@ -464,6 +469,13 @@ pub(super) fn synthetic_native_standing_inputs(
     native: super::standing::StandingProfile,
 ) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64) {
     tests::native_standing_inputs(native)
+}
+#[cfg(test)]
+pub(super) fn synthetic_receiver_inputs(
+    native: super::standing::StandingProfile,
+    receivers: super::receiver::ReceiverProfile,
+) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64) {
+    tests::receiver_inputs(native, receivers)
 }
 #[cfg(test)]
 pub(super) fn synthetic_database() -> Database {
@@ -583,6 +595,7 @@ mod tests {
             members,
             membership_sha256: membership_sha256.clone(),
             native_standing: None,
+            native_receivers: None,
         };
         let profile = token(profile, &root_key, "root", PROFILE_PURPOSE, now);
         let trust = serde_json::to_vec(&Trust {
@@ -666,6 +679,21 @@ mod tests {
             .unwrap()
             .body
             .database
+    }
+    pub(super) fn receiver_inputs(
+        native: super::super::standing::StandingProfile,
+        receivers: super::super::receiver::ReceiverProfile,
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, i64) {
+        let (mut trust_raw, mut profile_raw, request, signer, now) = native_standing_inputs(native);
+        let mut profile = verify::<Profile>(&profile_raw, &keys(1, "root").0, PROFILE_PURPOSE)
+            .unwrap()
+            .body;
+        profile.native_receivers = Some(receivers);
+        profile_raw = token(profile, &keys(1, "root").1, "root", PROFILE_PURPOSE, now);
+        let mut trust: Trust = llull_buzz_wire::parse(&trust_raw).unwrap();
+        trust.profile_sha256 = llull_buzz_wire::sha256(&profile_raw);
+        trust_raw = serde_json::to_vec(&trust).unwrap();
+        (trust_raw, profile_raw, request, signer, now)
     }
     pub(super) fn complete_inputs(
         count: usize,

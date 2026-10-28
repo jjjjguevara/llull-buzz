@@ -488,3 +488,121 @@ lease with original joins. Controls separately retain live registration, task,
 model and media blockers, absent dispatch/delivery uncertainty and adversarial
 cross-generation/key/epoch/owner bindings. These source methods do not replace
 installed SQL, runtime or human acceptance.
+
+## Native receiver observations and conditional original-token cutoffs
+
+The optional root-signed `Profile.native_receivers` selects
+`llull-buzz-native-receiver-profile/v1`. It requires the original
+`native_standing` scopes and lists exact receiver IDs, original custody IDs,
+Linux process incarnations, `/opt/llull/upstream/buzz-relay`, executable hashes,
+protected host-absolute source artifact roots, the selected upstream revision and
+`source_image_admission_sha256`. That last hash is an independent protected join
+target. Its presence grants no image, build or policy authority.
+
+Only this selected extension emits
+`llull-buzz-private-metadata-receipt/v4`, with mandatory
+`native_receivers.kind = llull-buzz-private-native-receivers/v1`. The original
+native-standing v1 DTO, complete SQL pages and provider-authority DTO remain
+unchanged. Receipts without receiver selection remain v3. The outer status is
+still `PARTIAL`, and the original unresolved scopes remain explicit.
+
+The bounded read-only Linux observer first joins the selected receiver to the
+collector's machine, boot and PID namespace. It requires the exact current birth,
+UID and namespace tuple and the same observed time namespace and complete time
+offsets before and after acquisition. Unsupported remote or non-Linux domains
+return `UNKNOWN` without a token-expiry disposition. Inaccessible or changing
+local evidence refuses the observation. It does not contact the receiver.
+
+The actual kernel executable link must name the fixed relay program. Its device,
+inode, owner, mode and size must match the measured program leaf in that process's
+rootfs. Source-policy files are measured separately from the protected artifact
+root on the observer host: `crates/buzz-auth/src/nip98.rs`,
+`crates/buzz-media/src/auth.rs`, `crates/buzz-relay/src/api/bridge.rs` and
+`crates/buzz-relay/src/api/media.rs`. All four full-file hashes must equal the
+source-inspected upstream revision `01b6174a1cbad249e93f31df97d4b2ed1d0e8638`.
+Neither copied source files nor the program hash proves their build relationship.
+An independently authenticated build's source/image/executable manifest and
+current runtime/image custody must establish that relationship
+independently; labels or SHA256SUMS alone cannot supply it.
+
+Files use held root and parent descriptors, no-follow components and leaves,
+root ownership, non-writable public modes, regular-file and byte bounds, streamed
+SHA256, before/after descriptor and path identities, repeated complete program and
+policy reads, the sticky invocation budget and checked closes. Source files have
+a 1 MiB acquisition bound; the executable has a 256 MiB acquisition bound. These
+are qualification bounds for this fixed observer, not accepted business ceilings.
+No runtime source mount, image build, installed profile or provider effect is
+introduced by the source extension.
+
+`conditional_rejections` joins each actual V2 journal record's custody ID, event
+ID, complete-token hash and named capability. At the reviewed source, native-http
+NIP98 is first rejected at integer receiver second `created_at + 61`; media GET
+is first rejected at `min(expiration, created_at + 3601)`. The exported elapsed
+flag uses that individual receiver's mandatory `observed_us`. This is the
+receiver's historical bounded snapshot; the outer `observed_us` records collection
+completion only. Acquisition of another receiver never refreshes the first one's
+program/source facts or recalculates its token cutoffs at a later timestamp.
+Publication and
+consumer-http have no supported relay-expiry conclusion and retain null cutoffs.
+Legacy issuance remains incomplete. These are conditional source-policy facts,
+never an installed-policy or universal token-revocation verdict.
+
+Every observation retains `receiver-source-image-admission-unverified`,
+`provider-post-snapshot-authority-unverified` and
+`other-recipient-and-copied-token-domains-unobserved` as applicable. A protected
+consumer may discharge only a specifically joined scope with genuine current
+evidence. Historical copied credentials, other recipients, source/image admission
+and complete provider fences cannot be cleared merely because a local process
+retired or a claimed lifetime elapsed.
+
+### Source controls executed 2026-10-28
+
+The actual local Darwin arm64 Rust 1.98.1 run reused the existing compiler cache,
+with locked offline dependencies and two build jobs:
+
+```sh
+cargo test --offline --locked -p llull-buzz-provider --lib inspection -- --test-threads=1
+cargo test --offline --locked -p llull-buzz-provider --lib inspection::receiver::tests -- --test-threads=1
+cargo check --offline --locked -p llull-buzz-provider --all-targets
+cargo clippy --offline --locked -p llull-buzz-provider --all-targets -- -D warnings
+```
+
+A prior source state passed 66 inspection methods, with two ignored and 16
+filtered out, plus all-target check and strict Clippy. Independent review then
+identified a multi-receiver timestamp defect. The final source keeps each
+receiver's own timestamp and adds a deterministic first-receiver exec/exit during
+second acquisition control, with an explicitly INERT final snapshot and clock.
+The final focused run passed all nine receiver methods (76 other methods filtered
+out), followed by all-target check and strict Clippy. The nine controls include
+real original credential acquisition/signatures/history folding, exact conditional
+cutoff boundaries, the selected upstream NIP98 verifier, genuine separate-root
+ES256 profiles/responses, unsupported-domain uncertainty, real held source files,
+path/link/mode/byte adverses, sticky cancellation, closed DTOs, an INERT final
+kernel program tuple with real file identities, and nonallocating serialized
+composition guards. Conditional lists and combined receiver observations are
+bounded before another vector member is retained; overflow refuses a complete
+observation rather than exporting a trimmed prefix.
+
+The first compile failed because SHA2 0.11's digest array does not implement
+`LowerHex`; explicit lowercase hex encoding corrected it. Subsequent source
+review added the final executable recheck because PID birth survives `exec`,
+then the composition guard and independent-review timestamp correction. Each
+changed source was revalidated at its stated scope. The final
+tracked source diff and new receiver file hash were unchanged across all three
+commands. All owned compiler/controller processes were reaped and their process
+groups were absent afterward.
+
+The final receiver source SHA256 is
+`6de30ac9b6c246b2d2219ad1fe9b1e62c5019bd1d6774df434a8b657dba9c12c`.
+Different-author source review accepted the timestamp correction at those exact
+receiver bytes; it did not qualify an installed receiver or complete standing.
+Retained final log hashes are `8367351bad955fb706538311c802b988b228fb7a77dac807b391d5f35ba0d64d`
+(nine receiver controls), `e0b0ed92b8ee5318186e75b596100e997d9175c22fa17779f6773077dd22932d`
+(all-target check), and `1e273e97b940f946a17bc37ee2983b1b5d718daf59b9e019ce2015c445ee6e86`
+(strict Clippy). The prior 66-method run and failed compile remain separately
+retained and do not claim qualification of the later source state.
+
+This is source qualification. The actual Linux receiver path, installed
+source/image admission, PostgreSQL installation, complete provider standing and
+human acceptance remain unqualified. No VM, provider request, image build,
+deployment, profile activation or merge ran in this source check.

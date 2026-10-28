@@ -41,6 +41,29 @@ These bindings claim work, not completed capability or acceptance.
 
 ## Comments
 
+2026-10-28 — Items 04.4/04.6: the optional native receiver source extension binds
+original custody IDs to bounded Linux process/program/source/time-domain
+observations and exports token-specific conditional NIP98/media rejection
+cutoffs. The v4 outer receipt retains native-standing v1 and all unresolved
+source/image admission, post-snapshot, other-recipient and copied-token scopes.
+Publication and consumer-http do not acquire a relay-expiry conclusion.
+The source profile's admission hash is a protected join target, not an authority
+flag. See [the receiver contract and exact source evidence](../../../docs/implementation/PRIVATE-METADATA-INSPECTION.md#native-receiver-observations-and-conditional-original-token-cutoffs).
+
+The existing-cache, offline locked Rust 1.98.1 Darwin arm64 prior source run
+passed 66 inspection methods (two ignored, 16 filtered out). Independent review
+then corrected multi-receiver timestamp semantics: each receiver retains its own
+historical snapshot and token cutoff calculation. The final source passed nine
+focused receiver methods, all-target check and strict Clippy. Nine source controls
+cover real credential/history/crypto
+and protected file guards, exact conditional boundaries, unsupported domains,
+exec/leaf changes, compositional bounds and deterministic first-receiver exec/exit
+during second acquisition. The initial SHA2 formatting compile
+failure is retained separately. All owned controller/compiler groups were reaped
+and absent. Actual Linux receiver/source-image admission, installed SQL, complete
+standing, independent acceptance and human UAT remain unqualified. No provider
+PR, runtime, deployment or merge was changed; task 04 remains claimed.
+
 2026-10-24 — Bounded private-metadata source leaf execution at
 `518f880e3b1f3cfdc6fa703ad49b16d20e5f7d34`: locked all-target build, strict
 Clippy, all 61 runnable library methods, ten focused source/history methods,

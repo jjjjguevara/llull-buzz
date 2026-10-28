@@ -23,11 +23,11 @@ impl Drop for PrivateBytes {
     }
 }
 #[derive(Clone, PartialEq, Eq)]
-struct Identity {
-    dev: u64,
-    inode: u64,
-    owner: u32,
-    mode: u32,
+pub(super) struct Identity {
+    pub(super) dev: u64,
+    pub(super) inode: u64,
+    pub(super) owner: u32,
+    pub(super) mode: u32,
     links: u64,
     size: i64,
     modified: (i64, i64),
@@ -36,7 +36,7 @@ struct Identity {
 // The selected Linux arm64 Stat already has these canonical widths. Other
 // Unix ABIs (including Darwin dev/mode) retain the original conversions below.
 #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-fn identity(s: &Stat) -> Identity {
+pub(super) fn identity(s: &Stat) -> Identity {
     Identity {
         dev: s.st_dev,
         inode: s.st_ino,
@@ -49,7 +49,7 @@ fn identity(s: &Stat) -> Identity {
     }
 }
 #[cfg(target_os = "macos")]
-fn identity(s: &Stat) -> Identity {
+pub(super) fn identity(s: &Stat) -> Identity {
     Identity {
         dev: s.st_dev as u64,
         inode: s.st_ino,
@@ -62,7 +62,7 @@ fn identity(s: &Stat) -> Identity {
     }
 }
 #[cfg(not(any(target_os = "macos", all(target_os = "linux", target_arch = "aarch64"))))]
-fn identity(s: &Stat) -> Identity {
+pub(super) fn identity(s: &Stat) -> Identity {
     Identity {
         dev: s.st_dev as u64,
         inode: s.st_ino as u64,

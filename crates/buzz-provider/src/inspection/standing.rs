@@ -632,6 +632,14 @@ fn collect_owned(
 }
 
 #[cfg(test)]
+pub(super) fn synthetic_receiver_owner() -> OwnerObservation {
+    tests::receiver_owner(0)
+}
+#[cfg(test)]
+pub(super) fn synthetic_receiver_owner_at_age(age: u64) -> OwnerObservation {
+    tests::receiver_owner(age)
+}
+#[cfg(test)]
 mod tests {
     use super::*;
     fn scope() -> NativeCustodyScope {
@@ -968,6 +976,13 @@ mod tests {
         scope
     }
     fn actual_history(f: &Fixture) -> (NativeCustodyScope, Vec<u8>) {
+        actual_history_with_native(f, false, 0)
+    }
+    fn actual_history_with_native(
+        f: &Fixture,
+        with_native_http: bool,
+        age: u64,
+    ) -> (NativeCustodyScope, Vec<u8>) {
         let key = nostr::Keys::generate();
         let scope = fixture_scope(f, &key.public_key().to_hex());
         f.file(
@@ -984,6 +999,26 @@ mod tests {
         let http = credential.signer("native-http").unwrap();
         let publisher = credential.signer("native-publication").unwrap();
         let consumer = credential.signer("consumer-http").unwrap();
+        if with_native_http {
+            http.sign(
+                nostr::EventBuilder::new(nostr::Kind::HttpAuth, "")
+                    .custom_created_at(nostr::Timestamp::from_secs(
+                        nostr::Timestamp::now().as_secs().saturating_sub(age),
+                    ))
+                    .tags([
+                        nostr::Tag::parse(["u", "https://native.synthetic.invalid/query"]).unwrap(),
+                        nostr::Tag::parse(["method", "POST"]).unwrap(),
+                        nostr::Tag::parse([
+                            "payload",
+                            &llull_buzz_wire::sha256(b"synthetic original request"),
+                        ])
+                        .unwrap(),
+                    ]),
+            )
+            .unwrap()
+            .verify()
+            .unwrap();
+        }
         assert!(credential.signer("unregistered-channel").is_err());
         let event = http
             .sign(
@@ -1044,6 +1079,23 @@ mod tests {
         drop(credential);
         let raw = std::fs::read(f.logs.join(format!("{}.jsonl", scope.custody_id))).unwrap();
         (scope, raw)
+    }
+    pub(super) fn receiver_owner(age: u64) -> OwnerObservation {
+        let f = Fixture::new();
+        let (scope, raw) = actual_history_with_native(&f, true, age);
+        let (auth, _, _) = signed_profile(scope.clone(), &raw);
+        fold(
+            &scope,
+            &auth
+                .profile()
+                .native_standing
+                .as_ref()
+                .unwrap()
+                .retained_anchors[&scope.custody_id],
+            &raw,
+            super::super::clock::now(),
+        )
+        .unwrap()
     }
     fn signed_profile(scope: NativeCustodyScope, raw: &[u8]) -> (Authenticated, Budget, Vec<u8>) {
         let lines = raw[..raw.len() - 1]
