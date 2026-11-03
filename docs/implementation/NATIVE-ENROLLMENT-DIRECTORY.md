@@ -44,6 +44,24 @@ the optional field, legacy command and challenge bytes remain unchanged. The
 human's native client still signs the separate kind-9 challenge event; the
 provider and browser never substitute a human signer.
 
+Ordinary desktop clients also send signed presence, typing and conditional
+read-state events on their authenticated connection. Unsupported event kinds
+receive a negative acknowledgement without dropping that connection. They are
+neither stored nor forwarded and do not become enrollment proof. Their author
+must still match the original NIP-42 login, and the current native directory
+gate still applies. A wrong author or failed admission closes the connection.
+Neither auxiliary traffic nor a successful challenge resets the original socket
+deadline or frame budget. This does not add presence, typing or read-state
+publication support to the gateway.
+
+The continuity repair is implemented at
+`3395ea9aecc4289195d9148eae8667d377421770`. Its new PostgreSQL regression covers
+wrong-author refusal, three unsupported kinds on one authenticated socket,
+unchanged effect counts, subsequent exact kind-9 retrieval and expiry under the
+original short browser transaction. Source formatting and whitespace checks
+passed; execution of this new regression is pending. The preceding runtime
+results below do not qualify this repair.
+
 This source increment is separate from historical full-result recovery. A raw
 WebSocket fixture does not establish desktop/mobile or human acceptance. Live
 moderator authority and live enrollment remain unexercised.
