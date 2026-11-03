@@ -929,24 +929,38 @@ async fn session(mut socket: WebSocket, context: NativeSession) {
                 }
                 authentication = Some(event);
             } else {
+                let Some(login) = authentication.as_ref() else {
+                    return;
+                };
                 let event = match frame(&bytes, "EVENT") {
                     Ok(event) => event,
                     Err(_) => return,
                 };
                 let result = async {
+                    if event.pubkey != login.pubkey {
+                        return Err(crate::ProviderError::from(Fault::Denied));
+                    }
                     let admission = provider
                         .native_directory_gate(&target, directory.as_deref())
                         .await?;
+                    // Ordinary clients send presence/typing/read-state events.
+                    // Reject unsupported writes without dropping their already
+                    // authenticated connection. No event is stored/forwarded,
+                    // and neither the frame budget nor original deadline resets.
+                    if event.kind.as_u16() != 9 {
+                        return Ok(false);
+                    }
                     provider
                         .retain_enrollment_event(
                             &consumer,
                             &enrollment,
                             &relay,
-                            authentication.as_ref().expect("authenticated branch"),
+                            login,
                             &event,
                             admission.as_ref(),
                         )
-                        .await
+                        .await?;
+                    Ok(true)
                 }
                 .await;
                 // Loss of this OK is recoverable by the original enrollment and
@@ -956,11 +970,12 @@ async fn session(mut socket: WebSocket, context: NativeSession) {
                     json!([
                         "OK",
                         event.id.to_hex(),
-                        result.is_ok(),
-                        if result.is_ok() {
-                            ""
-                        } else {
-                            "restricted: enrollment message denied"
+                        matches!(&result, Ok(true)),
+                        match &result {
+                            Ok(true) => "",
+                            Ok(false) =>
+                                "restricted: only enrollment challenge messages are supported",
+                            Err(_) => "restricted: enrollment message denied",
                         }
                     ]),
                 )

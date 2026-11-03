@@ -544,7 +544,16 @@ fn directory_event(key: &nostr::Keys, kind: u16, tags: Value, content: &str) -> 
 }
 
 async fn directory_setup() -> (Rig, nostr::Keys, EnrollmentChallenge, Arc<DirectorySource>) {
+    directory_setup_with_browser_window(None).await
+}
+
+async fn directory_setup_with_browser_window(
+    seconds: Option<i64>,
+) -> (Rig, nostr::Keys, EnrollmentChallenge, Arc<DirectorySource>) {
     let mut rig = Rig::new().await;
+    if let Some(seconds) = seconds {
+        rig.browser.expires_at = (Utc::now() + CD::seconds(seconds)).timestamp();
+    }
     let bot = nostr::Keys::generate();
     let human = nostr::Keys::generate();
     let relay = nostr::Keys::generate();
@@ -698,6 +707,192 @@ async fn directory_server(
             .unwrap();
     });
     (address, stop, handle)
+}
+
+#[tokio::test]
+#[ignore = "requires disposable PostgreSQL 16; scripts/test-postgres.sh"]
+async fn native_unsupported_events_preserve_authenticated_challenge_journey_and_original_expiry() {
+    let (rig, key, challenge, source) = directory_setup_with_browser_window(Some(12)).await;
+    let view = source.view.lock().unwrap().clone();
+    let path = format!(
+        "/native/enrollment/{}/{}",
+        rig.registration.consumer_id, challenge.enrollment_id
+    );
+    let relay = format!("wss://relay.synthetic.invalid{path}");
+    let (address, stop, handle) = directory_server(&rig, source).await;
+
+    // A connection authenticating the intended key cannot subsequently switch
+    // authors, even for an unsupported event that will never be published.
+    let mut wrong = NativeSocket::connect(address, &path).await;
+    wrong.authenticate(&key, &relay).await;
+    let foreign = directory_event(&nostr::Keys::generate(), 20001, json!([]), "online");
+    wrong.send(json!(["EVENT", foreign])).await;
+    let denied = wrong.recv().await;
+    assert_eq!(denied[0], "OK");
+    assert_eq!(denied[1], foreign["id"]);
+    assert_eq!(denied[2], false);
+    let closed = tokio::time::timeout(Duration::from_secs(2), wrong.0.read_u8())
+        .await
+        .expect("wrong-author publication must retire its socket");
+    match closed {
+        Ok(opcode) => assert_eq!(opcode, 0x88, "expected WebSocket close"),
+        Err(error) => assert!(matches!(
+            error.kind(),
+            std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::ConnectionReset
+        )),
+    }
+    drop(wrong);
+
+    let mut socket = NativeSocket::connect(address, &path).await;
+    let authentication = socket.authenticate(&key, &relay).await;
+    let original_challenge: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(c) FROM enrollment_challenges c WHERE consumer_id=$1 AND enrollment_id=$2",
+    )
+    .bind(&rig.registration.consumer_id)
+    .bind(&challenge.enrollment_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    let original_login: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(a) FROM enrollment_native_authentications a WHERE consumer_id=$1 AND enrollment_id=$2 AND nip42_event_id=$3",
+    )
+    .bind(&rig.registration.consumer_id)
+    .bind(&challenge.enrollment_id)
+    .bind(authentication.id.to_hex())
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        original_login["expires_at"],
+        original_challenge["expires_at"]
+    );
+    assert!(original_challenge["consumed_at"].is_null());
+    let initial_effects: Vec<i64> = sqlx::query_scalar(
+        "SELECT ARRAY[(SELECT count(*) FROM commands WHERE consumer_id=$1),(SELECT count(*) FROM enrollment_native_proofs WHERE consumer_id=$1),(SELECT count(*) FROM native_inputs WHERE consumer_id=$1),(SELECT count(*) FROM publications WHERE consumer_id=$1),(SELECT count(*) FROM enrollments WHERE consumer_id=$1)]",
+    )
+    .bind(&rig.registration.consumer_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(&initial_effects[1..], &[0, 0, 0, 0]);
+
+    // These are valid native-key signatures for the ordinary desktop's
+    // presence, typing and conditional read-state publication kinds. The
+    // unsupported read-state body stays opaque at this rejection boundary.
+    // Negative acknowledgements must leave this exact authenticated socket
+    // usable; none of these messages is an enrollment proof or accepted write.
+    for (kind, tags, content) in [
+        (20001, json!([]), "online"),
+        (20002, json!([["h", view.channel_id]]), ""),
+        (
+            30078,
+            json!([["d", "read-state:synthetic-client"], ["t", "read-state"]]),
+            "synthetic opaque read-state",
+        ),
+    ] {
+        let event = directory_event(&key, kind, tags, content);
+        socket.send(json!(["EVENT", event])).await;
+        let refused = socket.recv().await;
+        assert_eq!(refused[0], "OK");
+        assert_eq!(refused[1], event["id"]);
+        assert_eq!(refused[2], false);
+        assert_eq!(
+            refused[3],
+            "restricted: only enrollment challenge messages are supported"
+        );
+    }
+    let unchanged_effects: Vec<i64> = sqlx::query_scalar(
+        "SELECT ARRAY[(SELECT count(*) FROM commands WHERE consumer_id=$1),(SELECT count(*) FROM enrollment_native_proofs WHERE consumer_id=$1),(SELECT count(*) FROM native_inputs WHERE consumer_id=$1),(SELECT count(*) FROM publications WHERE consumer_id=$1),(SELECT count(*) FROM enrollments WHERE consumer_id=$1)]",
+    )
+    .bind(&rig.registration.consumer_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(unchanged_effects, initial_effects);
+
+    socket
+        .send(json!(["REQ","after-unsupported-events",{"kinds":[39000],"#d":[view.channel_id]}]))
+        .await;
+    let metadata = socket.recv().await;
+    assert_eq!(
+        metadata,
+        json!(["EVENT", "after-unsupported-events", view.channel_metadata])
+    );
+    assert_eq!(
+        socket.recv().await,
+        json!(["EOSE", "after-unsupported-events"])
+    );
+    let event = message(&challenge, &key, &challenge.message_text);
+    socket.send(json!(["EVENT", event])).await;
+    let accepted = socket.recv().await;
+    assert_eq!(accepted[0], "OK");
+    assert_eq!(accepted[1], event.id.to_hex());
+    assert_eq!(accepted[2], true);
+    let proof = read(&rig, &challenge, "module-a", &rig.browser)
+        .await
+        .unwrap();
+    assert_eq!(proof.native_event, serde_json::to_value(&event).unwrap());
+    assert_eq!(
+        proof.nip42_event,
+        serde_json::to_value(&authentication).unwrap()
+    );
+
+    // Use an actually short original browser transaction, rather than changing
+    // stored deadlines or replacing the database clock. Late auxiliary traffic
+    // must not give this socket a fresh challenge/login lifetime.
+    let until_late = (challenge.expires_at - CD::seconds(2) - Utc::now())
+        .to_std()
+        .expect("synthetic journey must finish before its original deadline");
+    tokio::time::sleep(until_late).await;
+    let late = directory_event(&key, 20001, json!([]), "away");
+    socket.send(json!(["EVENT", late])).await;
+    let refused = socket.recv().await;
+    assert_eq!(refused[0], "OK");
+    assert_eq!(refused[1], late["id"]);
+    assert_eq!(refused[2], false);
+    let remaining = (challenge.expires_at - Utc::now())
+        .to_std()
+        .unwrap_or_default();
+    let closed = tokio::time::timeout(remaining + Duration::from_secs(1), socket.0.read_u8())
+        .await
+        .expect("auxiliary traffic cannot renew the original socket deadline");
+    match closed {
+        Ok(opcode) => assert_eq!(opcode, 0x88, "expected WebSocket close"),
+        Err(error) => assert!(matches!(
+            error.kind(),
+            std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::ConnectionReset
+        )),
+    }
+    drop(socket);
+    let final_challenge: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(c) FROM enrollment_challenges c WHERE consumer_id=$1 AND enrollment_id=$2",
+    )
+    .bind(&rig.registration.consumer_id)
+    .bind(&challenge.enrollment_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    let final_login: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(a) FROM enrollment_native_authentications a WHERE consumer_id=$1 AND enrollment_id=$2 AND nip42_event_id=$3",
+    )
+    .bind(&rig.registration.consumer_id)
+    .bind(&challenge.enrollment_id)
+    .bind(authentication.id.to_hex())
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(final_challenge, original_challenge);
+    assert_eq!(final_login, original_login);
+    let final_effects: Vec<i64> = sqlx::query_scalar(
+        "SELECT ARRAY[(SELECT count(*) FROM commands WHERE consumer_id=$1),(SELECT count(*) FROM enrollment_native_proofs WHERE consumer_id=$1),(SELECT count(*) FROM native_inputs WHERE consumer_id=$1),(SELECT count(*) FROM publications WHERE consumer_id=$1),(SELECT count(*) FROM enrollments WHERE consumer_id=$1)]",
+    )
+    .bind(&rig.registration.consumer_id)
+    .fetch_one(&rig.pool)
+    .await
+    .unwrap();
+    assert_eq!(final_effects, vec![initial_effects[0], 1, 0, 0, 0]);
+    stop.send(()).unwrap();
+    handle.await.unwrap();
 }
 
 #[tokio::test]
