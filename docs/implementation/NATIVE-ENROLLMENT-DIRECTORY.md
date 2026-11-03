@@ -58,9 +58,33 @@ The continuity repair is implemented at
 `3395ea9aecc4289195d9148eae8667d377421770`. Its new PostgreSQL regression covers
 wrong-author refusal, three unsupported kinds on one authenticated socket,
 unchanged effect counts, subsequent exact kind-9 retrieval and expiry under the
-original short browser transaction. Source formatting and whitespace checks
-passed; execution of this new regression is pending. The preceding runtime
-results below do not qualify this repair.
+original short browser transaction.
+
+At `9a5a1dfe120e48f371bbf1a176938035a49d6eb9`, the provider binary, three
+gateway unit tests and PostgreSQL test binary built/passed with Rust 1.98.1,
+locked and offline. All four affected PostgreSQL cases passed, each followed
+by an actual server restart and unchanged durable-state hash: the new auxiliary
+event continuity/expiry case, original directory HTTP/WebSocket reads, source
+revocation during admission, and admission expiry during final custody. The
+closed historical-recovery leaf was excluded. The new case accepts the exact
+kind-9 after refusing three unsupported event kinds on the same socket; a
+different author is refused and disconnected. Full original challenge/login
+rows remain unchanged through the original expiry.
+
+The preserved service executable SHA-256 is
+`37ec4166b9b36078e75fc59df179a22793a902ad5962d58e299db7cc16d5eb0c`
+(42,954,224 bytes). It uses development/test defaults with debug information
+disabled and incremental compilation off, in a separate compact target. The
+compile allocation was one CPU/two GiB; the test process used 1536 MiB plus an
+owned 512-MiB PostgreSQL container on the same CPU. Both units stopped and all
+case containers were removed by the maintained successful-run cleanup. Private
+`provider-continuity-result-r1.json` retains source, artifact, resource and log
+hashes. Source formatting and whitespace checks also passed.
+
+These HTTP/WebSocket clients and native-owner directory observations are still
+synthetic. The real selected desktop and original native-owner binaries have
+separate build/startup evidence; their complete composed enrollment remains
+unrun at this checkpoint. This repair does not by itself close that journey.
 
 This source increment is separate from historical full-result recovery. A raw
 WebSocket fixture does not establish desktop/mobile or human acceptance. Live
