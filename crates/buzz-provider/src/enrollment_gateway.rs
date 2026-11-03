@@ -24,6 +24,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::{DateTime, Utc};
+use futures_util::SinkExt;
 use llull_buzz_wire::{canonical, digest, id, parse, sha256, Command, Enroll, Fault};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
