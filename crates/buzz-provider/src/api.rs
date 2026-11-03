@@ -66,6 +66,7 @@ async fn unavailable() -> Response {
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct ConfiguredSurfaces {
     pub enrollment_gateway: bool,
+    pub enrollment_directory: bool,
     pub native_intake: bool,
     pub native_handoff: bool,
     pub publication_delivery: bool,

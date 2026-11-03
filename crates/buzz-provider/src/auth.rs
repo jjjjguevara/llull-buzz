@@ -30,6 +30,8 @@ pub struct Registration {
     pub verification_keys: BTreeMap<String, String>,
     pub enrollment_bot_key: String,
     pub enrollment_channel: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enrollment_bot_mention: Option<String>,
     pub modules: BTreeMap<String, ModulePolicy>,
     pub retention: Retention,
     pub pricing: Option<crate::budget::Pricing>,
@@ -71,6 +73,13 @@ impl Registration {
         }
         hash(&self.service_public_key)?;
         hash(&self.enrollment_bot_key)?;
+        if let Some(mention) = &self.enrollment_bot_mention {
+            llull_buzz_wire::NativeChallenge {
+                version: "mention-json/v1".into(),
+                bot_mention: mention.clone(),
+            }
+            .validate()?;
+        }
         if self.revision == 0
             || self.revision > MAX_SAFE_INTEGER as u64
             || self.authority_epoch == 0

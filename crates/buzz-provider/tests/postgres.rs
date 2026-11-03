@@ -173,6 +173,7 @@ impl Rig {
             verification_keys: BTreeMap::from([("disposable-key".into(), public)]),
             enrollment_bot_key: nostr::Keys::generate().public_key().to_hex(),
             enrollment_channel: "00000000-0000-4000-8000-000000000042".into(),
+            enrollment_bot_mention: None,
             modules: BTreeMap::from([
                 ("module-a".into(), module.clone()),
                 ("module-b".into(), module),
@@ -320,6 +321,7 @@ impl Rig {
             community_id: self.registration.community_id.clone(),
             module_id: module.into(),
             browser_transaction_id: self.browser.transaction_id.clone(),
+            native_challenge: None,
         };
         let c = self.command("enroll", self.resource("principal", 1), e);
         let mut claims = self.claims(&c, module, None, None);

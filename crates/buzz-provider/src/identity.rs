@@ -71,6 +71,9 @@ impl Provider {
             .get(&request.module_id)
             .ok_or(Fault::Denied)?;
         if request.community_id != registration.community_id
+            || request.native_challenge.as_ref().is_some_and(|native| {
+                registration.enrollment_bot_mention.as_deref() != Some(native.bot_mention.as_str())
+            })
             || request.module_id != claims.module_id
             || request.issuer != browser.issuer
             || request.subject != browser.subject
@@ -98,11 +101,12 @@ impl Provider {
             community_id: registration.community_id.clone(),
             channel_id: registration.enrollment_channel.clone(),
             bot_public_key: registration.enrollment_bot_key.clone(),
-            message_text: native::enrollment_text(
+            message_text: native::enrollment_message(
                 &c.consumer_id,
                 &registration.community_id,
                 &enrollment_id,
                 &challenge,
+                request.native_challenge.as_ref(),
             ),
             expires_at: expiry,
         };
@@ -202,11 +206,12 @@ impl Provider {
             &fixed.intended_public_key,
             &registration.enrollment_bot_key,
             &registration.enrollment_channel,
-            &native::enrollment_text(
+            &native::enrollment_message(
                 &c.consumer_id,
                 &fixed.community_id,
                 enrollment_id,
                 &challenge,
+                fixed.native_challenge.as_ref(),
             ),
             row.try_get::<DateTime<Utc>, _>("issued_at")?.timestamp()
                 ..row.try_get::<DateTime<Utc>, _>("expires_at")?.timestamp(),

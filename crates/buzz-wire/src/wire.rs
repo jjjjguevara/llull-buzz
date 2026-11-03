@@ -74,6 +74,38 @@ pub struct Enroll {
     pub community_id: String,
     pub module_id: String,
     pub browser_transaction_id: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present_native_challenge"
+    )]
+    pub native_challenge: Option<NativeChallenge>,
+}
+fn present_native_challenge<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<NativeChallenge>, D::Error> {
+    NativeChallenge::deserialize(deserializer).map(Some)
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct NativeChallenge {
+    pub version: String,
+    pub bot_mention: String,
+}
+impl NativeChallenge {
+    pub fn validate(&self) -> Result<()> {
+        let token = self.bot_mention.strip_prefix('@').ok_or(Fault::Invalid)?;
+        if self.version != "mention-json/v1"
+            || token.is_empty()
+            || token.len() > 64
+            || !token
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        {
+            return Err(Fault::Invalid);
+        }
+        Ok(())
+    }
 }
 impl Enroll {
     pub fn validate(&self) -> Result<()> {
@@ -86,7 +118,11 @@ impl Enroll {
         ] {
             id(s)?;
         }
-        hash(&self.intended_public_key)
+        hash(&self.intended_public_key)?;
+        if let Some(native) = &self.native_challenge {
+            native.validate()?;
+        }
+        Ok(())
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -426,6 +462,60 @@ mod task_profile_tests {
         child.check_child(&root).unwrap();
         child.model_profile = "sonnet-5-adaptive-bounded-v1".into();
         assert_eq!(child.check_child(&root), Err(Fault::Conflict));
+    }
+}
+
+#[cfg(test)]
+mod native_challenge_tests {
+    use super::*;
+    #[test]
+    fn mention_is_explicit_closed_and_legacy_enrollment_bytes_are_unchanged() {
+        let legacy = serde_json::json!({"issuer":"https://issuer.invalid", "subject":"subject", "intended_public_key":"a".repeat(64), "community_id":"community", "module_id":"module", "browser_transaction_id":"login"});
+        let parsed: Enroll = serde_json::from_value(legacy.clone()).unwrap();
+        parsed.validate().unwrap();
+        assert_eq!(
+            crate::canonical(&parsed).unwrap(),
+            crate::canonical(&legacy).unwrap()
+        );
+        let mut configured = legacy.clone();
+        configured["native_challenge"] =
+            serde_json::json!({"version":"mention-json/v1","bot_mention":"@native_bot"});
+        let parsed: Enroll = serde_json::from_value(configured.clone()).unwrap();
+        parsed.validate().unwrap();
+        assert_eq!(
+            crate::canonical(&parsed).unwrap(),
+            crate::canonical(&configured).unwrap()
+        );
+        assert_ne!(
+            crate::digest(&parsed).unwrap(),
+            crate::digest(&legacy).unwrap()
+        );
+        for invalid in [
+            Value::Null,
+            serde_json::json!({"version":"mention-json/v2","bot_mention":"@native_bot"}),
+            serde_json::json!({"version":"mention-json/v1","bot_mention":"@native_bot","extra":true}),
+        ] {
+            let mut value = legacy.clone();
+            value["native_challenge"] = invalid;
+            if let Ok(request) = serde_json::from_value::<Enroll>(value) {
+                assert!(request.validate().is_err());
+            }
+        }
+        for mention in [
+            "@",
+            "native_bot",
+            "@two names",
+            "@bót",
+            "@bot\n",
+            "@bot-name",
+        ] {
+            assert!(NativeChallenge {
+                version: "mention-json/v1".into(),
+                bot_mention: mention.into()
+            }
+            .validate()
+            .is_err());
+        }
     }
 }
 

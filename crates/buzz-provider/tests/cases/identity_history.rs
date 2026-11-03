@@ -44,6 +44,7 @@ async fn lost_enrollment_after_window_is_exact_read_without_new_admission() {
             community_id: rig.registration.community_id.clone(),
             module_id: "module-a".into(),
             browser_transaction_id: rig.browser.transaction_id.clone(),
+            native_challenge: None,
         },
     );
     let mut claims = rig.claims(&original, "module-a", None, None);

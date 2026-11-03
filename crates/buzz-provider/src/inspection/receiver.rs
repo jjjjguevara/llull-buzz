@@ -414,10 +414,17 @@ fn rejection(
             } = &record.event
             {
                 let (policy, cutoff) = match &public_claims.scope {
-                    PublicCredentialScope::Nip98 { .. } if capability == "native-http" => (
-                        "upstream-relay-nip98-plus-minus-60s",
-                        public_claims.created_at.checked_add(61),
-                    ),
+                    PublicCredentialScope::Nip98 { .. }
+                        if matches!(
+                            capability.as_str(),
+                            "native-http" | "native-enrollment-admission"
+                        ) =>
+                    {
+                        (
+                            "upstream-relay-nip98-plus-minus-60s",
+                            public_claims.created_at.checked_add(61),
+                        )
+                    }
                     PublicCredentialScope::MediaGet { expiration, .. } => (
                         "upstream-relay-media-get-expiration-or-age-3600s",
                         public_claims

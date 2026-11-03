@@ -158,7 +158,10 @@ fn fold(
                 if original.is_none()
                     || !matches!(
                         capability.as_str(),
-                        "native-http" | "native-publication" | "consumer-http"
+                        "native-http"
+                            | "native-publication"
+                            | "consumer-http"
+                            | "native-enrollment-admission"
                     )
                 {
                     return Err(deny("native_standing_capability"));
@@ -1130,6 +1133,109 @@ mod tests {
         let mut budget = Budget::new(now, now + 20_000_000).unwrap();
         let auth = Authenticated::admit(&trust, &profile, &request, &mut budget, now).unwrap();
         (auth, budget, key)
+    }
+    #[test]
+    fn enrollment_admission_signer_is_exact_get_and_preserves_standing_custody() {
+        let f = Fixture::new();
+        let key = nostr::Keys::generate();
+        let scope = fixture_scope(&f, &key.public_key().to_hex());
+        f.file(
+            Path::new(&scope.credential_file),
+            key.secret_key().to_secret_hex().as_bytes(),
+        );
+        let credential = crate::native_custody::NativeCredential::acquire_synthetic_fixture(
+            scope.clone(),
+            Path::new(&scope.credential_file),
+            &f.logs,
+            inert_process,
+        )
+        .unwrap();
+        let admission = credential.signer("native-enrollment-admission").unwrap();
+        let http = credential.signer("native-http").unwrap();
+        admission.require_enrollment_admission().unwrap();
+        assert!(http.require_enrollment_admission().is_err());
+        assert!(
+            crate::native_custody::NativeSigner::from(nostr::Keys::generate())
+                .require_enrollment_admission()
+                .is_err()
+        );
+        let builder = |url: &str, method: &str, payload: &str, nonce: bool| {
+            let mut tags = vec![
+                nostr::Tag::parse(["u", url]).unwrap(),
+                nostr::Tag::parse(["method", method]).unwrap(),
+                nostr::Tag::parse(["payload", payload]).unwrap(),
+            ];
+            if nonce {
+                tags.push(nostr::Tag::parse(["nonce", "synthetic-request"]).unwrap());
+            }
+            nostr::EventBuilder::new(nostr::Kind::HttpAuth, "").tags(tags)
+        };
+        let url = "https://native.synthetic.invalid/moderation/restricted";
+        let empty = llull_buzz_wire::sha256(b"");
+        admission
+            .sign(builder(url, "GET", &empty, true))
+            .unwrap()
+            .verify()
+            .unwrap();
+        assert!(http.sign(builder(url, "GET", &empty, true)).is_err());
+        for (target, method, payload, nonce) in [
+            (url, "POST", empty.as_str(), true),
+            (url, "GET", empty.as_str(), false),
+            (
+                url,
+                "GET",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                true,
+            ),
+            (
+                "https://native.synthetic.invalid/query",
+                "GET",
+                empty.as_str(),
+                true,
+            ),
+            (
+                "https://native.synthetic.invalid/moderation/restricted?pubkey=a",
+                "GET",
+                empty.as_str(),
+                true,
+            ),
+            (
+                "https://foreign.invalid/moderation/restricted",
+                "GET",
+                empty.as_str(),
+                true,
+            ),
+        ] {
+            assert!(admission
+                .sign(builder(target, method, payload, nonce))
+                .is_err());
+        }
+        http.sign(builder(
+            "https://native.synthetic.invalid/query",
+            "POST",
+            &empty,
+            true,
+        ))
+        .unwrap();
+        drop(admission);
+        drop(http);
+        drop(credential);
+        let raw = std::fs::read(f.logs.join(format!("{}.jsonl", scope.custody_id))).unwrap();
+        let (auth, _, _) = signed_profile(scope.clone(), &raw);
+        let view = fold(
+            &scope,
+            &auth
+                .profile()
+                .native_standing
+                .as_ref()
+                .unwrap()
+                .retained_anchors[&scope.custody_id],
+            &raw,
+            super::super::clock::now(),
+        )
+        .unwrap();
+        assert!(view.open_capabilities.values().all(|count| *count == 0));
+        assert_eq!(view.history.iter().filter(|r| matches!(&r.event, CustodyEvent::CredentialIssuedV2 { capability, .. } if capability == "native-enrollment-admission")).count(), 1);
     }
     #[test]
     fn native_standing_real_acquisition_sign_release_and_protected_collector_positive() {

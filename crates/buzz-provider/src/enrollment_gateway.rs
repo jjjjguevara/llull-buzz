@@ -9,7 +9,12 @@
 use crate::{
     auth::{self, Claims, Headers, Registration},
     db::Tx,
-    native, Provider, Result,
+    enrollment_directory::{
+        ENROLLMENT_MAX_FRAMES as MAX_FRAMES, ENROLLMENT_MAX_FRAME_BYTES as MAX_FRAME_BYTES,
+        ENROLLMENT_MAX_WS_FILTERS,
+    },
+    native, EnrollmentDirectoryPort, NativeEnrollmentAdmissionCheck, NativeEnrollmentView,
+    Provider, Result,
 };
 use axum::{
     body::Bytes,
@@ -17,8 +22,8 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         DefaultBodyLimit, OriginalUri, Path,
     },
-    http::HeaderMap,
-    response::Response,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json as HttpJson, Router,
 };
@@ -29,11 +34,9 @@ use llull_buzz_wire::{canonical, digest, id, parse, sha256, Command, Enroll, Fau
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{types::Json, Row};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-const MAX_FRAME_BYTES: usize = 65_536;
 const AUTH_SECONDS: u64 = 10;
-const MAX_FRAMES: usize = 64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -79,6 +82,75 @@ struct RelayAuthentication<'a> {
     challenge: &'a str,
     opened_at: i64,
     event: &'a nostr::Event,
+}
+
+#[derive(Clone)]
+struct NativeTarget {
+    consumer: String,
+    enrollment: String,
+    relay: String,
+}
+
+struct NativeSession {
+    provider: Provider,
+    target: NativeTarget,
+    opened_at: i64,
+    expires: tokio::time::Instant,
+    directory: Option<Arc<dyn EnrollmentDirectoryPort>>,
+}
+
+fn single_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str> {
+    let mut values = headers.get_all(name).iter();
+    let value = values
+        .next()
+        .and_then(|value| value.to_str().ok())
+        .ok_or(Fault::Denied)?;
+    if values.next().is_some() {
+        return Err(Fault::Denied.into());
+    }
+    Ok(value)
+}
+
+fn native_http_proof(authorization: &str, url: &str, body: &[u8]) -> Result<nostr::Event> {
+    if authorization.len() > 64_000 || body.len() > MAX_FRAME_BYTES {
+        return Err(Fault::TooLarge.into());
+    }
+    let bytes = STANDARD
+        .decode(authorization.strip_prefix("Nostr ").ok_or(Fault::Denied)?)
+        .map_err(|_| Fault::Denied)?;
+    let event = native::event(&bytes)?;
+    if event.kind.as_u16() != 27235
+        || !event.content.is_empty()
+        || native::tag(&event, "u")? != url
+        || native::tag(&event, "method")? != "POST"
+        || native::tag(&event, "payload")? != sha256(body)
+    {
+        return Err(Fault::Denied.into());
+    }
+    buzz_auth::verify_nip98_event(
+        std::str::from_utf8(&bytes).map_err(|_| Fault::Denied)?,
+        url,
+        "POST",
+        Some(body),
+    )
+    .map_err(|_| Fault::Denied)?;
+    Ok(event)
+}
+
+fn json_response(value: Value, maximum: usize) -> Result<Response> {
+    if serde_json::to_vec(&value)
+        .map_err(|_| Fault::Invalid)?
+        .len()
+        > maximum
+    {
+        return Err(Fault::TooLarge.into());
+    }
+    let mut response = HttpJson(value).into_response();
+    response.headers_mut().insert(
+        "cache-control",
+        "no-store".parse().map_err(|_| Fault::Invalid)?,
+    );
+    Ok(response)
 }
 
 fn relay_origin(origin: &str) -> Result<String> {
@@ -295,6 +367,7 @@ impl Provider {
         consumer: &str,
         enrollment: &str,
         login: RelayAuthentication<'_>,
+        admission: Option<&NativeEnrollmentAdmissionCheck>,
     ) -> Result<()> {
         let RelayAuthentication {
             relay,
@@ -320,6 +393,7 @@ impl Provider {
         if Self::now(&mut tx).await? >= pending.expires_at {
             return Err(Fault::Denied.into());
         }
+        Self::check_native_admission(&pending, admission, Self::now(&mut tx).await?)?;
         tx.commit().await?;
         Ok(())
     }
@@ -352,11 +426,12 @@ impl Provider {
             &pending.requested.intended_public_key,
             &pending.registration.enrollment_bot_key,
             &pending.registration.enrollment_channel,
-            &native::enrollment_text(
+            &native::enrollment_message(
                 consumer,
                 &pending.requested.community_id,
                 enrollment,
                 &pending.challenge,
+                pending.requested.native_challenge.as_ref(),
             ),
             pending.issued_at.timestamp()..pending.expires_at.timestamp(),
             now.timestamp(),
@@ -386,6 +461,7 @@ impl Provider {
         relay: &str,
         authentication: &nostr::Event,
         event: &nostr::Event,
+        admission: Option<&NativeEnrollmentAdmissionCheck>,
     ) -> Result<()> {
         let mut tx = self.begin().await?;
         let pending = self
@@ -403,6 +479,7 @@ impl Provider {
             },
         )
         .await?;
+        Self::check_native_admission(&pending, admission, Self::now(&mut tx).await?)?;
         tx.commit().await?;
         Ok(())
     }
@@ -414,6 +491,7 @@ impl Provider {
         relay: &str,
         authorization: &str,
         body: &[u8],
+        admission: Option<&NativeEnrollmentAdmissionCheck>,
     ) -> Result<String> {
         if authorization.len() > 64_000 || body.len() > MAX_FRAME_BYTES {
             return Err(Fault::TooLarge.into());
@@ -470,27 +548,248 @@ impl Provider {
             },
         )
         .await?;
+        Self::check_native_admission(&pending, admission, Self::now(&mut tx).await?)?;
         tx.commit().await?;
         Ok(event.id.to_hex())
+    }
+
+    async fn native_directory_view(
+        &self,
+        target: &NativeTarget,
+        port: &dyn EnrollmentDirectoryPort,
+    ) -> Result<NativeEnrollmentView> {
+        let mut tx = self.begin().await?;
+        let pending = self
+            .pending_enrollment(&mut tx, &target.consumer, &target.enrollment)
+            .await?;
+        let now = Self::now(&mut tx).await?;
+        let wait = (pending.expires_at - now)
+            .to_std()
+            .map_err(|_| Fault::Denied)?
+            .min(Duration::from_secs(15));
+        tx.commit().await?;
+        // Native network reads hold no provider admission/registry locks.
+        let view = tokio::time::timeout(
+            wait,
+            port.enrollment_directory(
+                &pending.requested.community_id,
+                &pending.registration.enrollment_channel,
+                &pending.requested.intended_public_key,
+                &pending.registration.enrollment_bot_key,
+            ),
+        )
+        .await
+        .map_err(|_| Fault::Unknown)?
+        .map_err(|_| Fault::Unknown)?;
+        view.validate()?;
+        if view.community_id != pending.requested.community_id
+            || view.channel_id != pending.registration.enrollment_channel
+            || view.intended_public_key != pending.requested.intended_public_key
+            || view.bot_public_key != pending.registration.enrollment_bot_key
+        {
+            return Err(Fault::Denied.into());
+        }
+        if let Some(native) = &pending.requested.native_challenge {
+            if pending.registration.enrollment_bot_mention.as_deref()
+                != Some(native.bot_mention.as_str())
+            {
+                return Err(Fault::Denied.into());
+            }
+            view.validate_bot_mention(&native.bot_mention)?;
+        }
+        let mut tx = self.begin().await?;
+        let current = self
+            .pending_enrollment(&mut tx, &target.consumer, &target.enrollment)
+            .await?;
+        if current.fingerprint != pending.fingerprint {
+            return Err(Fault::Denied.into());
+        }
+        view.admission_check.validate(
+            &current.requested.community_id,
+            &current.requested.intended_public_key,
+            Self::now(&mut tx).await?,
+        )?;
+        tx.commit().await?;
+        Ok(view)
+    }
+
+    async fn native_directory_gate(
+        &self,
+        target: &NativeTarget,
+        port: Option<&dyn EnrollmentDirectoryPort>,
+    ) -> Result<Option<NativeEnrollmentAdmissionCheck>> {
+        if let Some(port) = port {
+            return Ok(Some(
+                self.native_directory_view(target, port)
+                    .await?
+                    .admission_check,
+            ));
+        }
+        let mut tx = self.begin().await?;
+        let pending = self
+            .pending_enrollment(&mut tx, &target.consumer, &target.enrollment)
+            .await?;
+        if pending.requested.native_challenge.is_some() {
+            return Err(Fault::Unavailable.into());
+        }
+        tx.commit().await?;
+        Ok(None)
+    }
+
+    fn check_native_admission(
+        pending: &Pending,
+        admission: Option<&NativeEnrollmentAdmissionCheck>,
+        now: DateTime<Utc>,
+    ) -> Result<()> {
+        match admission {
+            Some(check) => check
+                .validate(
+                    &pending.requested.community_id,
+                    &pending.requested.intended_public_key,
+                    now,
+                )
+                .map_err(Into::into),
+            None if pending.requested.native_challenge.is_some() => Err(Fault::Unavailable.into()),
+            None => Ok(()),
+        }
+    }
+
+    async fn current_native_login(
+        tx: &mut Tx,
+        target: &NativeTarget,
+        pending: &Pending,
+        expected: Option<&nostr::Event>,
+    ) -> Result<nostr::Event> {
+        let now = Self::now(tx).await?;
+        let identity = expected.map(|event| event.id.to_hex());
+        let row = sqlx::query("SELECT nip42_event,request_sha256 FROM enrollment_native_authentications WHERE consumer_id=$1 AND enrollment_id=$2 AND relay_url=$3 AND expires_at>$4 AND ($5::text IS NULL OR nip42_event_id=$5) ORDER BY received_at DESC,nip42_event_id LIMIT 1")
+            .bind(&target.consumer).bind(&target.enrollment).bind(&target.relay).bind(now).bind(identity)
+            .fetch_optional(&mut **tx).await?.ok_or(Fault::Denied)?;
+        let value = row.try_get::<Value, _>("nip42_event")?;
+        let event = native::event(&canonical(&value)?)?;
+        if row.try_get::<String, _>("request_sha256")? != pending.fingerprint
+            || event.pubkey.to_hex() != pending.requested.intended_public_key
+            || event.kind.as_u16() != 22242
+            || native::tag(&event, "relay")? != target.relay
+            || expected.is_some_and(|expected| expected != &event)
+        {
+            return Err(Fault::Denied.into());
+        }
+        Ok(event)
+    }
+
+    async fn native_directory_records(
+        &self,
+        target: &NativeTarget,
+        login: &nostr::Event,
+        filters: &Value,
+        port: &dyn EnrollmentDirectoryPort,
+        transport: Option<&nostr::Event>,
+    ) -> Result<Vec<Value>> {
+        let view = self.native_directory_view(target, port).await?;
+        let mut tx = self.begin().await?;
+        let pending = self
+            .pending_enrollment(&mut tx, &target.consumer, &target.enrollment)
+            .await?;
+        Self::current_native_login(&mut tx, target, &pending, Some(login)).await?;
+        let proof = sqlx::query("SELECT native_event,request_sha256,module_id,context_domain FROM enrollment_native_proofs WHERE consumer_id=$1 AND enrollment_id=$2")
+            .bind(&target.consumer).bind(&target.enrollment).fetch_optional(&mut *tx).await?;
+        let own_challenge = if let Some(row) = proof {
+            if row.try_get::<String, _>("request_sha256")? != pending.fingerprint
+                || row.try_get::<String, _>("module_id")? != pending.original.module_id
+                || row.try_get::<String, _>("context_domain")? != pending.original.context_domain
+            {
+                return Err(Fault::Denied.into());
+            }
+            Some(row.try_get::<Value, _>("native_event")?)
+        } else {
+            None
+        };
+        let records = view.query(filters, own_challenge.as_ref())?;
+        if canonical(&records)?.len() > MAX_FRAME_BYTES {
+            return Err(Fault::TooLarge.into());
+        }
+        let now = Self::now(&mut tx).await?;
+        view.admission_check.validate(
+            &pending.requested.community_id,
+            &pending.requested.intended_public_key,
+            now,
+        )?;
+        if now >= pending.expires_at
+            || transport.is_some_and(|event| {
+                (now.timestamp() - event.created_at.as_secs() as i64).abs() > 60
+            })
+        {
+            return Err(Fault::Denied.into());
+        }
+        tx.commit().await?;
+        Ok(records)
+    }
+
+    async fn enrollment_http_query(
+        &self,
+        target: &NativeTarget,
+        authorization: &str,
+        body: &[u8],
+        port: &dyn EnrollmentDirectoryPort,
+    ) -> Result<Vec<Value>> {
+        let url = format!(
+            "https://{}/query",
+            target.relay.strip_prefix("wss://").ok_or(Fault::Invalid)?
+        );
+        let proof = native_http_proof(authorization, &url, body)?;
+        let filters: Value = parse(body)?;
+        let mut tx = self.begin().await?;
+        let pending = self
+            .pending_enrollment(&mut tx, &target.consumer, &target.enrollment)
+            .await?;
+        let now = Self::now(&mut tx).await?;
+        if proof.pubkey.to_hex() != pending.requested.intended_public_key
+            || (now.timestamp() - proof.created_at.as_secs() as i64).abs() > 60
+        {
+            return Err(Fault::Denied.into());
+        }
+        let login = Self::current_native_login(&mut tx, target, &pending, None).await?;
+        let scope = digest(&(
+            "enrollment-native-query",
+            &target.consumer,
+            &target.enrollment,
+            &target.relay,
+        ))?;
+        let inserted = sqlx::query("INSERT INTO resource_replays(scope,event_id,expires_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING")
+            .bind(scope).bind(proof.id.to_hex()).bind(now + chrono::Duration::seconds(120)).execute(&mut *tx).await?;
+        if inserted.rows_affected() != 1 {
+            return Err(Fault::Denied.into());
+        }
+        tx.commit().await?;
+        self.native_directory_records(target, &login, &filters, port, Some(&proof))
+            .await
     }
 }
 
 async fn send(socket: &mut WebSocket, value: Value) -> bool {
+    if serde_json::to_vec(&value).map_or(true, |bytes| bytes.len() > MAX_FRAME_BYTES) {
+        return false;
+    }
     socket
         .send(Message::Text(value.to_string().into()))
         .await
         .is_ok()
 }
 
-async fn session(
-    mut socket: WebSocket,
-    provider: Provider,
-    consumer: String,
-    enrollment: String,
-    relay: String,
-    opened_at: i64,
-    expires: tokio::time::Instant,
-) {
+async fn session(mut socket: WebSocket, context: NativeSession) {
+    let NativeSession {
+        provider,
+        target,
+        opened_at,
+        expires,
+        directory,
+    } = context;
+    let NativeTarget {
+        consumer,
+        enrollment,
+        relay,
+    } = target.clone();
     // The outer timeout retires this connection at its original challenge
     // deadline even if an idle/partial sender never supplies another frame.
     let run = async {
@@ -526,16 +825,54 @@ async fn session(
                 Ok(raw) => raw,
                 Err(_) => return,
             };
-            if raw.first() == Some(&json!("REQ")) && (3..=10).contains(&raw.len()) {
+            if raw.first() == Some(&json!("REQ"))
+                && (3..=ENROLLMENT_MAX_WS_FILTERS + 2).contains(&raw.len())
+            {
                 let Some(subscription) = raw[1].as_str().filter(|s| id(s).is_ok()) else {
                     return;
                 };
+                if let (Some(port), Some(login)) = (&directory, &authentication) {
+                    let filters = Value::Array(raw[2..].to_vec());
+                    let records = provider
+                        .native_directory_records(&target, login, &filters, port.as_ref(), None)
+                        .await;
+                    if let Ok(records) = records {
+                        let mut frames: Vec<Value> = records
+                            .into_iter()
+                            .map(|event| json!(["EVENT", subscription, event]))
+                            .collect();
+                        frames.push(json!(["EOSE", subscription]));
+                        if serde_json::to_vec(&frames)
+                            .map_or(true, |bytes| bytes.len() > MAX_FRAME_BYTES)
+                        {
+                            if !send(
+                                &mut socket,
+                                json!([
+                                    "CLOSED",
+                                    subscription,
+                                    "restricted: enrollment directory output exceeds bounds"
+                                ]),
+                            )
+                            .await
+                            {
+                                return;
+                            }
+                            continue;
+                        }
+                        for frame in frames {
+                            if !send(&mut socket, frame).await {
+                                return;
+                            }
+                        }
+                        continue;
+                    }
+                }
                 if !send(
                     &mut socket,
                     json!([
                         "CLOSED",
                         subscription,
-                        "restricted: enrollment challenge relay has no subscriptions"
+                        "restricted: enrollment directory read denied"
                     ]),
                 )
                 .await
@@ -553,18 +890,25 @@ async fn session(
                     Ok(event) => event,
                     Err(_) => return,
                 };
-                let result = provider
-                    .retain_enrollment_authentication(
-                        &consumer,
-                        &enrollment,
-                        RelayAuthentication {
-                            relay: &relay,
-                            challenge: &challenge,
-                            opened_at,
-                            event: &event,
-                        },
-                    )
-                    .await;
+                let result = async {
+                    let admission = provider
+                        .native_directory_gate(&target, directory.as_deref())
+                        .await?;
+                    provider
+                        .retain_enrollment_authentication(
+                            &consumer,
+                            &enrollment,
+                            RelayAuthentication {
+                                relay: &relay,
+                                challenge: &challenge,
+                                opened_at,
+                                event: &event,
+                            },
+                            admission.as_ref(),
+                        )
+                        .await
+                }
+                .await;
                 if !send(
                     &mut socket,
                     json!([
@@ -589,15 +933,22 @@ async fn session(
                     Ok(event) => event,
                     Err(_) => return,
                 };
-                let result = provider
-                    .retain_enrollment_event(
-                        &consumer,
-                        &enrollment,
-                        &relay,
-                        authentication.as_ref().expect("authenticated branch"),
-                        &event,
-                    )
-                    .await;
+                let result = async {
+                    let admission = provider
+                        .native_directory_gate(&target, directory.as_deref())
+                        .await?;
+                    provider
+                        .retain_enrollment_event(
+                            &consumer,
+                            &enrollment,
+                            &relay,
+                            authentication.as_ref().expect("authenticated branch"),
+                            &event,
+                            admission.as_ref(),
+                        )
+                        .await
+                }
+                .await;
                 // Loss of this OK is recoverable by the original enrollment and
                 // event identity. Another EVENT can never overwrite the first.
                 if !send(
@@ -622,62 +973,196 @@ async fn session(
         }
     };
     let _ = tokio::time::timeout_at(expires, run).await;
-    let _ = socket.close().await;
+    // A peer that stops receiving cannot retain the native connection by
+    // blocking the close-frame flush after its original admission deadline.
+    let close_deadline = expires.min(tokio::time::Instant::now() + Duration::from_millis(250));
+    let _ = tokio::time::timeout_at(close_deadline, socket.close()).await;
 }
 
 /// Fixed public enrollment relay origin, supplied by trusted assembly. Native
 /// clients use the returned canonical path in their NIP-42 relay tag; Host and
 /// Forwarded headers never select a target or a private native origin.
 pub fn enrollment_gateway_routes(provider: Provider, public_relay_origin: &str) -> Result<Router> {
+    enrollment_routes(provider, public_relay_origin, None)
+}
+
+/// Mount the selected ordinary-client directory through its fixed native owner.
+/// The legacy constructor remains available for its narrower protocol surface.
+pub fn enrollment_gateway_routes_with_directory(
+    provider: Provider,
+    public_relay_origin: &str,
+    directory: Arc<dyn EnrollmentDirectoryPort>,
+) -> Result<Router> {
+    enrollment_routes(provider, public_relay_origin, Some(directory))
+}
+
+fn enrollment_routes(
+    provider: Provider,
+    public_relay_origin: &str,
+    directory: Option<Arc<dyn EnrollmentDirectoryPort>>,
+) -> Result<Router> {
     let origin = relay_origin(public_relay_origin)?;
-    let http_provider = provider.clone();
-    let http_origin = origin.clone();
+    let submit_provider = provider.clone();
+    let submit_origin = origin.clone();
+    let submit_directory = directory.clone();
     let submit = move |Path((consumer, enrollment)): Path<(String, String)>,
                        OriginalUri(uri): OriginalUri,
                        headers: HeaderMap,
                        body: Bytes| {
-        let provider = http_provider.clone();
-        let origin = http_origin.clone();
+        let provider = submit_provider.clone();
+        let origin = submit_origin.clone();
+        let directory = submit_directory.clone();
         async move {
             let path = relay_path(&consumer, &enrollment)?;
             if uri.path() != format!("{path}/events") || uri.query().is_some() {
                 return Err(crate::ProviderError::from(Fault::Invalid));
             }
-            let mut authorization = headers.get_all("authorization").iter();
-            let credential = authorization
-                .next()
-                .and_then(|h| h.to_str().ok())
-                .ok_or(Fault::Denied)?;
-            if authorization.next().is_some() {
-                return Err(Fault::Denied.into());
-            }
+            let target = NativeTarget {
+                consumer,
+                enrollment,
+                relay: format!("{origin}{path}"),
+            };
+            let credential = single_header(&headers, "authorization")?;
+            let url = format!(
+                "https://{}/events",
+                target.relay.strip_prefix("wss://").ok_or(Fault::Invalid)?
+            );
+            native_http_proof(credential, &url, &body)?;
+            let admission = provider
+                .native_directory_gate(&target, directory.as_deref())
+                .await?;
             let event = provider
                 .enrollment_http_event(
-                    &consumer,
-                    &enrollment,
-                    &format!("{origin}{path}"),
+                    &target.consumer,
+                    &target.enrollment,
+                    &target.relay,
                     credential,
                     &body,
+                    admission.as_ref(),
                 )
                 .await?;
-            Ok::<_, crate::ProviderError>(HttpJson(
+            json_response(
                 json!({"event_id":event,"accepted":true,"message":""}),
-            ))
+                MAX_FRAME_BYTES,
+            )
+        }
+    };
+    let query_provider = provider.clone();
+    let query_origin = origin.clone();
+    let query_directory = directory.clone();
+    let query = move |Path((consumer, enrollment)): Path<(String, String)>,
+                      OriginalUri(uri): OriginalUri,
+                      headers: HeaderMap,
+                      body: Bytes| {
+        let provider = query_provider.clone();
+        let origin = query_origin.clone();
+        let directory = query_directory.clone();
+        async move {
+            let path = relay_path(&consumer, &enrollment)?;
+            if uri.path() != format!("{path}/query") || uri.query().is_some() {
+                return Err(crate::ProviderError::from(Fault::Invalid));
+            }
+            let target = NativeTarget {
+                consumer,
+                enrollment,
+                relay: format!("{origin}{path}"),
+            };
+            let port = directory.as_deref().ok_or(Fault::Unavailable)?;
+            let values = provider
+                .enrollment_http_query(
+                    &target,
+                    single_header(&headers, "authorization")?,
+                    &body,
+                    port,
+                )
+                .await?;
+            json_response(Value::Array(values), MAX_FRAME_BYTES)
+        }
+    };
+    let document_provider = provider.clone();
+    let document_origin = origin.clone();
+    let document_directory = directory.clone();
+    let document = move |Path((consumer, enrollment)): Path<(String, String)>,
+                         OriginalUri(uri): OriginalUri,
+                         body: Bytes| {
+        let provider = document_provider.clone();
+        let origin = document_origin.clone();
+        let directory = document_directory.clone();
+        async move {
+            let path = relay_path(&consumer, &enrollment)?;
+            if uri.query().is_some()
+                || !body.is_empty()
+                || ![format!("{path}/info"), format!("{path}/api/join-policy")]
+                    .contains(&uri.path().to_owned())
+            {
+                return Err(crate::ProviderError::from(Fault::Invalid));
+            }
+            let target = NativeTarget {
+                consumer,
+                enrollment,
+                relay: format!("{origin}{path}"),
+            };
+            let port = directory.as_deref().ok_or(Fault::Unavailable)?;
+            let view = provider.native_directory_view(&target, port).await?;
+            if uri.path().ends_with("/api/join-policy") {
+                match view.join_policy {
+                    Some(policy) => json_response(policy, 4 * 1024 * 1024),
+                    None => Ok((
+                        StatusCode::NOT_FOUND,
+                        [("cache-control", "no-store")],
+                        HttpJson(json!({"error":"native-policy-not-found"})),
+                    )
+                        .into_response()),
+                }
+            } else {
+                json_response(view.gateway_information()?, llull_buzz_wire::MAX_BYTES)
+            }
         }
     };
     let upgrade = move |Path((consumer, enrollment)): Path<(String, String)>,
                         OriginalUri(uri): OriginalUri,
-                        ws: WebSocketUpgrade| {
+                        headers: HeaderMap,
+                        ws: std::result::Result<
+        WebSocketUpgrade,
+        axum::extract::ws::rejection::WebSocketUpgradeRejection,
+    >,
+                        body: Bytes| {
         let provider = provider.clone();
         let origin = origin.clone();
+        let directory = directory.clone();
         async move {
             let path = relay_path(&consumer, &enrollment)?;
-            if uri.path() != path || uri.query().is_some() {
+            if uri.path() != path || uri.query().is_some() || !body.is_empty() {
                 return Err(crate::ProviderError::from(Fault::Invalid));
             }
+            let target = NativeTarget {
+                consumer,
+                enrollment,
+                relay: format!("{origin}{path}"),
+            };
+            if headers.contains_key("accept")
+                && single_header(&headers, "accept")?.trim() == "application/nostr+json"
+            {
+                let view = provider
+                    .native_directory_view(&target, directory.as_deref().ok_or(Fault::Unavailable)?)
+                    .await?;
+                let mut response =
+                    json_response(view.gateway_information()?, llull_buzz_wire::MAX_BYTES)?;
+                response.headers_mut().insert(
+                    "content-type",
+                    "application/nostr+json"
+                        .parse()
+                        .map_err(|_| Fault::Invalid)?,
+                );
+                return Ok(response);
+            }
+            let ws = ws.map_err(|_| Fault::Unavailable)?;
+            provider
+                .native_directory_gate(&target, directory.as_deref())
+                .await?;
             let mut tx = provider.begin().await?;
             let pending = provider
-                .pending_enrollment(&mut tx, &consumer, &enrollment)
+                .pending_enrollment(&mut tx, &target.consumer, &target.enrollment)
                 .await?;
             let now = Provider::now(&mut tx).await?;
             let remaining = (pending.expires_at - now)
@@ -685,19 +1170,19 @@ pub fn enrollment_gateway_routes(provider: Provider, public_relay_origin: &str) 
                 .map_err(|_| Fault::Denied)?;
             let expires = tokio::time::Instant::now() + remaining;
             tx.commit().await?;
-            let relay = format!("{origin}{path}");
             Ok::<Response, crate::ProviderError>(
                 ws.max_frame_size(MAX_FRAME_BYTES)
                     .max_message_size(MAX_FRAME_BYTES)
                     .on_upgrade(move |socket| {
                         session(
                             socket,
-                            provider,
-                            consumer,
-                            enrollment,
-                            relay,
-                            now.timestamp(),
-                            expires,
+                            NativeSession {
+                                provider,
+                                target,
+                                opened_at: now.timestamp(),
+                                expires,
+                                directory,
+                            },
                         )
                     }),
             )
@@ -708,6 +1193,18 @@ pub fn enrollment_gateway_routes(provider: Provider, public_relay_origin: &str) 
         .route(
             "/native/enrollment/{consumer}/{enrollment}/events",
             post(submit),
+        )
+        .route(
+            "/native/enrollment/{consumer}/{enrollment}/query",
+            post(query),
+        )
+        .route(
+            "/native/enrollment/{consumer}/{enrollment}/info",
+            get(document.clone()),
+        )
+        .route(
+            "/native/enrollment/{consumer}/{enrollment}/api/join-policy",
+            get(document),
         )
         .layer(DefaultBodyLimit::max(MAX_FRAME_BYTES)))
 }

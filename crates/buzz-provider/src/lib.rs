@@ -8,6 +8,7 @@ pub mod budget;
 mod db;
 mod discovery;
 mod effects;
+mod enrollment_directory;
 mod enrollment_gateway;
 mod handoff;
 mod identity;
@@ -28,7 +29,12 @@ pub use attachments::{NativeAttachmentSource, RetainAttachment, MAX_ATTACHMENT_B
 pub use db::{CommandResult, Provider, ProviderError, Result};
 pub use discovery::ProfileView;
 pub use effects::{AttemptView, DispatchPermit, RecoverEffect, ToolAdmission};
-pub use enrollment_gateway::{enrollment_gateway_routes, EnrollmentNativeProof};
+pub use enrollment_directory::{
+    EnrollmentDirectoryPort, NativeEnrollmentAdmissionCheck, NativeEnrollmentView,
+};
+pub use enrollment_gateway::{
+    enrollment_gateway_routes, enrollment_gateway_routes_with_directory, EnrollmentNativeProof,
+};
 pub use handoff::{NativeHandoff, NativeHandoffTarget};
 pub use identity::{Binding, EnrollmentChallenge};
 pub use identity_history::HistoricalIdentityResult;

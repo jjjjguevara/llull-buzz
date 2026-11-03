@@ -14,6 +14,9 @@ struct NativeConfiguration {
     relay_public_key: String,
     #[serde(default)]
     custody: Option<llull_buzz_provider::native_custody::NativeCustodyScope>,
+    /// Requires an already authorized native moderator service; grants no role.
+    #[serde(default)]
+    enrollment_moderation_read: bool,
 }
 async fn native_origin() -> Result<
     (
@@ -30,7 +33,7 @@ async fn native_origin() -> Result<
     if !metadata.is_file() || metadata.len() > 1024 || metadata.permissions().mode() & 0o077 != 0 {
         return Err("native service key must be an owner-only regular file".into());
     }
-    let (http_key, publisher_key) = if let Some(scope) = config.custody {
+    let (http_key, publisher_key, admission_key) = if let Some(scope) = config.custody {
         if scope.community_id != config.community_id
             || scope.private_origin != config.private_origin
             || scope.public_origin != config.public_origin
@@ -45,13 +48,21 @@ async fn native_origin() -> Result<
         (
             credential.signer("native-http")?,
             credential.signer("native-publication")?,
+            if config.enrollment_moderation_read {
+                Some(credential.signer("native-enrollment-admission")?)
+            } else {
+                None
+            },
         )
     } else {
+        if config.enrollment_moderation_read {
+            return Err("enrollment moderation reads require tracked native custody".into());
+        }
         let secret = tokio::fs::read_to_string(config.service_key_file).await?;
         let key = nostr::Keys::parse(secret.trim()).map_err(|_| "invalid native service key")?;
-        (key.clone().into(), key.into())
+        (key.clone().into(), key.into(), None)
     };
-    let source = HttpNativeOrigin::with_signer(
+    let mut source = HttpNativeOrigin::with_signer(
         config.community_id.clone(),
         &config.private_origin,
         &config.public_origin,
@@ -59,6 +70,9 @@ async fn native_origin() -> Result<
         nostr::PublicKey::from_hex(&config.relay_public_key)
             .map_err(|_| "invalid native relay public key")?,
     )?;
+    if let Some(admission_key) = admission_key {
+        source = source.with_enrollment_admission_signer(admission_key)?;
+    }
     Ok((config.community_id, source, publisher_key))
 }
 #[tokio::main]
@@ -119,16 +133,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("serve") if args.len() == 1 => {
             let mut router = axum::Router::new();
             let mut surfaces = api::ConfiguredSurfaces::default();
-            if let Ok(origin) = env::var("ENROLLMENT_RELAY_ORIGIN") {
-                router = router.merge(llull_buzz_provider::enrollment_gateway_routes(
-                    provider.clone(),
-                    &origin,
-                )?);
-                surfaces.enrollment_gateway = true;
-            }
+            let mut directory: Option<
+                std::sync::Arc<dyn llull_buzz_provider::EnrollmentDirectoryPort>,
+            > = None;
             if env::var_os("NATIVE_ORIGIN_CONFIG").is_some() {
                 let (_, source, key) = native_origin().await?;
                 let source = std::sync::Arc::new(source);
+                if source.enrollment_directory_enabled() {
+                    directory = Some(source.clone());
+                }
                 let media = std::sync::Arc::new(NativeMedia::new(
                     source.clone(),
                     source.public_origin().as_str(),
@@ -147,6 +160,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 surfaces.native_intake = true;
                 surfaces.native_handoff = true;
                 surfaces.publication_delivery = true;
+            }
+            if let Ok(origin) = env::var("ENROLLMENT_RELAY_ORIGIN") {
+                router = router.merge(if let Some(directory) = directory {
+                    surfaces.enrollment_directory = true;
+                    llull_buzz_provider::enrollment_gateway_routes_with_directory(
+                        provider.clone(),
+                        &origin,
+                        directory,
+                    )?
+                } else {
+                    llull_buzz_provider::enrollment_gateway_routes(provider.clone(), &origin)?
+                });
+                surfaces.enrollment_gateway = true;
             }
             router = api::router_with_surfaces(provider.clone(), surfaces).merge(router);
             let address = env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());

@@ -22,8 +22,15 @@ pub struct HttpNativeOrigin {
     relay_key: nostr::PublicKey,
     owner: String,
     client: reqwest::Client,
+    enrollment_admission_signer: Option<crate::native_custody::NativeSigner>,
+    native_binding_origins: (String, String),
 }
+
 impl HttpNativeOrigin {
+    pub fn enrollment_directory_enabled(&self) -> bool {
+        self.enrollment_admission_signer.is_some()
+    }
+
     pub fn new(
         community: String,
         private_origin: &str,
@@ -53,6 +60,7 @@ impl HttpNativeOrigin {
             public_origin,
             &relay_key.to_hex(),
         )?;
+        let native_binding_origins = (private_origin.to_owned(), public_origin.to_owned());
         let private_origin = origin(private_origin, false)?;
         let public_origin = origin(public_origin, true)?;
         let owner=format!("native:{}",llull_buzz_wire::digest(&json!({"community":community,"origin":public_origin.as_str(),"sender":key.public_key().to_hex(),"relay":relay_key.to_hex()})).map_err(|_|PortError)?);
@@ -71,6 +79,8 @@ impl HttpNativeOrigin {
             relay_key,
             owner,
             client,
+            enrollment_admission_signer: None,
+            native_binding_origins,
         })
     }
     async fn post(&self, path: &str, body: &[u8]) -> std::result::Result<Vec<u8>, PortError> {
@@ -519,5 +529,256 @@ mod tests {
         ] {
             assert!(roster_member(&fields).is_err());
         }
+    }
+}
+
+// Enrollment-client directory reads are deliberately additive. They use this
+// same fixed native owner and service transport, and never expose its general
+// query interface or manufacture native membership for an unproved key.
+impl HttpNativeOrigin {
+    /// The original native service identity needs separately admitted moderator
+    /// read authority. This builder neither grants a role nor broadens the
+    /// existing native-http signer. Default absence keeps this path unavailable.
+    pub fn with_enrollment_admission_signer(
+        mut self,
+        signer: crate::native_custody::NativeSigner,
+    ) -> std::result::Result<Self, PortError> {
+        signer.require_enrollment_admission()?;
+        signer.bind_native(
+            &self.community,
+            &self.native_binding_origins.0,
+            &self.native_binding_origins.1,
+            &self.relay_key.to_hex(),
+        )?;
+        if signer.public_key() != self.key.public_key() {
+            return Err(PortError);
+        }
+        self.enrollment_admission_signer = Some(signer);
+        Ok(self)
+    }
+
+    pub(crate) async fn enrollment_admission_check(
+        &self,
+        intended: &str,
+    ) -> std::result::Result<crate::enrollment_directory::NativeEnrollmentAdmissionCheck, PortError>
+    {
+        use crate::enrollment_directory::{
+            admit_native_restrictions, NativeEnrollmentAdmissionCheck, ENROLLMENT_ADMISSION_SECONDS,
+        };
+        llull_buzz_wire::hash(intended).map_err(|_| PortError)?;
+        let signer = self.enrollment_admission_signer.as_ref().ok_or(PortError)?;
+        signer.require_enrollment_admission()?;
+        let public = self
+            .public_origin
+            .join("/moderation/restricted")
+            .map_err(|_| PortError)?;
+        let private = self
+            .private_origin
+            .join("/moderation/restricted")
+            .map_err(|_| PortError)?;
+        let event = signer.sign(
+            nostr::EventBuilder::new(nostr::Kind::HttpAuth, "").tags([
+                nostr::Tag::parse(["u", public.as_str()]).map_err(|_| PortError)?,
+                nostr::Tag::parse(["method", "GET"]).map_err(|_| PortError)?,
+                nostr::Tag::parse(["payload", sha256(b"").as_str()]).map_err(|_| PortError)?,
+                nostr::Tag::parse(["nonce", uuid::Uuid::new_v4().to_string().as_str()])
+                    .map_err(|_| PortError)?,
+            ]),
+        )?;
+        let authorization = format!(
+            "Nostr {}",
+            STANDARD.encode(serde_json::to_vec(&event).map_err(|_| PortError)?)
+        );
+        let host = &public[url::Position::BeforeHost..url::Position::AfterPort];
+        let response = self
+            .client
+            .get(private)
+            .header("Host", host)
+            .header("Authorization", authorization)
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|_| PortError)?;
+        if response.status() != reqwest::StatusCode::OK
+            || response.headers().contains_key("content-range")
+            || response.headers().contains_key("link")
+            || response
+                .content_length()
+                .is_some_and(|length| length > MAX_BYTES as u64)
+        {
+            return Err(PortError);
+        }
+        let mut bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| PortError)?;
+            if bytes.len().saturating_add(chunk.len()) > MAX_BYTES {
+                return Err(PortError);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        admit_native_restrictions(&bytes, intended).map_err(|_| PortError)?;
+        let checked_at = chrono::Utc::now();
+        let check = NativeEnrollmentAdmissionCheck {
+            kind: "llull-buzz-native-enrollment-admission/v1".into(),
+            community_id: self.community.clone(),
+            intended_public_key: intended.into(),
+            moderation_endpoint: public.to_string(),
+            request_event_id: event.id.to_hex(),
+            response_sha256: sha256(&bytes),
+            checked_at,
+            valid_until: checked_at + chrono::Duration::seconds(ENROLLMENT_ADMISSION_SECONDS),
+        };
+        Ok(check)
+    }
+
+    async fn enrollment_public_document(
+        &self,
+        path: &str,
+        maximum: usize,
+        optional: bool,
+    ) -> std::result::Result<Option<Value>, PortError> {
+        if !matches!(path, "/info" | "/api/join-policy") {
+            return Err(PortError);
+        }
+        let public = self.public_origin.join(path).map_err(|_| PortError)?;
+        let private = self.private_origin.join(path).map_err(|_| PortError)?;
+        let host = &public[url::Position::BeforeHost..url::Position::AfterPort];
+        let response = self
+            .client
+            .get(private)
+            .header("Host", host)
+            .header(
+                "Accept",
+                if path == "/info" {
+                    "application/nostr+json"
+                } else {
+                    "application/json"
+                },
+            )
+            .send()
+            .await
+            .map_err(|_| PortError)?;
+        if optional && response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if response.status() != reqwest::StatusCode::OK
+            || response
+                .content_length()
+                .is_some_and(|length| length > maximum as u64)
+        {
+            return Err(PortError);
+        }
+        let mut bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| PortError)?;
+            if bytes.len().saturating_add(chunk.len()) > maximum {
+                return Err(PortError);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let value: Value = if path == "/api/join-policy" {
+            crate::enrollment_directory::parse_native_join_policy(&bytes).map_err(|_| PortError)?
+        } else {
+            parse(&bytes).map_err(|_| PortError)?
+        };
+        if !value.is_object() {
+            return Err(PortError);
+        }
+        Ok(Some(value))
+    }
+}
+
+#[async_trait]
+impl crate::enrollment_directory::EnrollmentDirectoryPort for HttpNativeOrigin {
+    async fn enrollment_directory(
+        &self,
+        community: &str,
+        channel: &str,
+        intended_key: &str,
+        bot: &str,
+    ) -> std::result::Result<crate::enrollment_directory::NativeEnrollmentView, PortError> {
+        if community != self.community || intended_key == bot {
+            return Err(PortError);
+        }
+        self.enrollment_admission_signer
+            .as_ref()
+            .ok_or(PortError)?
+            .require_enrollment_admission()?;
+        let channel_id = uuid::Uuid::parse_str(channel).map_err(|_| PortError)?;
+        if channel_id.to_string() != channel {
+            return Err(PortError);
+        }
+        llull_buzz_wire::hash(intended_key).map_err(|_| PortError)?;
+        llull_buzz_wire::hash(bot).map_err(|_| PortError)?;
+        let relay_information = self
+            .enrollment_public_document("/info", MAX_BYTES, false)
+            .await?
+            .ok_or(PortError)?;
+        let has_membership = relay_information
+            .get("supported_nips")
+            .and_then(Value::as_array)
+            .ok_or(PortError)?
+            .iter()
+            .any(|value| value.as_u64() == Some(43));
+        // These are trusted, exact filters for one pre-enrollment channel and
+        // up to two existing profiles. A caller can never supply a URL, kind, channel,
+        // author search or native filter object to this implementation.
+        let mut filters = vec![
+            json!({"kinds":[39000],"authors":[self.relay_key.to_hex()],"#d":[channel],"limit":1}),
+            json!({"kinds":[39002],"authors":[self.relay_key.to_hex()],"#d":[channel],"limit":1}),
+            json!({"kinds":[0],"authors":[intended_key],"limit":1}),
+            json!({"kinds":[0],"authors":[bot],"limit":1}),
+        ];
+        if has_membership {
+            filters.push(json!({"kinds":[13534],"authors":[self.relay_key.to_hex()],"limit":1}));
+        }
+        let response = self
+            .post("/query", &canonical(&filters).map_err(|_| PortError)?)
+            .await?;
+        let records: Vec<Value> = parse(&response).map_err(|_| PortError)?;
+        let required_records = if has_membership { 3 } else { 2 };
+        if !(required_records..=required_records + 2).contains(&records.len()) {
+            return Err(PortError);
+        }
+        let mut metadata = None;
+        let mut roster = None;
+        let mut membership = None;
+        let mut profiles = Vec::new();
+        for record in records {
+            let event = native::event(&canonical(&record).map_err(|_| PortError)?)
+                .map_err(|_| PortError)?;
+            match event.kind.as_u16() {
+                39000 if metadata.is_none() => metadata = Some(record),
+                39002 if roster.is_none() => roster = Some(record),
+                13534 if membership.is_none() && has_membership => membership = Some(record),
+                0 if profiles.len() < 2 => profiles.push(record),
+                _ => return Err(PortError),
+            }
+        }
+        // The selected native client accepts up to two 256KiB Markdown policy
+        // documents; its own native reader reserves 4MiB for escaped JSON.
+        // Absence is reported only for a real 404, never timeout or malformed data.
+        let join_policy = self
+            .enrollment_public_document("/api/join-policy", 4 * 1024 * 1024, true)
+            .await?;
+        let admission_check = self.enrollment_admission_check(intended_key).await?;
+        let view = crate::enrollment_directory::NativeEnrollmentView {
+            community_id: community.into(),
+            channel_id: channel.into(),
+            intended_public_key: intended_key.into(),
+            bot_public_key: bot.into(),
+            relay_public_key: self.relay_key.to_hex(),
+            channel_metadata: metadata.ok_or(PortError)?,
+            channel_membership: roster.ok_or(PortError)?,
+            profiles,
+            relay_information,
+            relay_membership: membership,
+            join_policy,
+            admission_check,
+        };
+        view.validate().map_err(|_| PortError)?;
+        Ok(view)
     }
 }

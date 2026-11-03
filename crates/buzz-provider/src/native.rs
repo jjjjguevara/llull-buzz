@@ -60,6 +60,20 @@ pub fn enrollment_text(
     // JSON strings avoid delimiter/Unicode ambiguity while remaining ordinary message text.
     serde_json::json!({"llull_buzz_enrollment":1,"consumer":consumer,"community":community,"enrollment":enrollment,"challenge":challenge}).to_string()
 }
+/// Opt-in native-visible mention. Missing options preserve every legacy byte.
+pub fn enrollment_message(
+    consumer: &str,
+    community: &str,
+    enrollment: &str,
+    challenge: &str,
+    native: Option<&llull_buzz_wire::NativeChallenge>,
+) -> String {
+    let text = enrollment_text(consumer, community, enrollment, challenge);
+    match native {
+        None => text,
+        Some(native) => format!("{} {}", native.bot_mention, text),
+    }
+}
 pub(crate) fn verify_enrollment_proof(
     proof: &nostr::Event,
     intended: &str,

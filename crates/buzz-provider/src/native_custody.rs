@@ -407,6 +407,27 @@ impl PublicCredentialClaims {
                     url::Url::parse(url).map_err(|_| deny("native_custody_public_claims"))?;
                 let origin = url::Url::parse(&scope.public_origin)
                     .map_err(|_| deny("native_custody_public_claims"))?;
+                // Separate read-only capability. The standing native-http and
+                // consumer-http method/path rules below are unchanged.
+                if capability == "native-enrollment-admission" {
+                    if kind != 27235
+                        || method != "GET"
+                        || self.content_sha256 != sha256(b"")
+                        || payload_sha256 != &sha256(b"")
+                        || nonce_sha256.is_none()
+                        || actual.origin() != origin.origin()
+                        || !actual.username().is_empty()
+                        || actual.password().is_some()
+                        || actual.query().is_some()
+                        || actual.fragment().is_some()
+                        || actual.path() != "/moderation/restricted"
+                    {
+                        return Err(deny("native_custody_public_claims"));
+                    }
+                    hash(nonce_sha256.as_ref().unwrap())
+                        .map_err(|_| deny("native_custody_public_claims"))?;
+                    return Ok(());
+                }
                 if kind != 27235
                     || !matches!(capability, "native-http" | "consumer-http")
                     || method != "POST"
@@ -698,7 +719,7 @@ impl NativeCredential {
     pub fn signer(self: &Arc<Self>, capability: &str) -> Result<NativeSigner> {
         if !matches!(
             capability,
-            "native-http" | "native-publication" | "consumer-http"
+            "native-http" | "native-publication" | "consumer-http" | "native-enrollment-admission"
         ) {
             return Err(deny("native_custody_capability"));
         }
@@ -744,6 +765,18 @@ impl From<nostr::Keys> for NativeSigner {
     }
 }
 impl NativeSigner {
+    /// The enrollment directory never falls back to an untracked signer or a
+    /// broader HTTP capability for its privileged current-permission read.
+    pub(crate) fn require_enrollment_admission(
+        &self,
+    ) -> std::result::Result<(), crate::ports::PortError> {
+        match &self.inner {
+            Signer::Tracked { capability, .. } if capability == "native-enrollment-admission" => {
+                Ok(())
+            }
+            _ => Err(crate::ports::PortError),
+        }
+    }
     pub fn public_key(&self) -> nostr::PublicKey {
         match &self.inner {
             Signer::Legacy(key) => key.public_key(),
@@ -800,6 +833,7 @@ impl NativeSigner {
                 ("native-http", 27235 | 24242)
                     | ("native-publication", 9)
                     | ("consumer-http", 27235)
+                    | ("native-enrollment-admission", 27235)
             ) {
                 return Err(crate::ports::PortError);
             }
