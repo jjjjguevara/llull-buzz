@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.llull.invalid/buzz/native-handoff-v1",
+  "title": "Optional current human native navigation read; not an authority grant",
+  "$ref": "#/$defs/request",
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 255},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "channel": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "positiveInteger": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "optionalEvent": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]},
+    "resource": {
+      "type": "object", "additionalProperties": false,
+      "required": ["namespace", "ref", "revision"],
+      "properties": {"namespace": {"$ref": "#/$defs/id"}, "ref": {"$ref": "#/$defs/id"}, "revision": {"$ref": "#/$defs/id"}}
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["community_id", "channel_id", "audience_revision", "event_id"],
+      "properties": {
+        "community_id": {"$ref": "#/$defs/id"}, "channel_id": {"$ref": "#/$defs/channel"},
+        "audience_revision": {"$ref": "#/$defs/id"}, "event_id": {"$ref": "#/$defs/optionalEvent"}
+      }
+    },
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract", "profile", "consumer_id", "intent_id", "operation", "resource", "correlation_id", "causation_id", "payload"],
+      "properties": {
+        "contract": {"const": "llull-buzz integration v0.2"}, "profile": {"const": "bz-restricted-2026-09/v1"},
+        "consumer_id": {"$ref": "#/$defs/id"}, "intent_id": {"$ref": "#/$defs/id"},
+        "operation": {"const": "read-native-handoff"}, "resource": {"$ref": "#/$defs/resource"},
+        "correlation_id": {"$ref": "#/$defs/id"}, "causation_id": {"$ref": "#/$defs/id"},
+        "payload": {"$ref": "#/$defs/target"}
+      }
+    },
+    "response": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format", "consumer_id", "intent_id", "module_id", "context_domain", "resource", "enrollment_id", "enrollment_revision", "native_key", "community_id", "channel_id", "audience_revision", "event_id", "thread_root_id", "native_uri", "verified_until", "registration_revision", "policy_revision", "recovery_epoch"],
+      "properties": {
+        "format": {"const": "llull-buzz-native-handoff/v1"},
+        "consumer_id": {"$ref": "#/$defs/id"}, "intent_id": {"$ref": "#/$defs/id"},
+        "module_id": {"$ref": "#/$defs/id"}, "context_domain": {"$ref": "#/$defs/id"},
+        "resource": {"$ref": "#/$defs/resource"}, "enrollment_id": {"$ref": "#/$defs/id"},
+        "enrollment_revision": {"$ref": "#/$defs/positiveInteger"}, "native_key": {"$ref": "#/$defs/digest"},
+        "community_id": {"$ref": "#/$defs/id"}, "channel_id": {"$ref": "#/$defs/channel"},
+        "audience_revision": {"$ref": "#/$defs/id"}, "event_id": {"$ref": "#/$defs/optionalEvent"},
+        "thread_root_id": {"$ref": "#/$defs/optionalEvent"},
+        "native_uri": {"type": "string", "pattern": "^buzz://(?:channel/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|message\\?channel=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}&id=[0-9a-f]{64}(?:&thread=[0-9a-f]{64})?)$"},
+        "verified_until": {"$ref": "#/$defs/positiveInteger"},
+        "registration_revision": {"$ref": "#/$defs/positiveInteger"}, "policy_revision": {"$ref": "#/$defs/id"},
+        "recovery_epoch": {"$ref": "#/$defs/positiveInteger"}
+      }
+    }
+  }
+}

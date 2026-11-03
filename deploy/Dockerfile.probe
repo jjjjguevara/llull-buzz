@@ -1,0 +1,30 @@
+# LOCAL TEST IMAGE ONLY. Not a production restricted-profile deployment.
+# Resolve these tags to immutable digests in the local evidence before acceptance.
+FROM rust:1.98.1-bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates cmake clang pkg-config python3 && rm -rf /var/lib/apt/lists/*
+WORKDIR /upstream
+RUN git init && git remote add origin https://github.com/block/buzz && \
+    git fetch --depth 1 origin 01b6174a1cbad249e93f31df97d4b2ed1d0e8638 && \
+    git checkout --detach FETCH_HEAD && \
+    test "$(git rev-parse HEAD)" = 01b6174a1cbad249e93f31df97d4b2ed1d0e8638 && \
+    cargo +1.98.1 build --release --locked -p buzz-agent -p buzz-acp
+WORKDIR /source
+COPY . .
+RUN test -f Cargo.lock && cargo +1.98.1 build --workspace --release --locked
+RUN mkdir -p /image/opt/llull/upstream /image/opt/llull/bin /image/usr/share/doc/buzz-upstream && \
+    cp /upstream/target/release/buzz-agent /upstream/target/release/buzz-acp /image/opt/llull/upstream/ && \
+    cp target/release/llull-buzz-launch target/release/llull-buzz-mcp-probe /image/opt/llull/bin/ && \
+    find /upstream -maxdepth 1 -type f \( -iname 'LICENSE*' -o -iname 'NOTICE*' \) -exec cp {} /image/usr/share/doc/buzz-upstream/ \; && \
+    cp LICENSE /image/usr/share/doc/llull-buzz-LICENSE && \
+    python3 scripts/emit-image-identity.py /image
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN groupadd --gid 65532 buzz && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /work/task/home buzz && \
+    mkdir -p /work/task && chown 65532:65532 /work/task && chmod 700 /work/task
+COPY --from=build /image/ /
+COPY deploy/probe-entrypoint.sh /opt/llull/bin/probe-entrypoint
+RUN chmod 755 /opt/llull/bin/probe-entrypoint
+USER 65532:65532
+WORKDIR /work/task
+ENTRYPOINT ["/opt/llull/bin/probe-entrypoint"]
+CMD ["/opt/llull/bin/llull-buzz-launch", "probe"]

@@ -1,7 +1,15 @@
 name: Provider documentation checks
 on:
-  pull_request:
-    branches: [main]
+  # Hosted minutes are exhausted. The identical portable stage runs locally.
+  # A future operator can explicitly dispatch after capacity is authorized.
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Full comparison-base commit
+        required: true
+      subject:
+        description: Full reviewed subject commit
+        required: true
 permissions:
   contents: read
 jobs:
@@ -11,18 +19,17 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.subject }}
           fetch-depth: 0
           persist-credentials: false
       - name: Install documentation parser only
-        run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+        run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3 jsonschema==4.26.0
       - name: Check documentation at exact subject
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          SUBJECT: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ inputs.base }}
+          SUBJECT: ${{ inputs.subject }}
         run: |
-          python3 docs/bootstrap/check_provider_docs.py --self-test
-          python3 docs/bootstrap/check_provider_docs.py --base "$BASE" --subject "$SUBJECT"
+          python3 scripts/check-docs.py --base "$BASE" --subject "$SUBJECT"
       - name: Preserve checked source and evidence
         if: always()
         run: |
@@ -33,6 +40,6 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: provider-docs-${{ github.event.pull_request.head.sha }}
+          name: provider-docs-${{ inputs.subject }}
           path: docs-check/
           retention-days: 30

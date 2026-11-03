@@ -1,7 +1,25 @@
 # Documentation validation procedure
 
 Status: author-check procedure only. Actual results are revision-bound PR submissions.
-The original `check_provider_docs.py` is unchanged, SHA-256
+
+The completion stage uses `python3 scripts/check-docs.py --base BASE_SHA --subject SUBJECT_SHA`.
+It requires a clean complete checkout, checks all tracked documents and the implementation
+diff, runs both helper self-tests and six checkout regressions, then executes the unchanged
+supplemental owning-ID/schema/ADR/proof/UAT assertions. Reports and command logs are stored
+in `docs-check/`. `--stage bootstrap` retains bootstrap changed-artifact restrictions;
+`--stage implementation` admits the actual workspace, migrations and delivery tooling.
+Neither stage drops unchanged contract owners from validation. A source-only update must
+still satisfy the complete contract package.
+
+GitHub Actions capacity is exhausted by owner instruction. The workflow is manually
+dispatchable only and invokes the same portable command; no hosted run is authorized or
+claimed by this change. Historical failures remain visible at
+[run 35648867633](https://github.com/jjjjguevara/llull-buzz/actions/runs/35648867633) and
+[run 35658636251](https://github.com/jjjjguevara/llull-buzz/actions/runs/35658636251).
+
+## Historical bootstrap procedure
+
+The original bootstrap `check_provider_docs.py` had SHA-256
 `131e4c8e5961cadbc028678dba1df881ccd392558cb033890130153a647b5cb3`.
 The supplemental `check_profile_package.py` is SHA-256 `22f206f8100a386433093c98e65ec50aa0f682be4af1b118bfcea40acebfe870`.
 Its immutable published source is linked in the submission. It adds owning capability,
