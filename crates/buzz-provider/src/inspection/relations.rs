@@ -405,6 +405,17 @@ pub(crate) fn implementation_sha256() -> String {
         ),
         ("native_custody.rs", include_bytes!("../native_custody.rs")),
         ("native_origin.rs", include_bytes!("../native_origin.rs")),
+        (
+            "enrollment_directory.rs",
+            include_bytes!("../enrollment_directory.rs"),
+        ),
+        (
+            "enrollment_gateway.rs",
+            include_bytes!("../enrollment_gateway.rs"),
+        ),
+        ("native.rs", include_bytes!("../native.rs")),
+        ("identity.rs", include_bytes!("../identity.rs")),
+        ("lib.rs", include_bytes!("../lib.rs")),
         ("publication.rs", include_bytes!("../publication.rs")),
         ("main.rs", include_bytes!("../main.rs")),
         ("ports.rs", include_bytes!("../ports.rs")),
