@@ -106,6 +106,8 @@ impl Rig {
         let actions: BTreeSet<String> = [
             "enroll",
             "prove-key",
+            "read-identity-result",
+            "read-enrollment-proof",
             "change-access",
             "retire-key",
             "start-task",
@@ -170,7 +172,7 @@ impl Rig {
                 .collect(),
             verification_keys: BTreeMap::from([("disposable-key".into(), public)]),
             enrollment_bot_key: nostr::Keys::generate().public_key().to_hex(),
-            enrollment_channel: "synthetic-enrollment".into(),
+            enrollment_channel: "00000000-0000-4000-8000-000000000042".into(),
             modules: BTreeMap::from([
                 ("module-a".into(), module.clone()),
                 ("module-b".into(), module),
@@ -572,8 +574,12 @@ impl Rig {
 
 #[path = "cases/discovery.rs"]
 mod discovery;
+#[path = "cases/enrollment_gateway.rs"]
+mod enrollment_gateway;
 #[path = "cases/https_consumer.rs"]
 mod https_consumer;
+#[path = "cases/identity_history.rs"]
+mod identity_history;
 #[path = "cases/intake.rs"]
 mod intake;
 #[path = "cases/model_dispatch.rs"]

@@ -72,6 +72,8 @@ through resource authentication and purpose evidence where required by the regis
 | `GET /integration/v1/profile` | Contract/profile/schema digests, enabled operations, client source and limits | BZ-C01 |
 | `POST /integration/v1/enrollments` | `enroll` command; challenge transaction and expiry, not an active binding | BZ-C02 |
 | `POST /integration/v1/enrollments/{id}/proof` | `prove-key`; native signed event; atomic challenge consumption and binding revision | BZ-C02 |
+| `POST /integration/v1/identity-results` | `read-identity-result`; separately current-authorized exact original enrollment/proof result, without renewed admission | BZ-C02 |
+| `POST /integration/v1/enrollment-proofs` | `read-enrollment-proof`; exact native kind-9 message and distinct NIP-42 login under the original pending challenge | BZ-C02 |
 | `POST /integration/v1/access-changes` | `change-access`; expected binding revision and revoke/restore of one enrollment | BZ-C02 |
 | `POST /integration/v1/conversation-intakes` | `intake`; verified native source and content/evidence digests; durable receipt | BZ-C03 |
 | `POST /integration/v1/tasks` | `start-task`; closed admitted tool declarations and original root budgets | BZ-C04 |
@@ -88,6 +90,11 @@ through resource authentication and purpose evidence where required by the regis
 | Native `GET/HEAD /media/{sha256}` | Same-origin Blossom identity plus one current exact attachment lease; no range, preview or upload | BZ-C07 |
 | `GET /integration/v1/observations?cursor=...&limit=...` | Maximum 100 records, scoped committed high-water mark and next cursor | BZ-C08 |
 | `POST /integration/v1/observation-acks` | `ack-observations`; consumer durable receipt and contiguous cursor prefix | BZ-C08 |
+
+The optional limited native enrollment relay and native desktop HTTP submission
+are described in [identity recovery](../../implementation/IDENTITY-RECOVERY.md).
+They do not enable general native conversation access or qualify the complete
+native gateway. Read actions require explicit current registration permission.
 
 HTTP 202 acknowledges a committed admission transaction; 200 covers a replay or query; 401/403
 means invalid authentication/authority; 409 is intent or expected-revision conflict; 410 is a retired/

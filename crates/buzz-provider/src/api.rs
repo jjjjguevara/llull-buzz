@@ -65,6 +65,7 @@ async fn unavailable() -> Response {
 }
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct ConfiguredSurfaces {
+    pub enrollment_gateway: bool,
     pub native_intake: bool,
     pub native_handoff: bool,
     pub publication_delivery: bool,
@@ -84,6 +85,20 @@ macro_rules! body_handler {
     };
 }
 body_handler!(enroll, enroll);
+async fn identity_result(
+    State(p): State<Provider>,
+    h: HeaderMap,
+    b: Bytes,
+) -> crate::Result<Json<crate::HistoricalIdentityResult>> {
+    Ok(Json(p.identity_result(&b, credentials(&h)?).await?))
+}
+async fn enrollment_proof(
+    State(p): State<Provider>,
+    h: HeaderMap,
+    b: Bytes,
+) -> crate::Result<Json<crate::EnrollmentNativeProof>> {
+    Ok(Json(p.read_enrollment_proof(&b, credentials(&h)?).await?))
+}
 body_handler!(access, change_access);
 body_handler!(retire, retire_key);
 body_handler!(start, start_task);
@@ -368,6 +383,8 @@ pub fn router_with_surfaces(provider: Provider, surfaces: ConfiguredSurfaces) ->
             post(snapshot_ack),
         )
         .route("/integration/v1/enrollments", post(enroll))
+        .route("/integration/v1/identity-results", post(identity_result))
+        .route("/integration/v1/enrollment-proofs", post(enrollment_proof))
         .route("/integration/v1/enrollments/{id}/proof", post(proof))
         .route("/integration/v1/access-changes", post(access))
         .route("/integration/v1/tasks", post(start))

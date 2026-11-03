@@ -119,6 +119,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Some("serve") if args.len() == 1 => {
             let mut router = axum::Router::new();
             let mut surfaces = api::ConfiguredSurfaces::default();
+            if let Ok(origin) = env::var("ENROLLMENT_RELAY_ORIGIN") {
+                router = router.merge(llull_buzz_provider::enrollment_gateway_routes(
+                    provider.clone(),
+                    &origin,
+                )?);
+                surfaces.enrollment_gateway = true;
+            }
             if env::var_os("NATIVE_ORIGIN_CONFIG").is_some() {
                 let (_, source, key) = native_origin().await?;
                 let source = std::sync::Arc::new(source);
