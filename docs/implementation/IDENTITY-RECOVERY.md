@@ -60,3 +60,31 @@ the other `identity_history` case, and the `enrollment_gateway` cases in
 `crates/buzz-provider/tests/cases/`. Those are authored synthetic/local checks
 until an exact executed result is attached. Native desktop/mobile graphical
 journeys and named human judgments remain separate acceptance evidence.
+
+## Focused local execution, 2026-11-03
+
+At provider `0639040608a04132403aee9686e39526670afcbd`, Rust `1.98.1`
+locked compilation of the provider library and PostgreSQL integration binary
+passed. Three `enrollment_gateway::tests` unit controls and all five focused
+PostgreSQL scenarios passed: lost enrollment result after the original window,
+lost proof result with current revocation fencing, native WebSocket login/message
+separation and exact-event recovery, native desktop HTTP submission with separate
+NIP-42/NIP-98 evidence, and service revocation before message custody. Each
+database case used the maintained `scripts/test-postgres.sh --case ...` runner
+and preserved its records across a real PostgreSQL restart.
+
+The disposable PostgreSQL image was
+`postgres@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67`.
+Execution used one CPU and at most two GiB aggregate; fixtures had fresh databases,
+synthetic signing identities and loopback-only listeners. The runners removed
+their own containers and volumes, and a post-run label query returned no retained
+fixture containers. Raw logs remain in the operator's private Lane H runtime
+record. An initial service launch failed before compilation because its working
+directory was wrong; the first compile then exposed the missing `SinkExt` import.
+Both failures are retained separately from the passing incremental build.
+
+These are actual provider code/database tests with synthetic native clients and
+the pinned SDK message builder. They do not establish a graphical desktop/mobile
+journey, consumer native-database/API composition, live identity access, human
+UAT, complete provider qualification, or production deployment. No timing or
+performance qualification is inferred from these functional checks.
