@@ -37,6 +37,11 @@ Neither login nor native message receipt binds a key or grants conversation
 access. General subscriptions receive a restricted refusal. The broader
 `native_gateway` surface is not qualified by this endpoint.
 
+The later optional [native enrollment directory](NATIVE-ENROLLMENT-DIRECTORY.md)
+adds original-owner directory records and a separately tracked current moderation
+read. Its focused execution and remaining desktop/mobile gap are recorded there;
+they do not change historical recovery's independent acceptance boundary.
+
 The pinned desktop transport converts the relay scheme to HTTPS and submits
 native events to the same relay path plus `/events`; the limited native HTTP
 endpoint requires the same intended key's exact body/method/URL NIP-98 proof and

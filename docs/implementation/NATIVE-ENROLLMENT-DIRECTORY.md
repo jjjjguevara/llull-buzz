@@ -44,7 +44,40 @@ the optional field, legacy command and challenge bytes remain unchanged. The
 human's native client still signs the separate kind-9 challenge event; the
 provider and browser never substitute a human signer.
 
-This source increment is separate from historical full-result recovery. Its
-tests and actual native-client journey need their own execution evidence; neither
-this description nor a raw WebSocket fixture establishes desktop/mobile or human
-acceptance. Live moderator authority and live enrollment remain unexercised.
+This source increment is separate from historical full-result recovery. A raw
+WebSocket fixture does not establish desktop/mobile or human acceptance. Live
+moderator authority and live enrollment remain unexercised.
+
+At `6655f6d6804cf38723b81c27c77cab337e50e133`, the Rust 1.98.1 locked, offline
+provider binary and PostgreSQL test binary built successfully. The focused cohort
+passed 17 directory, three gateway, 19 standing and nine receiver tests; the
+standing harness's child-only case remained excluded as prescribed. One wire
+test separately passed exact optional-field identity and null/shape rejection.
+All eight isolated PostgreSQL cases passed with actual database restart/hash
+preservation: both historical recovery cases, three existing transport/custody
+cases, and the new directory, revocation and final-custody expiry cases.
+
+The expiry regression introduces a two-second database delay after a one-second
+native admission observation. Final custody rolls back, leaving zero retained
+login rows. A distinct fresh 30-second observation then succeeds under the same
+unchanged original challenge. This is a functional regression, not a benchmark.
+The measured source list now additionally binds directory parsing, gateway
+enforcement, native proof verification and library wiring. Existing custody
+lifecycle and retirement logic remain unchanged; old trust profiles/evidence are
+retained and do not acquire the new implementation digest implicitly.
+
+The first unit attempt retained 13 passes and four fixture failures because its
+temporary root was below world-writable `/tmp`. The rerun used an owned private
+temporary root with non-writable ancestors; the production custody guard was
+unchanged. Logs and both attempts remain retained. Rust ran within one CPU/two
+GiB; PostgreSQL runs used 1536 MiB for the test process plus 512 MiB for the owned
+database on the same CPU. All owned database containers/volumes were removed and
+the compiler/fixtures stopped. Private `native-provider-result-r1.json` retains
+individual log hashes and cleanup readback. The preserved provider binary hash is
+`d0510d0ad6cba5fa028d037bd2941cd4bd26011af75efbd0cd5844d953dc527f`.
+
+Native-owner HTTP response/admission fixtures and HTTP/WebSocket clients in these
+checks are synthetic. Request signatures, strict adapter, tracked signer, served
+provider routes and PostgreSQL custody/restarts are real. An unmodified
+desktop/mobile journey and actual admitted native-owner access still require
+their own execution; no whole-product, live-provider or human acceptance follows.
